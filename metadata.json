@@ -1,0 +1,6 @@
+{
+  "name": "PES 17 Online League Manager",
+  "description": "Hệ thống quản lý giải đấu trực tuyến chuyên biệt dành cho cộng đồng PES 17 Việt Nam, tích hợp đối soát tỉ số, tự động tạo lịch thi đấu lượt đi lượt về, quản trị cầu thủ, chợ chuyển nhượng và kết nối Parsec.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
