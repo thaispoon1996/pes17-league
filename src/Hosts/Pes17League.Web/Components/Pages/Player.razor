@@ -1,0 +1,253 @@
+@page "/cau-thu/{Id:guid}"
+@inject LeagueQueries Q
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* Hồ sơ cầu thủ kiểu Football Manager (PO 11/11): đầu trang tối (số áo, tên, vị trí, CLB, OVR), dải thông tin (cá nhân / giá trị / mùa này / vai trò),
+   tab Tổng quan (sơ đồ vị trí, chỉ số tô màu theo mức, viền vàng = chỉ số chính của nhóm vị trí, ▲▼ = đổi trong mùa) / Phong độ (từng trận, ⭐ = xuất sắc nhất trận)
+   / Hợp đồng & chuyển nhượng. Chỉ số hiện tại = snapshot đầu mùa + thay đổi sau trận/admin. ?mua=N xem mùa cũ. *@
+@if (loaded && (season is null || p is null)) { <p>Không có cầu thủ này. <a href="thong-ke">Thống kê →</a></p> }
+@if (season is not null && p is not null)
+{
+    var rated = p.Games.Where(g => g.Line.Rating is not null).ToList();
+    var goals = p.Games.Sum(g => g.Line.Goals);
+    <div class="fm">
+        <header class="fm-head">
+            <Face Id="@Id" Name="@p.Name" Size="lg"><span class="fm-shirt @Fmt.Group(p.Position)">@(p.Shirt?.ToString() ?? "–")</span></Face>
+            <div class="fm-title">
+                <h1>@(p.Shirt is { } no ? $"{no}. " : "")@p.Name</h1>
+                <p>@Fmt.PositionName(p.Position) (@p.Position) — @if (p.ClubId is { } cid) { <a href="clb/@cid">@p.Club</a> } else { <span>Tự do</span> }</p>
+            </div>
+            @if (p.Club is not null) { <Crest Name="@p.Club" Logo="@p.ClubLogo" Large="true" /> }
+            <a class="fm-compare" href="so-sanh?a=@Id" title="So sánh với cầu thủ khác">⇄ So sánh</a>
+            <span class="fm-badge"><b class="@Fmt.Tier(p.Overall)">@(known ? p.Overall.ToString() : ScoutRules.Mask(p.Overall))</b>OVR</span>
+        </header>
+        <nav class="fm-tabs" role="tablist">
+            @foreach (var (key, label) in new[] { ("tong-quan", "Tổng quan"), ("phong-do", $"Phong độ ({p.Games.Count})"), ("hop-dong", "Hợp đồng & chuyển nhượng") })
+            {
+                <button role="tab" aria-selected="@(tab == key ? "true" : "false")" class="@(tab == key ? "on" : "")" @onclick="() => tab = key">@label</button>
+            }
+        </nav>
+        <div class="fm-info">
+            <div>
+                <small>Cá nhân</small>
+                <b>@(p.Info.TryGetValue("AGE", out var age) ? $"{age} tuổi" : "–")@(p.BirthYear is { } by ? $" ({by})" : "")</b>
+                <span>@(p.Info.TryGetValue("HEIGHT", out var h) ? $"{h} cm" : "–") · @(p.Info.TryGetValue("WEIGHT", out var wt) ? $"{wt} kg" : "–")@(p.Nationality is { Length: > 0 } nat ? $" · {nat}" : "")</span>
+            </div>
+            <div>
+                <small>Giá trị</small>
+                <b class="big">@Fmt.Money(p.Price) @if (Change() is { } c) { <em class="@(c >= 0 ? "up" : "down")">@c.ToString("+0;-0;0")%</em> }</b>
+                <span>@ContractLine()</span>
+            </div>
+            <div>
+                <small>Mùa @season.Name</small>
+                <b class="big">@p.Games.Count trận · @goals bàn</b>
+                <span>Điểm TB @(rated.Count == 0 ? "–" : rated.Average(g => g.Line.Rating!.Value).ToString("0.00")) · ⭐ @p.Games.Count(g => g.Motm)</span>
+            </div>
+            <div>
+                <small>Vai trò</small>
+                <b>@(p.ClubId is null ? "Tự do" : p.Starter ? "Đá chính" : "Dự bị")</b>
+                <span>@Fmt.PositionName(p.Position)</span>
+            </div>
+        </div>
+
+        <div class="fm-body">
+        @switch (tab)
+        {
+            case "phong-do":
+                <section class="fm-panel">
+                    <div class="fm-h"><h2>Các trận @season.Name</h2></div>
+                    @if (p.Games.Count == 0) { <p class="muted">Chưa ra sân trận nào có thống kê trong mùa này.</p> }
+                    else
+                    {
+                        <div class="fm-scroll">
+                        <table class="table static">
+                            <thead><tr><th>Vòng</th><th class="left">Đối thủ</th><th>Tỉ số</th><th>Điểm</th><th>Bàn</th><th title="Sút (trúng đích)">Sút</th></tr></thead>
+                            <tbody>
+                                @foreach (var g in p.Games)
+                                {
+                                    var l = g.Line; var f = g.Fixture; var home = l.ClubId == f.Home;
+                                    var (mine, theirs) = home ? (f.HomeGoals, f.AwayGoals) : (f.AwayGoals, f.HomeGoals);
+                                    <tr>
+                                        <td>@l.Matchday</td>
+                                        <td class="left"><span class="club"><Crest Name="@season.Clubs.GetValueOrDefault(l.OpponentId, "?")" Logo="@season.Logo(l.OpponentId)" />@(home ? "" : "@ ")@season.Clubs.GetValueOrDefault(l.OpponentId, "?")</span>
+                                            @if (!l.Starter) { <small class="io in" title="Vào sân">↑@(l.InMinute)'</small> }
+                                            @if (l.OutMinute is { } o) { <small class="io out" title="Bị thay ra">↓@(o)'</small> }
+                                        </td>
+                                        <td><a class="res @(mine > theirs ? "W" : mine == theirs ? "D" : "L")" href="tran/@f.Id">@mine–@theirs</a></td>
+                                        <td><span class="rating @(l.Rating >= 7.5m ? "hi" : l.Rating <= 5.0m ? "lo" : "")">@(l.Rating?.ToString("0.0") ?? "–")</span>@(g.Motm ? "⭐" : "")</td>
+                                        <td>@(l.Goals > 0 ? l.Goals.ToString() : "")</td>
+                                        <td>@l.Shots (@l.ShotsOnTarget)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        </div>
+                    }
+                </section>
+                break;
+
+            case "hop-dong":
+                <div class="fm-cols fin">
+                    <section class="fm-panel">
+                        <div class="fm-h"><h2>Hợp đồng & giá</h2></div>
+                        <ul class="facts">
+                            <li><span>Giá hiện tại</span><b>@Fmt.Money(p.Price)</b></li>
+                            <li><span>Giá gốc đầu mùa</span><b>@Fmt.Money(p.BasePrice)</b></li>
+                            @if (p.Contract is { } k)
+                            {
+                                <li><span>Hợp đồng</span><b>@(k.MatchesTotal is { } t ? $"{k.MatchesPlayed}/{t} trận" : "không thời hạn")</b></li>
+                                @if (k.Wage is { } w) { <li><span>Lương/vòng</span><b>@Fmt.Money(w)</b></li> }
+                            }
+                            else { <li><span>Hợp đồng</span><em class="muted">không có</em></li> }
+                        </ul>
+                    </section>
+                    <section class="fm-panel">
+                        <div class="fm-h"><h2>Chuyển nhượng</h2></div>
+                        @if (p.Transfers.Count == 0) { <p class="muted">Chưa có giao dịch nào.</p> }
+                        else
+                        {
+                            <ul class="facts">
+                                @foreach (var t in p.Transfers)
+                                {
+                                    <li><span>@t.At.ToLocalTime().ToString("dd/MM/yyyy")</span><b>@(t.Kind == TransferKind.Release ? $"{t.From} → giải phóng" : $"{t.From ?? "Tự do"} → {t.To}") · @Fmt.Money(t.Fee)</b></li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                </div>
+                break;
+
+            default:
+                <div class="fm-pp">
+                    <aside class="fm-panel">
+                        <div class="fm-h"><h2>Vị trí</h2></div>
+                        @{ var (x, y) = Spot(p.Position); }
+                        <div class="fm-posmap" title="@Fmt.PositionName(p.Position)">
+                            <i class="mk half"></i><i class="mk circle"></i><i class="mk box l"></i><i class="mk box r"></i>
+                            <span class="dot @Fmt.Group(p.Position)" style="left:@(x)%;top:@(y)%"></span>
+                        </div>
+                        <p class="fm-note center">@Fmt.PositionName(p.Position) · hướng tấn công →</p>
+                        <div class="fm-h"><h2>5 trận gần nhất</h2></div>
+                        @if (p.Games.Count == 0) { <p class="muted">Chưa ra sân.</p> }
+                        else
+                        {
+                            <ul class="fm-last">
+                                @foreach (var g in p.Games.Take(5))
+                                {
+                                    var r = g.Line.Rating;
+                                    <li><a href="tran/@g.Fixture.Id" title="Vòng @g.Line.Matchday · @season.Clubs.GetValueOrDefault(g.Line.OpponentId, "?")">
+                                        <span class="rating @(r >= 7.5m ? "hi" : r <= 5.0m ? "lo" : "")">@(r?.ToString("0.0") ?? "–")</span>
+                                        <small>V@(g.Line.Matchday)@(g.Motm ? " ⭐" : "")</small></a></li>
+                                }
+                            </ul>
+                        }
+                    </aside>
+                    <section class="fm-panel">
+                        @if (p.Attributes.Count == 0) { <p class="muted">Chưa có chỉ số mùa này.</p> }
+                        else
+                        {
+                            @if (!known)
+                            {
+                                @* FM đợt 8: chỉ số cầu thủ CLB khác bị che đến khi trinh sát xong. *@
+                                <p class="fm-note scout-note">
+                                    @if (scout is { } sr) { <span>Trinh sát đang theo dõi — còn @sr.RoundsLeft vòng.</span> }
+                                    else { <span>Chỉ số ước lượng. </span><button disabled="@busy" @onclick="Scout">Giao trinh sát (@Fmt.Money(ScoutRules.Fee))</button> }
+                                    @if (scoutMessage is not null) { <span> @scoutMessage</span> }
+                                </p>
+                            }
+                            <div class="fm-attrs">
+                                @foreach (var g in p.Attributes.Where(a => a.Max == 99).GroupBy(a => a.Group))
+                                {
+                                    <div>
+                                        <h3>@g.Key</h3>
+                                        @foreach (var a in g)
+                                        {
+                                            <div class="fm-attr @(IsKey(a) ? "key" : "")" title="@(a.Delta == 0 ? "" : $"Trong mùa: {a.Delta:+0;-0}")">
+                                                <span>@a.Label</span>
+                                                <i class="@(a.Delta > 0 ? "up" : a.Delta < 0 ? "down" : "")">@(!known ? "" : a.Delta > 0 ? $"▲{a.Delta}" : a.Delta < 0 ? $"▼{-a.Delta}" : "")</i>
+                                                <b class="@Fmt.Tier(a.Value, a.Max)">@(known ? a.Value.ToString() : ScoutRules.Mask(a.Value))</b>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <p class="fm-note"><span class="key-mark"></span>chỉ số chính cho @Fmt.PositionName(p.Position).ToLowerInvariant() ·
+                                màu: <b class="v5">90+</b> <b class="v4">80+</b> <b class="v3">70+</b> <b class="v2">60+</b> <b class="v1">&lt;60</b> · ▲▼ = tăng/giảm trong mùa</p>
+                        }
+                    </section>
+                    <aside class="fm-panel">
+                        <div class="fm-h"><h2>Thông tin</h2></div>
+                        <ul class="facts">
+                            <li><span>Chiều cao</span><b>@(p.Info.TryGetValue("HEIGHT", out var hh) ? $"{hh} cm" : "–")</b></li>
+                            <li><span>Cân nặng</span><b>@(p.Info.TryGetValue("WEIGHT", out var ww) ? $"{ww} kg" : "–")</b></li>
+                            @foreach (var a in p.Attributes.Where(a => a.Max == 8))
+                            {
+                                <li><span>@a.Label</span><b class="@Fmt.Tier(a.Value, a.Max)">@a.Value<small>/8</small></b></li>
+                            }
+                            <li><span>Giá gốc đầu mùa</span><b>@Fmt.Money(p.BasePrice)</b></li>
+                        </ul>
+                    </aside>
+                </div>
+                break;
+        }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    bool loaded;
+    string tab = "tong-quan";
+    SeasonInfo? season;
+    PlayerProfile? p;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.ViewSeasonAsync(Mua);
+        p = season is null ? null : await Q.PlayerAsync(Id, season);
+        await LoadScout();
+        loaded = true;
+    }
+
+    bool known = true, busy;
+    ScoutReport? scout;
+    string? scoutMessage;
+
+    async Task LoadScout()
+    {
+        if (season is null || p is null || Mua is not null) { known = true; return; }
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new YouthService(db, Clock);
+        known = await svc.KnowsAsync(season.HumanClubId, Id);
+        scout = known ? null : await svc.ReportAsync(season.HumanClubId, Id);
+    }
+
+    async Task Scout()
+    {
+        busy = true;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            scoutMessage = await new YouthService(db, Clock).ScoutAsync(season!.HumanClubId, Id);
+        await LoadScout();
+        busy = false;
+    }
+
+    string ContractLine() => p!.Contract is not { } k ? "Không có hợp đồng"
+        : (k.Wage is { } w ? $"{Fmt.Money(w)}/vòng · " : "") + (k.MatchesTotal is { } t ? $"HĐ {k.MatchesPlayed}/{t} trận" : "HĐ không thời hạn");
+
+    double? Change() => p is { BasePrice: > 0 } x ? Math.Round(((double)x.Price / x.BasePrice - 1) * 100) : null;
+
+    bool IsKey(AttrView a) => Fmt.IsKey(p!.Position, a.Field);
+
+    // Toạ độ (%) chấm vị trí trên sân nằm ngang, khung thành nhà bên trái; vị trí biên vẽ ở cánh dưới.
+    static (int X, int Y) Spot(Position pos) => pos switch
+    {
+        Position.GK => (6, 50), Position.SW => (16, 50), Position.CB => (24, 50), Position.SB => (26, 84), Position.WB => (40, 84),
+        Position.DMF => (38, 50), Position.CMF => (52, 50), Position.SMF => (56, 84), Position.AMF => (68, 50),
+        Position.WF => (80, 84), Position.SS => (78, 50), _ => (88, 50),
+    };
+}

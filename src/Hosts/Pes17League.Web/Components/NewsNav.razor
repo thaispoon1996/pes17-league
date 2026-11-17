@@ -1,0 +1,10 @@
+@* Hai mục của trang tin: bài, bàn thắng (PO 12/11 bỏ highlight trận). *@
+<nav class="subnav">
+    <a href="@Season.Url("tin")" class="@(Here == "tin" ? "active" : "")">Tin tức</a>
+    <a href="@Season.Url("ban-thang")" class="@(Here == "ban-thang" ? "active" : "")">Tổng hợp bàn thắng</a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public string Here { get; set; } = "";
+}

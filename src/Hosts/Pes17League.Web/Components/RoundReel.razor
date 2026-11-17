@@ -1,0 +1,18 @@
+@* Clip tổng hợp bàn thắng của 1 vòng 1 giải (PO 12/11): thẻ lớn đầu khối giải ở /ban-thang;
+   thẻ bàn có data-seek="reel-{Key}" tua clip này. *@
+@if (Info is { } r)
+{
+    <div class="hl-card reel">
+        <video id="reel-@r.Key" controls playsinline preload="metadata" poster="@r.PosterUrl" src="@r.Url"></video>
+        <div class="txt">
+            <h3>▶ Tổng hợp bàn thắng vòng @r.Round</h3>
+            <p class="muted">@r.Items.Count bàn · @r.Duration</p>
+            <p class="links"><a href="@r.DocUrl">Bản dọc (điện thoại)</a></p>
+            @if (r.Missing > 0) { <p class="muted small">Thiếu @r.Missing bàn không có hình (trận nhập tay tỷ số).</p> }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public RoundReelInfo? Info { get; set; }
+}

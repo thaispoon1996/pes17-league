@@ -1,0 +1,111 @@
+@page "/truc-tiep"
+@implements IAsyncDisposable
+@inject MatchJobService Jobs
+@inject LeagueQueries Q
+@inject IJSRuntime JS
+
+@* Xem trực tiếp (PO 07/11): hình + tiếng trận đang đá (HLS từ bản ghi hình, chậm ~10 s; tự phát tắt tiếng), nhiều người xem cùng lúc, chỉ xem — không gửi phím vào game.
+   Không hiện tỷ số/diễn biến riêng: sự kiện tới trước hình ~10 s → lộ bàn thắng. Trận xong → link trang trận. *@
+<section class="hero">
+    <span class="pill">📺 Trực tiếp</span>
+    <h1>@(cur is null ? "Chưa có trận đang đá" : OnAir ? "Đang đá" : "Sắp đá")</h1>
+</section>
+@if (cur is { } m)
+{
+    var f = m.Fixture; var s = m.Season;
+    <section class="scoreboard">
+        <div class="side"><Crest Name="@s.Clubs[f.Home]" Logo="@s.Logo(f.Home)" Large="true" /><b>@s.Clubs[f.Home]</b></div>
+        <div class="big">vs</div>
+        <div class="side"><Crest Name="@s.Clubs[f.Away]" Logo="@s.Logo(f.Away)" Large="true" /><b>@s.Clubs[f.Away]</b></div>
+        <p class="match-meta">@(m.Edition is { } ed ? $"{ed.Name} · " : "")@m.Round · vòng @f.Matchday</p>
+    </section>
+    @if (OnAir)
+    {
+        <section class="panel highlight"><video @ref="video" muted autoplay playsinline controls></video></section>
+        <p class="hl-doc muted">Hình chậm khoảng 10 giây so với trận thật · bấm 🔊 trên video để nghe tiếng · chỉ xem, không điều khiển được trận.</p>
+    }
+    else
+    {
+        <section class="panel"><p>@StageText(Jobs.Stage)</p></section>
+    }
+}
+else
+{
+    <section class="panel">
+        <p class="muted">@(Jobs.Running ? "Đang chuẩn bị trận…" : "Khi có trận đang đá (BOT hoặc trận của người chơi), hình hiện ở đây.")</p>
+        <a class="btn" href="lich">Lịch thi đấu →</a>
+    </section>
+}
+@if (done is { Fixture.Status: FixtureStatus.Played } d)
+{
+    var f = d.Fixture; var s = d.Season;
+    <section class="panel">
+        <p>Trận vừa xong: <b>@s.Clubs[f.Home] @f.HomeGoals – @f.AwayGoals @s.Clubs[f.Away]</b>
+            @if (f.HomePenalties is { } ph) { <small>(pen @ph–@f.AwayPenalties)</small> }
+        </p>
+        <a class="btn" href="tran/@f.Id">📊 Thống kê</a>
+    </section>
+}
+
+@code {
+    MatchPage? cur, done;
+    Guid? doneId;
+    ElementReference video;
+    string? playing;   // playlist đang phát ở trình duyệt
+
+    bool OnAir => cur is not null && Jobs.Running && Jobs.LiveFixtureId == cur.Fixture.Id;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Jobs.Changed += OnJob;
+        await SyncAsync();
+    }
+
+    /// <summary>Trận đang đá = trận của bước hiện tại khi việc còn chạy; đổi trận / việc dừng → trận trước thành "vừa xong".</summary>
+    async Task SyncAsync()
+    {
+        var id = Jobs.Running ? Jobs.CurrentFixtureId : null;
+        if (id != cur?.Fixture.Id)
+        {
+            if (cur is not null) doneId = cur.Fixture.Id;
+            cur = id is { } i ? await Q.MatchAsync(i) : null;
+        }
+        var d = doneId ?? (Jobs.Running ? null : Jobs.CurrentFixtureId);
+        if (d != done?.Fixture.Id || done is { Fixture.Status: not FixtureStatus.Played }) done = d is { } j ? await Q.MatchAsync(j) : null;
+    }
+
+    static string StageText(string? stage) => stage switch
+    {
+        "boot" => "Đang khởi động game…",
+        "menu" => "Game đang vào menu…",
+        "teams" => "Đang chọn đội…",
+        "ready" => "Chờ người chơi bấm Sẵn sàng…",
+        "loading" => "Đang tải trận, hình hiện khi bóng lăn…",
+        "kickoff" => "Trận đang đá nhưng không có hình trực tiếp (ghi hình lỗi?).",
+        "fulltime" => "Hết giờ — đang đọc thống kê.",
+        _ => "Đang chuẩn bị trận…",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        var url = OnAir ? LiveStore.PlaylistUrl(cur!.Fixture.Id) : null;
+        if (url == playing) return;
+        playing = url;
+        try
+        {
+            if (url is null) await JS.InvokeVoidAsync("pesLive.stop");
+            else await JS.InvokeVoidAsync("pesLive.play", video, url);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    void OnJob() => InvokeAsync(async () => { await SyncAsync(); StateHasChanged(); });
+
+    public async ValueTask DisposeAsync()
+    {
+        Jobs.Changed -= OnJob;
+        if (playing is null) return;   // chưa phát — kể cả lúc prerender (không gọi JS được)
+        try { await JS.InvokeVoidAsync("pesLive.stop"); }
+        catch (JSDisconnectedException) { }
+    }
+}

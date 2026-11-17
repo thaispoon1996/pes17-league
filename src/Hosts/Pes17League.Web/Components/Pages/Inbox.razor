@@ -1,0 +1,131 @@
+@page "/hop-thu"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* FM đợt 9 (PO 12/11 duyệt mặc định): hộp thư việc cần làm, họp báo sau trận, nói chuyện cầu thủ, tâm trạng CĐV. Luật MediaRules. *@
+@if (season is null) { return; }
+@{ var me = season.HumanClubId; }
+<div class="fm">
+    <ManagerNav />
+    <header class="fm-head">
+        @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
+        <div class="fm-title">
+            <h1>Hộp thư</h1>
+            <p>@season.Name · việc cần làm trước khi khoá vòng</p>
+        </div>
+    </header>
+    @if (me == Guid.Empty || desk is null) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (message is not null) { <p class="msg">@message</p> }
+
+    <div class="fm-cards">
+        <div><small>Việc cần làm</small><b>@desk.Inbox.Count(i => i.Kind == InboxKind.Task)</b></div>
+        <div><small>Cảnh báo</small><b class="@(desk.Inbox.Any(i => i.Kind == InboxKind.Warning) ? "down" : "")">@desk.Inbox.Count(i => i.Kind == InboxKind.Warning)</b></div>
+        <div><small>Cổ động viên</small><b>@desk.FanMood</b><small>@desk.FanPoints/@(desk.FanGames * 3) điểm @desk.FanGames trận gần nhất</small></div>
+        <div><small>Tinh thần đội</small><b>@(desk.Squad.Count == 0 ? 0 : (int)desk.Squad.Average(s => s.Morale))/100</b></div>
+    </div>
+
+    <section>
+        <ul class="inbox">
+            @foreach (var i in desk.Inbox)
+            {
+                <li class="inbox-@i.Kind.ToString().ToLowerInvariant()">
+                    <span class="inbox-tag">@(i.Kind switch { InboxKind.Task => "Việc", InboxKind.Warning => "Cảnh báo", _ => "Tin" })</span>
+                    <div>
+                        <b>@if (i.Link is not null) { <a href="@i.Link">@i.Title</a> } else { @i.Title }</b>
+                        <p>@i.Body</p>
+                    </div>
+                </li>
+            }
+        </ul>
+    </section>
+
+    @if (desk.Press is { } p)
+    {
+        <section class="offer-form">
+            <h2>Họp báo: @p.GoalsFor–@p.GoalsAgainst với @p.Opponent</h2>
+            <p class="fm-note">“Ông đánh giá thế nào về màn trình diễn của đội hôm nay?”</p>
+            <div class="press-options">
+                <button disabled="@busy" @onclick="() => Press(PressTone.Praise)">Khen ngợi các cầu thủ</button>
+                <button disabled="@busy" @onclick="() => Press(PressTone.Calm)">Điềm tĩnh, tập trung trận tới</button>
+                <button disabled="@busy" @onclick="() => Press(PressTone.Demanding)">Đòi hỏi nhiều hơn</button>
+            </div>
+            <p class="fm-note">Khen sau trận thua làm đội vui nhưng CĐV không thích; đòi hỏi sau trận thua được CĐV ủng hộ nhưng tụt tinh thần.</p>
+        </section>
+    }
+
+    <section class="offer-form">
+        <h2>Nói chuyện với cầu thủ</h2>
+        <div class="offer-grid">
+            <label>Cầu thủ
+                <select @bind="talkPlayer">
+                    <option value="@Guid.Empty">— chọn —</option>
+                    @foreach (var s in desk.Squad.Where(s => !desk.TalkedThisRound.Contains(s.PlayerId)).OrderBy(s => s.Morale))
+                    {
+                        <option value="@s.PlayerId">@s.Name (@s.Position, tinh thần @s.Morale)</option>
+                    }
+                </select>
+            </label>
+            <label>Nội dung
+                <select @bind="talkKind">
+                    <option value="@TalkKind.Praise">Khen phong độ</option>
+                    <option value="@TalkKind.Encourage">Động viên</option>
+                    <option value="@TalkKind.Criticise">Phê bình</option>
+                </select>
+            </label>
+        </div>
+        <p class="fm-note">Mỗi cầu thủ 1 lần/vòng. Khen khi đá tốt (điểm ≥ 7), phê bình khi đá kém và cầu thủ còn tự tin, động viên khi tinh thần thấp.</p>
+        <button class="primary" disabled="@(busy || talkPlayer == Guid.Empty)" @onclick="Talk">Nói chuyện</button>
+    </section>
+</div>
+
+@code {
+    SeasonInfo? season;
+    MediaDesk? desk;
+    Guid talkPlayer;
+    TalkKind talkKind = TalkKind.Encourage;
+    string? message;
+    bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.SeasonAsync();
+        await Load();
+    }
+
+    async Task Load()
+    {
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        desk = await new MediaService(db, Clock).DeskAsync(season.Id, season.HumanClubId);
+    }
+
+    async Task Press(PressTone tone)
+    {
+        busy = true;
+        await using (var db = await Dbs.CreateDbContextAsync())
+        {
+            var (morale, fans) = MediaRules.Press(tone, desk!.Press!.GoalsFor - desk.Press.GoalsAgainst);
+            message = await new MediaService(db, Clock).PressAsync(season!.Id, season.HumanClubId, desk.Press.FixtureId, tone)
+                ?? $"Đã họp báo. Tinh thần đội {morale:+0;-0;0}, CĐV {fans / 10.0:+0.#;-0.#;0}%.";
+        }
+        await Load();
+        busy = false;
+    }
+
+    async Task Talk()
+    {
+        busy = true;
+        var name = desk!.Squad.FirstOrDefault(s => s.PlayerId == talkPlayer)?.Name;
+        await using (var db = await Dbs.CreateDbContextAsync())
+        {
+            var (error, delta) = await new MediaService(db, Clock).TalkAsync(season!.Id, season.HumanClubId, talkPlayer, talkKind);
+            message = error ?? $"{name}: tinh thần {delta:+0;-0;0}" + (delta < 0 ? " — cầu thủ không vui với cuộc nói chuyện." : ".");
+        }
+        talkPlayer = Guid.Empty;
+        await Load();
+        busy = false;
+    }
+}

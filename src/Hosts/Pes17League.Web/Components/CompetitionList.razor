@@ -1,0 +1,39 @@
+@* Danh sách giải của mùa (bước 7, PO chọn 06/11): logo, tên, tiến độ, đầu bảng + điểm (cúp đã sang loại trực tiếp: tên vòng), vô địch khi xong;
+   bấm → trang giải. Compact = cột phải trang chủ. *@
+<ul class="comps @(Compact ? "compact" : "")">
+    @foreach (var s in Items)
+    {
+        var e = s.Edition;
+        var top = s.Champion ?? (s.Played > 0 && s.Stage is null or FixtureStage.LeaguePhase ? s.Leader?.Club : null);
+        <li>
+            <a href="@Season.Url($"giai/{e.CompetitionId}")">
+                <Crest Name="@e.Name" Logo="@e.Logo" />
+                <span class="name"><b>@e.Name</b><small>@Progress(s)</small></span>
+                @if (top is { } c)
+                {
+                    <span class="who" title="@(s.Champion is null ? "Đầu bảng" : "Vô địch")">
+                        @if (s.Champion is not null) { <span>🏆</span> }
+                        <Crest Name="@Season.Clubs[c]" Logo="@Season.Logo(c)" /><span class="n">@Season.Clubs[c]</span>
+                        @if (s.Champion is null && s.Leader is { } l) { <b>@(l.Won * 3 + l.Drawn)</b> }
+                    </span>
+                }
+            </a>
+        </li>
+    }
+</ul>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<CompetitionSummary> Items { get; set; } = [];
+    [Parameter] public bool Compact { get; set; }
+
+    static string Progress(CompetitionSummary s) => s switch
+    {
+        { Champion: not null } => "Đã xong",
+        // Giải bị chốt khi chưa đá hết (mùa dừng giữa chừng, vd alpha).
+        { Edition.Status: EditionStatus.Finished } => s.Stage is null ? $"Dừng ở vòng {s.Played}/{s.Total}" : $"Dừng ở {AdminText.Stage(s.Stage.Value).ToLowerInvariant()}",
+        { Stage: { } st and not FixtureStage.LeaguePhase } => AdminText.Stage(st),
+        { Played: 0 } => s.Stage is null ? $"Chưa đá · {s.Total} vòng" : $"Chưa đá · league phase {s.Total} trận",
+        _ => s.Stage is null ? $"Vòng {s.Played}/{s.Total}" : $"League phase {s.Played}/{s.Total}",
+    };
+}

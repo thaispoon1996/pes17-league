@@ -1,0 +1,76 @@
+@page "/vinh-danh"
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@* Vinh danh: nhà vô địch các giải từng mùa (mùa đang chạy: đội đang dẫn đầu, chưa tính cúp), tủ cúp CLB, vua phá lưới mọi thời đại, kỷ lục.
+   Kỷ lục chuỗi trận tính trong 1 mùa, mọi giải, theo thứ tự khung ngày. *@
+@if (h is not null)
+{
+    <section class="hero hero-honours">
+        <h1>Vinh danh</h1>
+        <p>Bảng vàng của liên đoàn qua các mùa.</p>
+    </section>
+    @foreach (var g in h.Titles.GroupBy(t => (t.SeasonNumber, t.Season)))
+    {
+        <h2 class="section-title">@g.Key.Season</h2>
+        <div class="trophies">
+            @foreach (var t in g)
+            {
+                <div class="trophy @(t.Final ? "won" : "lead")">
+                    <span class="cup">@(t.Final ? "🏆" : "📈")</span>
+                    <span class="comp"><Crest Name="@t.Competition" Logo="@t.Logo" /><span><b>@t.Competition</b><small>@t.Kind</small></span></span>
+                    <a class="who" href="clb/@t.ClubId"><Crest Name="@Club(t.ClubId)" Logo="@h.Logos.GetValueOrDefault(t.ClubId)" Large="true" /><b>@Club(t.ClubId)</b></a>
+                    <small class="state">@(t.Final ? "Vô địch" : "Đang dẫn đầu")</small>
+                </div>
+            }
+        </div>
+    }
+    @if (h.Titles.Count == 0) { <p class="muted">Chưa có giải nào kết thúc.</p> }
+    <div class="grid">
+        <section class="panel">
+            <div class="panel-head"><h2>Kỷ lục</h2></div>
+            @if (h.Records.Count == 0) { <p class="muted">Chưa có trận nào.</p> }
+            <ul class="records">
+                @foreach (var r in h.Records)
+                {
+                    <li>
+                        <span class="l">@r.Label</span>
+                        <b class="v">@r.Value</b>
+                        @if (r.FixtureId is { } fid) { <a href="tran/@fid">@r.Detail</a> } else { <span>@r.Detail</span> }
+                    </li>
+                }
+            </ul>
+        </section>
+        <aside class="stack">
+            <section class="panel">
+                <div class="panel-head"><h2>Tủ cúp</h2></div>
+                @if (h.Cabinet.Count == 0) { <p class="muted">Chưa có danh hiệu.</p> }
+                <ol class="lb-list">
+                    @foreach (var c in h.Cabinet)
+                    {
+                        <li><a href="clb/@c.ClubId"><Crest Name="@Club(c.ClubId)" Logo="@h.Logos.GetValueOrDefault(c.ClubId)" /><span class="n">@Club(c.ClubId)</span><b>@string.Concat(Enumerable.Repeat("🏆", Math.Min(c.Titles, 5)))@(c.Titles > 5 ? $" ×{c.Titles}" : "")</b></a></li>
+                    }
+                </ol>
+            </section>
+            <section class="panel">
+                <div class="panel-head"><h2>Vua phá lưới mọi thời đại</h2></div>
+                @if (h.Scorers.Count == 0) { <p class="muted">Chưa có bàn thắng ghi được tên người ghi.</p> }
+                <ol class="lb-list">
+                    @foreach (var s in h.Scorers)
+                    {
+                        <li><a href="cau-thu/@s.Id"><Crest Name="@Club(s.ClubId)" Logo="@h.Logos.GetValueOrDefault(s.ClubId)" /><span class="n">@s.Name</span><b>@s.Value</b></a></li>
+                    }
+                </ol>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    HonoursPage? h;
+
+    protected override async Task OnInitializedAsync() => h = await Q.HonoursAsync(Store, Clock);
+
+    string Club(Guid id) => h!.Clubs.GetValueOrDefault(id, "?");
+}

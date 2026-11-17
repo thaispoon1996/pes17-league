@@ -1,0 +1,41 @@
+@* Logo trang admin (bước 3b): xem trước, tải ảnh mới (PNG/JPEG/WebP ≤ 1 MB, lưu file ngay), về logo chụp từ game, bỏ logo. DB chỉ đổi khi trang bấm Lưu. *@
+@using Microsoft.AspNetCore.Components.Forms
+@inject LogoStore Logos
+@inject IWebHostEnvironment Env
+
+<div class="logo-edit">
+    @if (Value is { } v) { <img class="logo lg" src="@v" alt="" /> } else { <Crest Name="@Name" Large="true" /> }
+    <label class="upload">Tải logo mới<InputFile accept="image/png,image/jpeg,image/webp" OnChange="Upload" /></label>
+    @if (Default is { } d && d != Value && Env.WebRootFileProvider.GetFileInfo(d.TrimStart('/')).Exists) { <button class="link" @onclick="() => Set(d)">Logo chụp từ game</button> }
+    @if (Value is not null) { <button class="link" @onclick="() => Set(null)">Bỏ logo</button> }
+    @if (error is not null) { <span class="warn">@error</span> }
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    /// <summary>Đầu tên file lưu, vd "club-&lt;id&gt;".</summary>
+    [Parameter, EditorRequired] public string Prefix { get; set; } = "";
+    /// <summary>Tên để vẽ huy hiệu chữ khi chưa có logo.</summary>
+    [Parameter] public string Name { get; set; } = "";
+    /// <summary>Logo chụp từ game (CLB: /img/clubs/&lt;ô PES&gt;.png); null hoặc chưa có file trong wwwroot (ô dư chưa chụp) = không có.</summary>
+    [Parameter] public string? Default { get; set; }
+    string? error;
+
+    async Task Upload(InputFileChangeEventArgs e)
+    {
+        error = null;
+        if (e.File.Size > LogoStore.MaxBytes) { error = "Logo tối đa 1 MB"; return; }
+        using var ms = new MemoryStream();
+        await using (var s = e.File.OpenReadStream(LogoStore.MaxBytes)) await s.CopyToAsync(ms);
+        try { await Set(await Logos.SaveAsync(Prefix, ms.ToArray())); }
+        catch (AdminRuleException x) { error = x.Message; }
+    }
+
+    Task Set(string? value)
+    {
+        error = null;
+        Value = value;
+        return ValueChanged.InvokeAsync(value);
+    }
+}

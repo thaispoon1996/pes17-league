@@ -1,0 +1,378 @@
+@page "/admin/lich"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject IOptionFileStore Store
+@inject IJSRuntime JS
+@inject MatchJobService Jobs
+
+<h1>Quản trị</h1>
+<AdminNav />
+@if (msg is not null) { <p class="msg">@msg</p> }
+
+<div class="panel">
+    <h2>Lịch mùa</h2>
+    <p class="muted">Lịch cả mùa theo khung ngày (PO chốt 06/11): mỗi khung ngày mỗi CLB đá tối đa 1 trận, C1 và C2 đá chung khung.
+        Giải quốc nội vòng tròn (lượt về lặp lượt đi, đổi sân), giải ít vòng hơn nghỉ rải đều. League phase bốc thăm theo 4 nhóm hạt giống rồi chia vòng,
+        không đội nào đá 3 trận sân nhà (hoặc sân khách) liền nhau. Vòng loại trực tiếp tự bốc khi chốt khung ngày cuối của vòng trước
+        (nhánh cố định theo hạng league phase, chung kết bốc chủ nhà).</p>
+    <p class="muted">Thứ tự: chia CLB vào giải (trang Giải đấu) → <b>Xem trước / Bốc lại</b> → <b>Ghi lịch mùa</b> (khoá CLB, hạt giống, luật các giải)
+        → đặt tham số kinh tế (trang Kinh tế) → <b>Bắt đầu mùa</b> (giá cầu thủ, lương, ngân sách đầu mùa, mở kỳ chuyển nhượng khung ngày 1).</p>
+    <div class="filters">
+        <select @bind="seasonId" @bind:after="LoadAsync" disabled="@busy">
+            @foreach (var s in seasons) { <option value="@s.Id">@(s.Name + (s.Status == SeasonStatus.Finished ? " (đã xong)" : ""))</option> }
+        </select>
+        @if (Draft)
+        {
+            <label>Mã bốc thăm <input type="number" min="1" style="width: 110px" @bind="seed" @bind:after="Preview" disabled="@busy" /></label>
+            <button disabled="@busy" @onclick="Redraw">🎲 Bốc lại</button>
+            @if (plan is { Written: false })
+            {
+                <button class="primary" disabled="@busy" @onclick="Apply">Ghi lịch mùa</button>
+            }
+        }
+        @if (plan is { Written: true, SeasonStatus: SeasonStatus.Planned })
+        {
+            <button class="primary" disabled="@busy" @onclick="Start">Bắt đầu mùa</button>
+        }
+    </div>
+    @if (NoFund) { <p class="warn">Chưa đặt quỹ ngân sách đầu mùa: bắt đầu mùa lúc này mọi CLB nhận 0 đồng. <a href="admin/kinh-te">Đặt ở trang Kinh tế →</a></p> }
+    @if (seasonId == OpenSeasonId && humanOptions.Count > 0)
+    {
+        @* CLB của tôi (PO uỷ quyền 06/11): PO tự chọn, mặc định không cầm CLB nào; đổi được cả khi mùa đang đá (CLB cũ về BOT, lịch/BXH giữ nguyên). *@
+        <div class="filters">
+            <label>🎮 CLB của tôi
+                <select @bind="human" disabled="@(busy || Jobs.Running)">
+                    <option value="@Guid.Empty">— Không cầm CLB nào (BOT đá mọi trận) —</option>
+                    @foreach (var g in humanOptions.GroupBy(o => o.Group))
+                    {
+                        <optgroup label="@g.Key">@foreach (var o in g) { <option value="@o.Id">@o.Name</option> }</optgroup>
+                    }
+                </select>
+            </label>
+            <button disabled="@(busy || Jobs.Running || human == currentHuman)" @onclick="SaveHuman">Lưu CLB của tôi</button>
+        </div>
+        @if (Jobs.Running) { <p class="muted">Máy trận đang bận (@Jobs.Title): đổi CLB của tôi sau khi xong.</p> }
+        else if (currentHuman == Guid.Empty) { <p class="warn">Chưa chọn CLB của tôi: BOT sẽ đá mọi trận, không có "trận của tôi".</p> }
+    }
+</div>
+
+@if (plan is not null)
+{
+    <div class="panel">
+        <h2>@(plan.Written ? "Lịch đã ghi" : "Xem trước (chưa ghi)") · @plan.SeasonName</h2>
+        <p>Mã bốc thăm <b>@plan.Seed</b> · @plan.Slots.Count khung ngày · @Count(m => m.Stage == FixtureStage.League) trận quốc nội
+            + @Count(m => m.Stage == FixtureStage.LeaguePhase) trận league phase
+            @if (Count(m => m.Stage > FixtureStage.LeaguePhase) is > 0 and var ko) { <span>+ @ko trận loại trực tiếp đã bốc</span> }
+            @if (plan.Written) { <span>· đã đá @Count(m => m.Status == FixtureStatus.Played)/@Count(_ => true)</span> }
+        </p>
+        <p class="muted">QN = vòng quốc nội · LP = league phase · PO = play-off · 1/8 = vòng 1/8 · TK = tứ kết · BK = bán kết · CK = chung kết; -1/-2 = lượt đi/về.
+            Chạm 1 khung để xem trận.</p>
+        <table class="table">
+            <thead><tr><th>Khung</th><th>Loại</th><th>Trận</th><th class="left">Ghi chú</th>@if (plan.Written) { <th>Trạng thái</th> }</tr></thead>
+            <tbody>
+                @foreach (var s in plan.Slots)
+                {
+                    <tr class="@(open == s.Number ? "open" : "")" @onclick="() => open = open == s.Number ? null : s.Number">
+                        <td class="pos">@s.Number</td>
+                        <td><b>@AdminText.Slot(s.Slot)</b></td>
+                        <td>@(plan.Written && s.Matches.Count > 0 ? $"{s.Matches.Count(m => m.Status == FixtureStatus.Played)}/{s.Matches.Count}" : s.Matches.Count.ToString())</td>
+                        <td class="left"><small>@Note(s)</small></td>
+                        @if (plan.Written) { <td>@(s.Status is { } st ? Fmt.Status(st, SeasonCalendar.HasTransferWindow(s.Number)) : "")</td> }
+                    </tr>
+                    @if (open == s.Number)
+                    {
+                        <tr class="detail">
+                            <td colspan="5">
+                                @foreach (var g in s.Matches.GroupBy(m => m.EditionId))
+                                {
+                                    <p><b>@EditionName(g.Key)</b></p>
+                                    @foreach (var m in g) { <div>@Line(m)</div> }
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @foreach (var cup in plan.Editions.Where(e => e.Competition.Type == CompetitionType.DomesticCup))
+    {
+        var open = plan.Slots.SelectMany(s => s.Matches.Where(m => m.EditionId == cup.EditionId)).ToList();
+        <div class="panel">
+            <div class="panel-head"><h2>@cup.Competition.Name: vòng mở (@open.Count trận)</h2><a href="admin/giai/mua-giai/@cup.EditionId">Mùa giải →</a></div>
+            <p class="muted">Knockout 1 lượt · @cup.Clubs.Count đội · hạt giống mạnh được bye nếu cần. Vòng sau bốc khi vòng trước đá xong.</p>
+            <ul class="fixtures">
+                @foreach (var m in open) { <li>@Club(m.Home) – @Club(m.Away)</li> }
+            </ul>
+        </div>
+    }
+
+    @foreach (var cup in plan.Editions.Where(e => e.Competition.Type == CompetitionType.ContinentalCup))
+    {
+        var rounds = plan.Slots.Where(s => s.Slot.Stage == FixtureStage.LeaguePhase).Select(s => s.Matches.Where(m => m.EditionId == cup.EditionId).ToList()).ToList();
+        var size = Math.Max(1, cup.Clubs.Count / 4);
+        var ties = Ties(cup);
+        <div class="panel">
+            <div class="panel-head"><h2>@cup.Competition.Name: bốc thăm league phase</h2><a href="admin/giai/mua-giai/@cup.EditionId">Mùa giải →</a></div>
+            <p class="muted">Nhóm hạt giống theo thứ tự hạt giống (@size đội/nhóm). Mỗi ô: đối thủ, (N) sân nhà, (K) sân khách.</p>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nhóm</th><th class="left">CLB</th><th>Nước</th>
+                        @for (var r = 1; r <= rounds.Count; r++) { <th>@($"LP{r}")</th> }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (c, i) in cup.Clubs.Select((c, i) => (c, i)))
+                    {
+                        <tr>
+                            <td>@(i / size + 1)</td>
+                            <td class="left">@c.Name</td>
+                            <td>@c.Country</td>
+                            @foreach (var round in rounds) { <td><small>@Opponent(round, c.ClubId)</small></td> }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (ties.Count > 0)
+            {
+                <h3>Vòng loại trực tiếp</h3>
+                <table class="table">
+                    <thead><tr><th>Vòng</th><th class="left">Lượt 1 / chung kết</th><th class="left">Lượt 2</th><th class="left">Đi tiếp</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in ties)
+                        {
+                            <tr>
+                                <td>@AdminText.Stage(t.First.Stage)</td>
+                                <td class="left">@Line(t.First)</td>
+                                <td class="left">@(t.Second is null ? "" : Line(t.Second))</td>
+                                <td class="left">
+                                    @if (t.Winner is { } w)
+                                    {
+                                        <b>@Club(w)</b>
+                                    }
+                                    else if (t.Second is null && t.First.Status == FixtureStatus.Played)
+                                    {
+                                        <a href="admin/giai/mua-giai/@cup.EditionId">Hoà: nhập tỷ số penalty</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+}
+
+@code {
+    List<Season> seasons = [];
+    Guid seasonId;
+    int seed;
+    SeasonSchedule? plan;
+    Dictionary<Guid, string> names = [];
+    int? open;
+    string? msg;
+    bool busy;
+    List<HumanOption> humanOptions = [];
+    Guid human, currentHuman;
+    SeasonEconomy? economy;
+
+    sealed record Tie(ScheduleMatch First, ScheduleMatch? Second, Guid? Winner);
+    sealed record HumanOption(Guid Id, string Name, string Group);
+
+    /// <summary>Mùa chưa bắt đầu và chưa ghi lịch → bốc thăm được.</summary>
+    bool Draft => seasons.FirstOrDefault(s => s.Id == seasonId)?.Status == SeasonStatus.Planned && plan is not { Written: true };
+
+    /// <summary>Mùa chưa kết thúc sớm nhất: chọn CLB của tôi trong mùa này.</summary>
+    Guid OpenSeasonId => seasons.FirstOrDefault(s => s.Status != SeasonStatus.Finished)?.Id ?? Guid.Empty;
+
+    /// <summary>Mùa chưa bắt đầu, quỹ ngân sách đầu mùa chưa đặt (Bắt đầu mùa chia 0 đồng; bù được 1 lần ở trang Kinh tế).</summary>
+    bool NoFund => seasons.FirstOrDefault(s => s.Id == seasonId)?.Status == SeasonStatus.Planned && (economy?.InitialBudgetFund ?? 0) == 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSeasonsAsync();
+        seasonId = (seasons.FirstOrDefault(s => s.Status != SeasonStatus.Finished) ?? seasons.LastOrDefault())?.Id ?? Guid.Empty;
+        if (seasonId != Guid.Empty) await LoadAsync();
+    }
+
+    async Task LoadSeasonsAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        seasons = await db.Seasons.AsNoTracking().OrderBy(s => s.Number).ToListAsync();
+    }
+
+    /// <summary>Lịch đã ghi; mùa chưa ghi → xem trước với mã ngẫu nhiên.</summary>
+    async Task LoadAsync()
+    {
+        (msg, plan, open) = (null, null, null);
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await LoadHumanAsync(db);
+            economy = await db.SeasonEconomies.AsNoTracking().SingleOrDefaultAsync(e => e.SeasonId == seasonId);
+            var svc = new SeasonScheduleService(db, Clock);
+            plan = await svc.ViewAsync(seasonId);
+            if (plan is null)
+            {
+                seed = Random.Shared.Next(1, 1_000_000);
+                plan = await svc.PreviewAsync(seasonId, seed);
+            }
+            await NamesAsync(db);
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    /// <summary>CLB dự mùa đang mở (nhóm theo giải quốc nội, CLB chỉ dự cúp xếp sau) và CLB đang cầm (phân công Human còn mở).</summary>
+    async Task LoadHumanAsync(ClubsDbContext db)
+    {
+        humanOptions = [];
+        if (seasonId != OpenSeasonId) return;
+        var rows = await (from ec in db.EditionClubs
+                          join e in db.Editions on ec.EditionId equals e.Id
+                          join comp in db.Competitions on e.CompetitionId equals comp.Id
+                          join c in db.Clubs on ec.ClubId equals c.Id
+                          where e.SeasonId == seasonId && c.Status == ClubStatus.Active
+                          orderby comp.Type == CompetitionType.DomesticLeague ? 0 : 1, comp.Tier, comp.Name, c.Name   // Type lưu dạng chữ
+                          select new HumanOption(c.Id, c.Name, comp.Name)).ToListAsync();
+        if (rows.Count == 0)   // mùa alpha 1 giải: CLB của mùa
+            rows = await (from sc in db.SeasonClubs join c in db.Clubs on sc.ClubId equals c.Id
+                          where sc.SeasonId == seasonId orderby c.Name select new HumanOption(c.Id, c.Name, "CLB")).ToListAsync();
+        currentHuman = human = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human && a.ParticipantId == null).Select(a => a.ClubId).FirstOrDefaultAsync();
+        if (currentHuman != Guid.Empty && rows.All(o => o.Id != currentHuman))
+            rows.Insert(0, new(currentHuman, await db.Clubs.Where(c => c.Id == currentHuman).Select(c => c.Name).SingleAsync(), "Đang cầm, không dự mùa này"));
+        humanOptions = [.. rows.DistinctBy(o => o.Id)];
+    }
+
+    async Task SaveHuman()
+    {
+        var name = humanOptions.FirstOrDefault(o => o.Id == human)?.Name;
+        var old = humanOptions.FirstOrDefault(o => o.Id == currentHuman)?.Name;
+        if (!await JS.InvokeAsync<bool>("confirm", (name is null ? "Không cầm CLB nào? BOT sẽ đá mọi trận." : $"Cầm {name}? Các trận chưa đá của {name} chờ bạn đá.")
+            + (old is null ? "" : $"\n{old} về BOT.") + "\nLịch, BXH, kết quả đã đá giữ nguyên.")) return;
+        busy = true;
+        try
+        {
+            if (Jobs.Running) { msg = $"Máy trận đang bận ({Jobs.Title}): đổi sau khi xong."; return; }
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new ClubAdminService(db, Clock).SetHumanClubAsync(human == Guid.Empty ? null : human, AdminText.Actor);
+            currentHuman = human;
+            msg = name is null ? "Đã bỏ cầm CLB: BOT đá mọi trận." : $"CLB của tôi: {name}.";
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
+
+    async Task Preview()
+    {
+        (msg, plan, open) = (null, null, null);
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            plan = await new SeasonScheduleService(db, Clock).PreviewAsync(seasonId, seed);
+            await NamesAsync(db);
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    async Task Redraw()
+    {
+        seed = Random.Shared.Next(1, 1_000_000);
+        await Preview();
+    }
+
+    async Task NamesAsync(ClubsDbContext db)
+    {
+        var ids = plan!.Slots.SelectMany(s => s.Matches).SelectMany(m => new[] { m.Home, m.Away }).Distinct().ToList();
+        names = await db.Clubs.AsNoTracking().Where(c => ids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
+    }
+
+    async Task Apply()
+    {
+        var p = plan!;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Ghi lịch {p.SeasonName} theo mã {p.Seed}: {p.Slots.Count} khung ngày, {p.Slots.Sum(s => s.Matches.Count)} trận?\n"
+            + "Sau khi ghi không chia lại CLB, không đổi hạt giống hay luật các giải được.")) return;
+        busy = true;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            plan = await new SeasonScheduleService(db, Clock).ApplyAsync(seasonId, p.Seed!.Value, AdminText.Actor);
+            msg = $"Đã ghi lịch {p.SeasonName}: {plan.Slots.Count} khung ngày, {plan.Slots.Sum(s => s.Matches.Count)} trận. Bấm \"Bắt đầu mùa\" khi sẵn sàng.";
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
+
+    async Task Start()
+    {
+        var name = plan!.SeasonName;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Bắt đầu {name}?\nTính giá cầu thủ, lương hợp đồng nhập, ngân sách đầu mùa cho mọi CLB và mở kỳ chuyển nhượng khung ngày 1."
+            + (currentHuman == Guid.Empty ? "\nChưa chọn CLB của tôi: BOT sẽ đá mọi trận (chọn được cả khi mùa đang đá)." : "")
+            + (NoFund ? "\nQuỹ ngân sách đầu mùa = 0: mọi CLB nhận 0 đồng (đặt ở trang Kinh tế; bù được 1 lần sau khi bắt đầu)." : ""))) return;
+        busy = true;
+        try
+        {
+            SeasonStartResult r;
+            await using (var db = await Dbs.CreateDbContextAsync())
+                r = await new CompetitionService(db, Store, Clock).StartScheduledSeasonAsync(seasonId, AdminText.Actor);
+            await LoadSeasonsAsync();
+            await LoadAsync();
+            msg = r.Ok ? $"Đã bắt đầu {name}: {r.Matchdays} khung ngày, ngân sách đầu mùa cho {r.Budgets?.Count ?? 0} CLB, kỳ chuyển nhượng khung ngày 1 đang mở."
+                : AdminText.Error(r.Error!.Value);
+        }
+        finally { busy = false; }
+    }
+
+    int Count(Func<ScheduleMatch, bool> where) => plan!.Slots.Sum(s => s.Matches.Count(where));
+
+    string Club(Guid id) => names.GetValueOrDefault(id, "?");
+
+    string EditionName(Guid id) => plan!.Editions.FirstOrDefault(e => e.EditionId == id)?.Competition.Name ?? "Giải đơn";
+
+    string Line(ScheduleMatch m) => $"{Club(m.Home)} – {Club(m.Away)}"
+        + (m.Status == FixtureStatus.Played ? $": {Fmt.Score(m.HomeGoals, m.AwayGoals, m.HomePenalties, m.AwayPenalties)}" : "");
+
+    /// <summary>Khung quốc nội: giải nghỉ; khung cúp: số trận từng giải (chưa bốc → chờ vòng trước).</summary>
+    string Note(ScheduleSlot s)
+    {
+        if (s.Slot.Stage is null)
+        {
+            var rest = plan!.Editions.Where(e => e.Competition.Type == CompetitionType.DomesticLeague && !s.Matches.Any(m => m.EditionId == e.EditionId))
+                .Select(e => e.Competition.Name).ToList();
+            return rest.Count == 0 ? "" : $"Nghỉ: {string.Join(", ", rest)}";
+        }
+        if (s.Matches.Count == 0) return "Bốc thăm khi chốt khung ngày cuối của vòng trước";
+        return string.Join(" · ", s.Matches.GroupBy(m => m.EditionId).Select(g => $"{EditionName(g.Key)} {g.Count()}"));
+    }
+
+    string Opponent(List<ScheduleMatch> round, Guid club) => round.FirstOrDefault(m => m.Home == club || m.Away == club) is not { } m ? ""
+        : (m.Home == club ? $"{Club(m.Away)} (N)" : $"{Club(m.Home)} (K)")
+          + (m.Status != FixtureStatus.Played ? "" : m.Home == club ? $" {m.HomeGoals}–{m.AwayGoals}" : $" {m.AwayGoals}–{m.HomeGoals}");
+
+    /// <summary>Cặp loại trực tiếp theo vòng (lượt 1 đội xếp dưới chủ nhà, lượt 2 đội xếp trên); chung kết 1 trận.</summary>
+    List<Tie> Ties(ScheduleEdition cup) => [.. plan!.Slots.SelectMany(s => s.Matches)
+        .Where(m => m.EditionId == cup.EditionId && m.Stage > FixtureStage.LeaguePhase)
+        .GroupBy(m => m.TieId ?? m.FixtureId)
+        .Select(g =>
+        {
+            var first = g.OrderBy(m => m.Leg).First();
+            var second = g.SingleOrDefault(m => m.Leg == 2);
+            return new Tie(first, second, Winner(first, second));
+        })
+        .OrderBy(t => t.First.Stage)];
+
+    static Guid? Winner(ScheduleMatch first, ScheduleMatch? second)
+    {
+        if (first.Status != FixtureStatus.Played) return null;
+        if (second is null)
+            return first.HomeGoals != first.AwayGoals ? (first.HomeGoals > first.AwayGoals ? first.Home : first.Away)
+                : first.HomePenalties is { } h && first.AwayPenalties is { } a && h != a ? (h > a ? first.Home : first.Away) : null;
+        if (second.Status != FixtureStatus.Played) return null;
+        return CupDraw.TieWinner(new KnockoutTie<Guid>(first.Stage, second.Home, second.Away),
+            (first.HomeGoals!.Value, first.AwayGoals!.Value), (second.HomeGoals!.Value, second.AwayGoals!.Value));
+    }
+}

@@ -1,0 +1,196 @@
+@page "/admin/giai/mua-giai/{Id:guid}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<h1>@(edition is null ? "Mùa giải" : $"{comp.Name} — {season.Name}")</h1>
+<AdminNav />
+@if (edition is null) { if (loaded) { <p>Không tìm thấy mùa giải.</p> } return; }
+@{
+    var cup = comp.Type is CompetitionType.ContinentalCup or CompetitionType.DomesticCup;
+    var draft = edition.Status == EditionStatus.Draft;
+}
+<p><a href="admin/giai/@comp.Id">← @comp.Name</a></p>
+@if (msg is not null) { <p class="msg">@msg</p> }
+@if (final is { } fin)
+{
+    <div class="panel">
+        <h2>Chung kết chờ nhập penalty</h2>
+        <p>@fin.Home @fin.Goals – @fin.Goals @fin.Away sau 120': không đọc được loạt penalty trên màn hình. Xem video trận rồi nhập tỷ số.</p>
+        @if (fin.Recording is { } rec) { <p class="muted">Video: @Path.GetFileName(rec) (thư mục recordings, giữ 7 ngày)</p> }
+        <div class="filters">
+            <label>@fin.Home <input type="number" min="0" @bind="penHome" /></label>
+            <label>@fin.Away <input type="number" min="0" @bind="penAway" /></label>
+            <button class="primary" disabled="@(penHome is null || penAway is null)" @onclick="SavePenalties">Lưu</button>
+        </div>
+    </div>
+}
+<div class="cards">
+    <div><small>Trạng thái</small><b>@AdminText.Status(edition.Status)</b></div>
+    <div><small>Số CLB</small><b>@clubs.Count@(cup && comp.Rules.LeaguePhaseTeams is { } n ? $" / {n}" : "")</b></div>
+    <div><small>Luật</small><span>@AdminText.Rules(comp, all)</span></div>
+</div>
+
+@if (draft)
+{
+    <div class="panel">
+        <h2>Thêm CLB</h2>
+        <div class="filters">
+            <select @bind="pick">
+                <option value="">— chọn CLB (@Candidates().Count()) —</option>
+                @foreach (var c in Candidates()) { <option value="@c.Id">@c.Name@(c.Country is null ? "" : $" ({c.Country})")</option> }
+            </select>
+            <label>Hạt giống <input type="number" min="1" @bind="pickSeed" /></label>
+            @if (!cup) { <label><input type="checkbox" @bind="anyCountry" /> Mọi nước</label> }
+            <button class="primary" disabled="@(pick == "")" @onclick="Add">Thêm</button>
+        </div>
+        <p class="muted">CLB đang hoạt động của mùa @season.Name, chưa dự @(cup ? "cúp" : "giải quốc gia") nào khác mùa này@(cup ? "" : $"; mặc định chỉ CLB nước {comp.Country}").</p>
+    </div>
+}
+
+<div class="panel">
+    <h2>CLB tham dự</h2>
+    @if (clubs.Count == 0) { <p class="muted">Chưa có CLB.</p> }
+    else
+    {
+        <table class="table">
+            <thead><tr><th>Hạt giống</th><th></th><th class="left">CLB</th><th>Nước</th><th></th></tr></thead>
+            <tbody @key="ver">
+                @foreach (var c in clubs.OrderBy(c => c.Seed ?? int.MaxValue).ThenBy(c => c.Name))
+                {
+                    <tr>
+                        <td>
+                            @if (draft) { <input type="number" min="1" value="@c.Seed" @onchange="e => SetSeed(c, e.Value as string)" /> }
+                            else { @c.Seed }
+                        </td>
+                        <td>@if (c.LogoPath is { } logo) { <img class="logo" src="@logo" alt="" /> } else { <Crest Name="@c.Name" /> }</td>
+                        <td class="left">@c.Name</td>
+                        <td>@c.Country</td>
+                        <td>@if (draft) { <button class="link" @onclick="() => Remove(c)">Bỏ</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (draft)
+    {
+        <div class="actions"><button class="danger" @onclick="Delete">Xoá mùa giải</button></div>
+    }
+    else { <p class="muted">Đã xếp lịch: không sửa CLB được.</p> }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    CompetitionEdition? edition;
+    Competition comp = null!;
+    Season season = null!;
+    List<Competition> all = [];
+    List<Row> clubs = [], pool = [];
+    HashSet<Guid> taken = [];
+    string pick = "";
+    int? pickSeed, penHome, penAway;
+    bool anyCountry, loaded;
+    int ver;
+    string? msg;
+    PendingFinal? final;
+
+    sealed record Row(Guid Id, string Name, string? Country, string? LogoPath, int? Seed);
+    sealed record PendingFinal(Guid Id, string Home, string Away, int Goals, string? Recording);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        msg = null;
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        edition = await db.Editions.AsNoTracking().SingleOrDefaultAsync(e => e.Id == Id);
+        loaded = true;
+        if (edition is null) return;
+        all = await db.Competitions.AsNoTracking().ToListAsync();
+        comp = all.Single(c => c.Id == edition.CompetitionId);
+        season = await db.Seasons.AsNoTracking().SingleAsync(s => s.Id == edition.SeasonId);
+        clubs = await (from ec in db.EditionClubs
+                       where ec.EditionId == Id
+                       join c in db.Clubs on ec.ClubId equals c.Id
+                       select new Row(c.Id, c.Name, c.Country, c.LogoPath, ec.Seed)).ToListAsync();
+        // 1 CLB/mùa: tối đa 1 giải quốc gia + 1 cúp → bỏ CLB đã có trong mùa giải cùng loại.
+        var sameType = all.Where(c => c.Type == comp.Type).Select(c => c.Id).ToList();
+        taken = (await (from ec in db.EditionClubs
+                        join e in db.Editions on ec.EditionId equals e.Id
+                        where e.SeasonId == season.Id && sameType.Contains(e.CompetitionId)
+                        select ec.ClubId).ToListAsync()).ToHashSet();
+        var active = db.Clubs.Where(c => c.Status == ClubStatus.Active);
+        if (season.PatchVersionId is { } patch) active = active.Where(c => db.ClubPesMappings.Any(m => m.ClubId == c.Id && m.PatchVersionId == patch));
+        pool = await active.Select(c => new Row(c.Id, c.Name, c.Country, c.LogoPath, null)).ToListAsync();
+        final = await (from f in db.Fixtures
+                       where f.CompetitionEditionId == Id && f.Stage == FixtureStage.Final && f.Status == FixtureStatus.Played
+                           && f.HomeGoals == f.AwayGoals && f.HomePenalties == null
+                       join h in db.Clubs on f.HomeClubId equals h.Id
+                       join a in db.Clubs on f.AwayClubId equals a.Id
+                       select new PendingFinal(f.Id, h.Name, a.Name, f.HomeGoals!.Value,
+                           db.MatchAttempts.Where(x => x.FixtureId == f.Id && x.Outcome == MatchAttemptOutcome.Finished).Select(x => x.RecordingPath).FirstOrDefault()))
+            .FirstOrDefaultAsync();
+    }
+
+    async Task SavePenalties()
+    {
+        if (final is null || penHome is not { } h || penAway is not { } a) return;
+        if (!await Try(s => s.SetFinalPenaltiesAsync(final.Id, h, a, AdminText.Actor))) return;
+        (penHome, penAway) = (null, null);
+        await LoadAsync();
+        msg = "Đã lưu tỷ số penalty.";
+    }
+
+    IEnumerable<Row> Candidates() => pool
+        .Where(c => !taken.Contains(c.Id) && (comp.Type == CompetitionType.ContinentalCup || anyCountry || c.Country == comp.Country))
+        .OrderBy(c => c.Name);
+
+    async Task<bool> Try(Func<CompetitionAdminService, Task> action)
+    {
+        msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await action(new CompetitionAdminService(db, Clock));
+            return true;
+        }
+        catch (AdminRuleException e) { msg = e.Message; return false; }
+    }
+
+    async Task Add()
+    {
+        if (!Guid.TryParse(pick, out var clubId)) return;
+        if (!await Try(s => s.SetEditionClubAsync(Id, clubId, pickSeed, AdminText.Actor))) return;
+        (pick, pickSeed) = ("", null);
+        await LoadAsync();
+    }
+
+    async Task SetSeed(Row c, string? value)
+    {
+        int? seed = null;
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            if (!int.TryParse(value, out var v)) { msg = "Hạt giống phải là số"; ver++; return; }
+            seed = v;
+        }
+        if (!await Try(s => s.SetEditionClubAsync(Id, c.Id, seed, AdminText.Actor))) ver++;     // vẽ lại ô nhập về giá trị cũ
+        await LoadAsync();
+    }
+
+    async Task Remove(Row c)
+    {
+        if (await Try(s => s.RemoveEditionClubAsync(Id, c.Id, AdminText.Actor))) await LoadAsync();
+    }
+
+    async Task Delete()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Xoá mùa giải {comp.Name} — {season.Name} ({clubs.Count} CLB)?")) return;
+        if (await Try(s => s.DeleteEditionAsync(Id, AdminText.Actor))) Nav.NavigateTo($"admin/giai/{comp.Id}");
+    }
+}

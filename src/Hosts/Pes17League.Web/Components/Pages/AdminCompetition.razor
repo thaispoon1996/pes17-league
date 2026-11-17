@@ -1,0 +1,334 @@
+@page "/admin/giai/{Key}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Key = "moi" (thêm giải) hoặc Id giải. Một route để Blazor luôn truyền Key khi chuyển giữa thêm ↔ sửa trên cùng component. *@
+<h1>@(comp?.Name ?? (isNew ? "Thêm giải" : "Giải đấu"))</h1>
+<AdminNav />
+@if (!found) { if (loaded) { <p>Không tìm thấy giải.</p> } return; }
+<p><a href="admin/giai">← Danh sách giải</a></p>
+@foreach (var w in CompetitionAdminService.Warnings(all).Where(w => comp is not null && w.Contains(comp.Name))) { <p class="warn">⚠ @w</p> }
+@if (comp?.Status == CompetitionStatus.Archived) { <p class="warn">Giải đã lưu trữ: không tạo được mùa giải mới.</p> }
+@if (msg is not null) { <p class="msg">@msg</p> }
+
+@{
+    var continental = form.Type == CompetitionType.ContinentalCup;
+    var domesticCup = form.Type == CompetitionType.DomesticCup;
+    var cup = continental || domesticCup;
+    var rules = form.Rules();
+    var errors = CompetitionAdminService.Validate(form.Type, rules);
+}
+<div class="panel">
+    <h2>Thông tin</h2>
+    <div class="fields">
+        <label>Tên giải <input @bind="form.Name" maxlength="100" /></label>
+        <label>Tên ngắn <input @bind="form.ShortName" maxlength="20" placeholder="ENG 1, C1…" /></label>
+        <label>
+            Loại
+            <select @bind="form.Type" @bind:after="TypeChanged" disabled="@(editions.Count > 0)">
+                <option value="@CompetitionType.DomesticLeague">Giải quốc gia</option>
+                <option value="@CompetitionType.DomesticCup">Cúp quốc gia</option>
+                <option value="@CompetitionType.ContinentalCup">Cúp châu lục</option>
+            </select>
+        </label>
+        @if (continental)
+        {
+            <label>Cúp <select @bind="form.Tier"><option value="1">C1 (cúp hạng 1)</option><option value="2">C2 (cúp hạng 2)</option></select></label>
+        }
+        else if (domesticCup)
+        {
+            <label>Mã nước (FIFA) <input @bind="form.Country" maxlength="3" placeholder="ENG" /></label>
+        }
+        else
+        {
+            <label>Mã nước (FIFA) <input @bind="form.Country" maxlength="3" placeholder="ENG" /></label>
+            <label>Hạng <input type="number" min="1" @bind="form.Tier" /></label>
+        }
+    </div>
+    <LogoUpload @bind-Value="form.LogoPath" Prefix="@(comp is null ? "comp-moi" : $"comp-{comp.Id:N}")" Name="@form.Name" />
+    @if (comp is not null)
+    {
+        <ScoreboardUpload CompetitionId="comp.Id" />
+    }
+</div>
+
+<div class="panel">
+    <h2>Luật</h2>
+    <div class="fields">
+        <label>Điểm thắng <input type="number" @bind="form.PointsWin" /></label>
+        <label>Điểm hoà <input type="number" @bind="form.PointsDraw" /></label>
+        <label>Điểm thua <input type="number" @bind="form.PointsLoss" /></label>
+        <label>
+            @(continental ? "Mỗi cặp loại trực tiếp" : "Số lượt")
+            <select @bind="form.Legs" disabled="@domesticCup"><option value="1">1 lượt</option><option value="2">2 lượt (đi + về)</option></select>
+        </label>
+        @if (continental)
+        {
+            <label>Số đội league phase <input type="number" min="4" @bind="form.LeaguePhaseTeams" /></label>
+            <label>Số trận mỗi đội <input type="number" min="2" @bind="form.LeaguePhaseMatches" /></label>
+            <label>Vào thẳng: hạng 1 tới <input type="number" min="0" @bind="form.DirectKnockoutPlaces" /></label>
+            <label>Đá play-off: tới hạng <input type="number" min="0" @bind="form.PlayoffPlaces" /></label>
+            <label>Suất CLB lẻ (ngoài 4 nước) <input type="number" min="0" @bind="form.LooseClubPlaces" /></label>
+        }
+        else if (domesticCup)
+        {
+            <p class="muted">Knockout thuần 1 lượt; đội tham dự = mọi CLB hạng 1 và hạng 2 cùng nước (chia tự động).</p>
+        }
+        else
+        {
+            <label>Suất lên hạng <input type="number" min="0" @bind="form.PromotionPlaces" /></label>
+            <label>
+                Lên hạng vào
+                <select @bind="form.PromotesTo"><option value="">— không —</option>@foreach (var c in Links(form.PromotesTo)) { <option value="@c.Id">@LinkName(c)</option> }</select>
+            </label>
+            <label>Suất xuống hạng <input type="number" min="0" @bind="form.RelegationPlaces" /></label>
+            <label>
+                Xuống hạng vào
+                <select @bind="form.RelegatesTo"><option value="">— không —</option>@foreach (var c in Links(form.RelegatesTo)) { <option value="@c.Id">@LinkName(c)</option> }</select>
+            </label>
+            <label>Suất @CupName(1) <input type="number" min="0" @bind="form.ContinentalPlaces" /></label>
+            <label>Suất @CupName(2) <input type="number" min="0" @bind="form.SecondaryContinentalPlaces" /></label>
+        }
+    </div>
+    @foreach (var e in errors) { <p class="warn">@e</p> }
+    @if (cup && errors.Count == 0)
+    {
+        <p class="muted">@AdminText.Rules(new Competition { Name = form.Name, Type = form.Type, Country = form.Country, Tier = form.Tier, Rules = rules }, all)</p>
+    }
+    <p class="muted">Đổi luật chỉ áp dụng cho mùa giải chưa xếp lịch; mùa giải đã xếp lịch giữ luật lúc xếp.</p>
+    <div class="actions">
+        <button class="primary" @onclick="Save">@(comp is null ? "Tạo giải" : "Lưu")</button>
+        @if (comp is not null && (comp.Status == CompetitionStatus.Active || editions.Count == 0))
+        {
+            <button class="danger" @onclick="DeleteOrArchive">@(editions.Count > 0 ? "Lưu trữ" : "Xoá")</button>
+        }
+        @if (comp?.Status == CompetitionStatus.Archived) { <button @onclick="Restore">Khôi phục</button> }
+    </div>
+</div>
+
+@if (comp is not null)
+{
+    <div class="panel">
+        <h2>Mùa giải</h2>
+        @if (editions.Count > 0)
+        {
+            <table class="table">
+                <thead><tr><th class="left">Mùa</th><th>Trạng thái</th><th>CLB</th></tr></thead>
+                <tbody>
+                    @foreach (var e in editions)
+                    {
+                        <tr @onclick='() => Nav.NavigateTo($"admin/giai/mua-giai/{e.Id}")'>
+                            <td class="left">@e.Season</td><td>@AdminText.Status(e.Status)</td>
+                            <td>@e.Clubs@(cup && comp.Rules.LeaguePhaseTeams is { } n ? $" / {n}" : "")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else { <p class="muted">Chưa có mùa giải.</p> }
+        @if (comp.Status == CompetitionStatus.Active)
+        {
+            <div class="actions">
+                @foreach (var s in openSeasons.Where(s => editions.All(e => e.SeasonId != s.Id)))
+                {
+                    <button @onclick="() => CreateEdition(s)">Tạo mùa giải @s.Name</button>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    List<Competition> all = [];
+    Competition? comp;
+    Form form = new();
+    List<EditionRow> editions = [];
+    List<Season> openSeasons = [];
+    bool isNew, found, loaded;
+    string? msg;
+
+    sealed record EditionRow(Guid Id, Guid SeasonId, string Season, EditionStatus Status, int Clubs);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        msg = null;
+        isNew = Key == "moi";
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        all = await db.Competitions.AsNoTracking().ToListAsync();
+        comp = Guid.TryParse(Key, out var id) ? all.FirstOrDefault(c => c.Id == id) : null;
+        found = comp is not null || isNew;
+        loaded = true;
+        form = comp is null ? new() : Form.From(comp);
+        editions = [];
+        if (comp is null) return;
+        editions = await (from e in db.Editions
+                          where e.CompetitionId == id
+                          join s in db.Seasons on e.SeasonId equals s.Id
+                          orderby s.Number
+                          select new EditionRow(e.Id, s.Id, s.Name, e.Status, db.EditionClubs.Count(x => x.EditionId == e.Id))).ToListAsync();
+        openSeasons = await db.Seasons.AsNoTracking().Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).ToListAsync();
+    }
+
+    /// <summary>Giải quốc gia cùng nước (và giải đang liên kết, kể cả khác nước) để chọn lên/xuống hạng.</summary>
+    IEnumerable<Competition> Links(string current) => all
+        .Where(c => c.Id != comp?.Id && c.Type == CompetitionType.DomesticLeague
+            && (string.Equals(c.Country, form.Country?.Trim(), StringComparison.OrdinalIgnoreCase) || c.Id.ToString() == current))
+        .OrderBy(c => c.Country).ThenBy(c => c.Tier);
+
+    static string LinkName(Competition c) => $"{c.Name} (hạng {c.Tier})" + (c.Status == CompetitionStatus.Archived ? " · lưu trữ" : "");
+
+    string CupName(int tier) => all.FirstOrDefault(c => c.Type == CompetitionType.ContinentalCup && c.Tier == tier && c.Status == CompetitionStatus.Active)?.Name
+        ?? $"C{tier}";
+
+    void TypeChanged()
+    {
+        if (form.Type == CompetitionType.DomesticCup)
+        {
+            form.Legs = 1;
+            form.Tier = null;
+            form.SetCupFormat(new());
+            return;
+        }
+        if (form.Type != CompetitionType.ContinentalCup) return;
+        if (form.LeaguePhaseTeams is null) form.SetCupFormat(CompetitionAdminService.CupRules(0));
+        if (form.Tier is not (1 or 2)) form.Tier = 1;
+    }
+
+    async Task<bool> Try(Func<CompetitionAdminService, Task> action)
+    {
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await action(new CompetitionAdminService(db, Clock));
+            return true;
+        }
+        catch (AdminRuleException e) { msg = e.Message; return false; }
+    }
+
+    async Task Save()
+    {
+        msg = null;
+        if (comp is null)
+        {
+            Competition? created = null;
+            if (await Try(async s => created = await s.CreateAsync(form.Input(), AdminText.Actor))) Nav.NavigateTo($"admin/giai/{created!.Id}");
+            return;
+        }
+        if (!await Try(s => s.UpdateAsync(comp.Id, form.Input(), AdminText.Actor))) return;
+        await LoadAsync();
+        msg = "Đã lưu.";
+    }
+
+    async Task DeleteOrArchive()
+    {
+        var c = comp!;
+        var archive = editions.Count > 0;
+        if (!await JS.InvokeAsync<bool>("confirm", archive ? $"Lưu trữ {c.Name}? Đã có mùa giải nên không xoá hẳn được." : $"Xoá hẳn {c.Name}?")) return;
+        msg = null;
+        var deleted = false;
+        if (!await Try(async s => deleted = await s.DeleteOrArchiveAsync(c.Id, AdminText.Actor))) return;
+        if (deleted) { Nav.NavigateTo("admin/giai"); return; }
+        await LoadAsync();
+        msg = "Đã lưu trữ.";
+    }
+
+    async Task Restore()
+    {
+        msg = null;
+        if (!await Try(s => s.RestoreAsync(comp!.Id, AdminText.Actor))) return;
+        await LoadAsync();
+        msg = "Đã khôi phục.";
+    }
+
+    async Task CreateEdition(Season season)
+    {
+        msg = null;
+        CompetitionEdition? e = null;
+        if (await Try(async s => e = await s.CreateEditionAsync(comp!.Id, season.Id, AdminText.Actor))) Nav.NavigateTo($"admin/giai/mua-giai/{e!.Id}");
+    }
+
+    /// <summary>Ô nhập của trang; liên kết lên/xuống hạng giữ dạng chuỗi Id ("" = không) cho select.</summary>
+    sealed class Form
+    {
+        public string Name { get; set; } = "";
+        public string? ShortName { get; set; }
+        public CompetitionType Type { get; set; }
+        public string? Country { get; set; }
+        public int? Tier { get; set; } = 1;
+        public string? LogoPath { get; set; }
+        public string PromotesTo { get; set; } = "";
+        public string RelegatesTo { get; set; } = "";
+        public int PointsWin { get; set; } = 3;
+        public int PointsDraw { get; set; } = 1;
+        public int PointsLoss { get; set; }
+        public int Legs { get; set; } = 2;
+        public int PromotionPlaces { get; set; }
+        public int RelegationPlaces { get; set; }
+        public int ContinentalPlaces { get; set; }
+        public int SecondaryContinentalPlaces { get; set; }
+        public int? LeaguePhaseTeams { get; set; }
+        public int? LeaguePhaseMatches { get; set; }
+        public int? DirectKnockoutPlaces { get; set; }
+        public int? PlayoffPlaces { get; set; }
+        public int? LooseClubPlaces { get; set; }
+
+        bool Continental => Type == CompetitionType.ContinentalCup;
+        bool DomesticCup => Type == CompetitionType.DomesticCup;
+
+        public static Form From(Competition c)
+        {
+            var r = c.Rules;
+            var f = new Form
+            {
+                Name = c.Name, ShortName = c.ShortName, Type = c.Type, Country = c.Country, Tier = c.Tier, LogoPath = c.LogoPath,
+                PromotesTo = c.PromotesToId?.ToString() ?? "", RelegatesTo = c.RelegatesToId?.ToString() ?? "",
+                PointsWin = r.PointsWin, PointsDraw = r.PointsDraw, PointsLoss = r.PointsLoss, Legs = r.Legs,
+                PromotionPlaces = r.PromotionPlaces, RelegationPlaces = r.RelegationPlaces,
+                ContinentalPlaces = r.ContinentalPlaces, SecondaryContinentalPlaces = r.SecondaryContinentalPlaces,
+            };
+            f.SetCupFormat(r);
+            return f;
+        }
+
+        public void SetCupFormat(CompetitionRules r)
+        {
+            LeaguePhaseTeams = r.LeaguePhaseTeams;
+            LeaguePhaseMatches = r.LeaguePhaseMatches;
+            DirectKnockoutPlaces = r.DirectKnockoutPlaces;
+            PlayoffPlaces = r.PlayoffPlaces;
+            LooseClubPlaces = r.LooseClubPlaces;
+        }
+
+        /// <summary>Luật theo loại: giải quốc gia bỏ phần cúp; cúp châu lục bỏ suất lên/xuống; cúp quốc gia chỉ Legs=1.</summary>
+        public CompetitionRules Rules() => Type switch
+        {
+            CompetitionType.ContinentalCup => new()
+            {
+                PointsWin = PointsWin, PointsDraw = PointsDraw, PointsLoss = PointsLoss, Legs = Legs, LeaguePhaseTeams = LeaguePhaseTeams,
+                LeaguePhaseMatches = LeaguePhaseMatches, DirectKnockoutPlaces = DirectKnockoutPlaces, PlayoffPlaces = PlayoffPlaces, LooseClubPlaces = LooseClubPlaces,
+            },
+            CompetitionType.DomesticCup => new() { PointsWin = PointsWin, PointsDraw = PointsDraw, PointsLoss = PointsLoss, Legs = 1 },
+            _ => new()
+            {
+                PointsWin = PointsWin, PointsDraw = PointsDraw, PointsLoss = PointsLoss, Legs = Legs, PromotionPlaces = PromotionPlaces,
+                RelegationPlaces = RelegationPlaces, ContinentalPlaces = ContinentalPlaces, SecondaryContinentalPlaces = SecondaryContinentalPlaces,
+            },
+        };
+
+        public CompetitionInput Input() =>
+            new(Name, ShortName, Continental ? null : Country, DomesticCup ? null : Tier, Type, LogoPath, Rules(),
+                Continental || DomesticCup ? null : Id(PromotesTo), Continental || DomesticCup ? null : Id(RelegatesTo));
+
+        static Guid? Id(string s) => Guid.TryParse(s, out var g) ? g : null;
+    }
+}

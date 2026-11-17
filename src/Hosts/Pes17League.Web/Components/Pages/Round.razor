@@ -1,0 +1,313 @@
+@page "/"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject LeagueQueries Q
+@inject MatchJobService Jobs
+@inject NavigationManager Nav
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+@inject CurrentUser Me
+@inject IDbContextFactory<ClubsDbContext> Dbs
+
+@if (season is null) { <p>Chưa có mùa đang chạy. <a href="mua">Xem lại các mùa đã đá →</a></p> return; }
+
+@* Hero carousel: tự xoay tin/ảnh (~5s), pause khi hover / ⏸, rail chọn slide. *@
+<section class="pl-hero @(CarouselPaused ? "is-paused" : "") @((news.Count >= 2 && !reduceMotion) ? "has-carousel" : "")"
+         @onmouseenter="() => hoverPause = true"
+         @onmouseleave="() => hoverPause = false">
+    @if (news.Count > 0)
+    {
+        <div class="pl-hero__stage">
+            @for (var i = 0; i < news.Count; i++)
+            {
+                var n = news[i];
+                var on = i == slide;
+                <a class="pl-hero__slide @(on ? "is-on" : "")" href="tin/@n.Id" aria-hidden="@(!on)" tabindex="@(on ? 0 : -1)">
+                    @if (n.Image is { } img) { <img src="/tin-anh/@img" alt="@n.Title" /> }
+                    else { <span class="pl-hero__ph">@Fmt.Score(n.HomeGoals, n.AwayGoals, n.HomePenalties, n.AwayPenalties)</span> }
+                    <span class="pl-hero__copy">
+                        <span class="pl-hero__tag">@(n.Competition is { } c ? c : "Tin")</span>
+                        <span class="pl-hero__title">@n.Title</span>
+                        <span class="pl-hero__sum">@n.Home @Fmt.Score(n.HomeGoals, n.AwayGoals, n.HomePenalties, n.AwayPenalties) @n.Away · @Word @n.Round</span>
+                    </span>
+                </a>
+            }
+            @if (news.Count >= 2)
+            {
+                <div class="pl-hero__controls" @onclick:stopPropagation="true">
+                    <div class="pl-hero__dots" role="tablist" aria-label="Tin nổi bật">
+                        @for (var i = 0; i < news.Count; i++)
+                        {
+                            var idx = i;
+                            <button type="button" class="@(idx == slide ? "on" : "")" aria-label="Tin @(idx + 1)" aria-selected="@(idx == slide)" @onclick="() => GoTo(idx)"></button>
+                        }
+                    </div>
+                    <button type="button" class="pl-hero__pause" title="@(paused ? "Chạy tiếp" : "Tạm dừng")" @onclick="TogglePause">@(paused ? "▶" : "⏸")</button>
+                </div>
+                @if (!reduceMotion)
+                {
+                    <div class="pl-hero__progress" @key="slide"></div>
+                }
+            }
+        </div>
+        <div class="pl-hero__rail">
+            @for (var i = 0; i < news.Count; i++)
+            {
+                var n = news[i];
+                var idx = i;
+                <button type="button" class="pl-hero__item @(idx == slide ? "is-on" : "")" @onclick="() => GoTo(idx)">
+                    @if (n.Image is { } img2) { <img src="/tin-anh/@img2" alt="" /> }
+                    else { <span class="pl-hero__ph sm">@Fmt.Score(n.HomeGoals, n.AwayGoals, n.HomePenalties, n.AwayPenalties)</span> }
+                    <span>
+                        <small>@(n.Competition is { } c2 ? $"{c2} · " : "")@Word @n.Round</small>
+                        <b>@n.Title</b>
+                    </span>
+                </button>
+            }
+            <div class="pl-hero__links">
+                <a href="ban-thang">Bàn thắng</a>
+                <a href="tin">Tất cả tin →</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="pl-hero__empty">
+            <span class="pill">@season.Name</span>
+            <h1>@(md is null ? "Mùa giải đã kết thúc" : $"{Word} {md.Number}")</h1>
+            @if (md is not null) { <p>@Fmt.Status(md.Status, md.TransferWindowId is not null)@(editions.Count > 0 ? $" · {AdminText.SlotKind(md.Stage, md.Leg)}" : "")</p> }
+            <p class="muted">Chưa có tin — đá xong trận sẽ có bài báo.</p>
+        </div>
+    }
+</section>
+
+@if (md is not null)
+{
+    <div class="mw-bar @(Jobs.Running || fixtures.Any(f => f.Status == FixtureStatus.Playing) ? "is-live" : "")">
+        <div>
+            <b>@Word @md.Number</b>
+            <small>@season.Name · @Fmt.Status(md.Status, md.TransferWindowId is not null)@(editions.Count > 0 ? $" · {AdminText.SlotKind(md.Stage, md.Leg)}" : "")</small>
+        </div>
+        <div class="mw-bar__links">
+            <a href="lich">Lịch →</a>
+            @if (Jobs.Running || fixtures.Any(f => f.Status == FixtureStatus.Playing)) { <a class="live" href="truc-tiep"><i class="live-dot" aria-hidden="true"></i>Trực tiếp</a> }
+        </div>
+    </div>
+    @if (admin && season.HumanClubId == Guid.Empty)
+    {
+        <p class="note">Chưa chọn CLB của tôi: BOT đá mọi trận. <a href="admin/lich">Chọn CLB →</a></p>
+    }
+}
+
+<div class="grid">
+    <div>
+        @if (md is not null)
+        {
+            <section class="panel">
+                <div class="panel-head"><h2>Các trận @Word.ToLowerInvariant() @md.Number</h2><a href="lich">Toàn bộ lịch →</a></div>
+                @foreach (var g in fixtures.GroupBy(f => f.EditionId).OrderBy(g => editions.FindIndex(e => e.Id == g.Key)))
+                {
+                    @if (editions.FirstOrDefault(x => x.Id == g.Key) is { } e)
+                    {
+                        <div class="round-title"><a class="comp" href="giai/@e.CompetitionId"><Crest Name="@e.Name" Logo="@e.Logo" /><b>@e.Name</b></a></div>
+                    }
+                    <ul class="fixtures stagger">
+                        @foreach (var f in g)
+                        {
+                            var mine = f.Home == season.HumanClubId || f.Away == season.HumanClubId;
+                            <FixtureCard Season="season" F="f">
+                                @if (mine && season.NeedsHuman(f) && f.Status == FixtureStatus.Scheduled && md.Status is MatchdayStatus.Locked or MatchdayStatus.Playing)
+                                {
+                                    <a class="btn primary wide" href="chuan-bi/@f.Id">🎮 Đá trận của tôi</a>
+                                }
+                            </FixtureCard>
+                        }
+                    </ul>
+                }
+                <div class="actions">
+                    @if (md.Status == MatchdayStatus.WindowOpen)
+                    {
+                        @if (md.TransferWindowId is not null)
+                        {
+                            <a class="btn" href="chuyen-nhuong">Chuyển nhượng</a>
+                        }
+                        @if (admin)
+                        {
+                        <button class="primary" disabled="@Jobs.Running" title="Khoá xong các trận BOT tự đá lần lượt; muốn đá trận của tôi thì bấm ⏸ Dừng sau trận này" @onclick="() => Jobs.CloseWindow(md.Id)">@(md.TransferWindowId is null ? "Khoá vòng" : "Đóng kỳ CN, khoá vòng")</button>
+                        }
+                    }
+                    @if (admin && md.Status is MatchdayStatus.Locked or MatchdayStatus.Playing && fixtures.Any(f => f.Status == FixtureStatus.Scheduled && !season.NeedsHuman(f)))
+                    {
+                        <button disabled="@Jobs.Running" @onclick="() => Jobs.PlayBots(md.Id)">🤖 Đá các trận BOT</button>
+                    }
+                    @if (admin && md.Status is MatchdayStatus.Locked or MatchdayStatus.Playing && fixtures.Any(f => f.Status == FixtureStatus.Scheduled && season.NeedsHuman(f)))
+                    {
+                        @* Đợt 2 (PO ok 12/11): hết hạn mà HLV chưa đá → trợ lý đá thay (COM vs COM, giữ chiến thuật HLV) *@
+                        <button disabled="@Jobs.Running" title="Các trận HLV người chưa đá → máy đá thay theo chiến thuật của HLV" @onclick="() => DelegateAll(md.Id)">🧑‍💼 Trợ lý đá thay trận còn lại</button>
+                    }
+                    @if (admin && !Jobs.Running && fixtures.Any(f => f.Status == FixtureStatus.Playing))
+                    {
+                        @* Không việc nào chạy mà trận vẫn "Đang đá" = web khởi động lại giữa trận (PO uỷ quyền 06/11). *@
+                        <button title="Trận bị ngắt giữa chừng (web khởi động lại?) → về lịch để đá lại" @onclick="() => Jobs.ReleaseStale(md.Id)">↺ Đặt lại trận kẹt</button>
+                    }
+                </div>
+            </section>
+        }
+        @if (Jobs.Title is not null)
+        {
+            <section class="job">
+                <h2>@Jobs.Title @(Jobs.Running ? "⏳" : "")</h2>
+                @if (BotLeft() is { } left)
+                {
+                    <p>Còn @left.Matches trận BOT ≈ @Duration(left.Minutes), xong khoảng @Clock.GetLocalNow().AddMinutes(left.Minutes).ToString("HH:mm")</p>
+                }
+                @if (Jobs.Running && Jobs.Title == "Trận của tôi")
+                {
+                    <a class="btn primary wide" href="vao-tran">📺 Vào màn hình trận</a>
+                }
+                else if (Jobs.Running)
+                {
+                    <a class="btn" href="truc-tiep">📺 Xem trực tiếp</a>
+                }
+                <pre>@string.Join("\n", Jobs.Log.Reverse())</pre>
+                @if (admin && Jobs.CanStopAfterCurrent) { <button title="Đá xong trận đang đá thì dừng, nhường máy cho trận của tôi" @onclick="Jobs.StopAfterCurrent">⏸ Dừng sau trận này</button> }
+                @if (admin && Jobs.Running) { <button class="danger" title="Bỏ ngang ngay, kể cả trận đang đá" @onclick="Jobs.Cancel">Huỷ</button> }
+            </section>
+        }
+    </div>
+    <aside class="panel">
+        @if (editions.Count > 0)
+        {
+            <div class="panel-head"><h2>Các giải</h2><a href="giai">Tất cả →</a></div>
+            <CompetitionList Season="season" Items="summaries" Compact="true" />
+        }
+        else
+        {
+            <div class="panel-head"><h2>Bảng xếp hạng</h2><a href="bxh">Đầy đủ →</a></div>
+            <StandingsTable Season="season" Rows="rows" Compact="true" />
+        }
+    </aside>
+</div>
+
+@code {
+    SeasonInfo? season;
+    Matchday? md;
+    List<FixtureView> fixtures = [];
+    IReadOnlyList<StandingRow<Guid>> rows = [];
+    // Mùa liên đoàn (bước 6): trận nhóm theo giải; bước 7: "Vòng N", tiêu đề nhóm dẫn tới trang giải, cột phải tóm tắt các giải.
+    List<EditionView> editions = [];
+    List<CompetitionSummary> summaries = [];
+    List<NewsCard> news = [];
+    const string Word = "Vòng";
+    bool wasRunning;
+    Guid? loadedFor;   // trận đang đá lúc đọc danh sách trận
+    Timer? tick;
+    Timer? carousel;
+    int slide;
+    bool paused;
+    bool hoverPause;
+    bool reduceMotion;
+    bool carouselReady;
+    bool CarouselPaused => paused || hoverPause || reduceMotion;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Jobs.Changed += OnJob;
+        tick = new Timer(_ => { if (Jobs.BotMinutesLeft is not null) InvokeAsync(StateHasChanged); }, null, 60000, 60000);   // thời gian còn lại của BOT
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || carouselReady) return;
+        carouselReady = true;
+        try { reduceMotion = await JS.InvokeAsync<bool>("pesPrefersReducedMotion"); }
+        catch { reduceMotion = false; }
+        EnsureCarousel();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task LoadAsync()
+    {
+        loadedFor = Jobs.CurrentFixtureId;
+        admin = await Me.IsAdminAsync();
+        season = await Q.SeasonAsync();
+        if (season is null) return;
+        md = await Q.CurrentMatchdayAsync(season.Id);
+        fixtures = md is null ? [] : await Q.FixturesAsync(season.Id, md.Id);
+        editions = await Q.EditionsAsync(season.Id);
+        // Hero carousel: tối đa 6 tin để xoay.
+        news = md is null ? [] : await Q.NewsAsync(season.Id, md.Number, null, 6);
+        if (news.Count == 0) news = await Q.NewsAsync(season.Id, null, null, 6);
+        if (slide >= news.Count) slide = 0;
+        if (editions.Count > 0) summaries = await Q.SummariesAsync(season.Id, editions, Store, Clock);
+        else rows = await Q.StandingsAsync(season.Id, Store, Clock);
+        if (carouselReady) EnsureCarousel();
+    }
+
+    void EnsureCarousel()
+    {
+        carousel?.Dispose();
+        carousel = null;
+        if (news.Count < 2 || reduceMotion) return;
+        carousel = new Timer(_ => _ = InvokeAsync(() =>
+        {
+            if (paused || hoverPause || news.Count < 2) return;
+            slide = (slide + 1) % news.Count;
+            StateHasChanged();
+        }), null, 5000, 5000);
+    }
+
+    void GoTo(int i)
+    {
+        if (i < 0 || i >= news.Count) return;
+        slide = i;
+        EnsureCarousel();
+    }
+
+    void TogglePause() => paused = !paused;
+
+    void OnJob() => InvokeAsync(async () =>
+    {
+        // Đọc lại DB khi có kết quả (hết trận / kết thúc việc / sang trận khác), còn lại chỉ vẽ lại nhật ký.
+        var last = Jobs.Log.LastOrDefault() ?? "";
+        if (last.Contains("hết trận") || last.Contains("xong") || last.Contains("Kết thúc") || wasRunning != Jobs.Running || loadedFor != Jobs.CurrentFixtureId) await LoadAsync();
+        wasRunning = Jobs.Running;
+        StateHasChanged();
+    });
+
+    // Đá BOT: trận BOT chưa xong của khung, trận đang đá tính riêng (danh sách đọc lại mỗi lần sang trận → không đếm 2 lần).
+    // Đã xin dừng → chỉ còn trận đang đá.
+    bool admin;
+
+    async Task DelegateAll(Guid matchdayId)
+    {
+        await using (var db = await Dbs.CreateDbContextAsync())
+        {
+            var ids = fixtures.Where(f => f.Status == FixtureStatus.Scheduled && season!.NeedsHuman(f)).Select(f => f.Id).ToList();
+            await db.Fixtures.Where(f => ids.Contains(f.Id)).ExecuteUpdateAsync(x => x.SetProperty(f => f.AssistantPlays, true));
+        }
+        await LoadAsync();
+        Jobs.PlayBots(matchdayId);
+    }
+
+    (int Matches, int Minutes)? BotLeft()
+    {
+        if (season is null) return null;
+        var left = fixtures.Where(f => f.Status != FixtureStatus.Played && !season.NeedsHuman(f)).ToList();
+        var current = left.Any(f => f.Id == Jobs.CurrentFixtureId) ? 1 : 0;
+        var queued = Jobs.StopPending ? 0 : left.Count - current;
+        return Jobs.BotQueueMinutesLeft(queued) is { } m ? (queued + current, m) : null;
+    }
+
+    static string Duration(int minutes) => minutes >= 60 ? $"{minutes / 60} giờ {minutes % 60} phút" : $"{minutes} phút";
+
+    public void Dispose()
+    {
+        Jobs.Changed -= OnJob;
+        tick?.Dispose();
+        carousel?.Dispose();
+    }
+}

@@ -1,0 +1,84 @@
+@page "/bxh"
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
+@if (season is not null)
+{
+    <section class="hero"><a class="pill" href="mua" title="Các mùa">@season.Label</a><h1>Bảng xếp hạng</h1></section>
+    @if (editions.Count > 0)
+    {
+        <div class="filters">
+            <select @bind="editionId" @bind:after="LoadEditionAsync">
+                @foreach (var e in editions) { <option value="@e.Id">@e.Name</option> }
+            </select>
+            <a class="btn" href="@season.Url($"giai/{Edition?.CompetitionId}")">Trang giải →</a>
+        </div>
+    }
+    <div class="grid">
+        <section class="panel">
+            <StandingsTable Season="season" Rows="rows" Fixtures="fixtures" Zones="zones" />
+            @if (Edition?.Type == CompetitionType.ContinentalCup)
+            {
+                <p class="muted">League phase; nhánh loại trực tiếp xem ở trang giải (Giải đấu → Nhánh đấu).</p>
+            }
+            else if (Edition?.Type == CompetitionType.DomesticCup)
+            {
+                <p class="muted">Cúp quốc gia không có BXH vòng tròn — xem nhánh đấu ở trang giải.</p>
+            }
+            else if (editions.Count == 0)
+            {
+                <div class="legend"><span class="t">Vô địch</span><span class="b">Cuối bảng</span></div>
+            }
+        </section>
+        <aside class="panel">
+            <div class="panel-head"><h2>Vua phá lưới</h2></div>
+            <TopScorers Season="season" Fixtures="own" />
+        </aside>
+    </div>
+}
+
+@code {
+    /// <summary>?mua=N: xem lại mùa cũ (mặc định mùa đang chạy, chưa có thì mùa đã xong gần nhất).</summary>
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    bool loaded;
+    int? loadedFor;
+    SeasonInfo? season;
+    IReadOnlyList<StandingRow<Guid>> rows = [];
+    List<FixtureView> fixtures = [];
+    // Mùa liên đoàn (bước 6): BXH, phong độ, vua phá lưới theo từng giải (bước 7: tô vùng theo luật giải); mùa alpha 1 giải: cả mùa.
+    List<EditionView> editions = [];
+    Guid editionId;
+    EditionView? Edition => editions.FirstOrDefault(e => e.Id == editionId);
+    IReadOnlyList<Zone> zones = [];
+    List<FixtureView> all = [], own = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loaded && loadedFor == Mua) return;
+        loadedFor = Mua;
+        season = await Q.ViewSeasonAsync(Mua);
+        loaded = true;
+        if (season is null) return;
+        editions = await Q.EditionsAsync(season.Id);
+        all = await Q.FixturesAsync(season.Id);
+        if (editions.Count > 0)
+        {
+            editionId = editions[0].Id;
+            await LoadEditionAsync();
+            return;
+        }
+        rows = await Q.StandingsAsync(season.Id, Store, Clock);
+        fixtures = own = all;
+    }
+
+    async Task LoadEditionAsync()
+    {
+        rows = await Q.EditionStandingsAsync(editionId, Store, Clock);
+        own = [.. all.Where(f => f.EditionId == editionId)];
+        fixtures = [.. own.Where(f => f.Stage is FixtureStage.League or FixtureStage.LeaguePhase)];     // phong độ theo trận tính BXH
+        zones = Fmt.Zones(Edition!, editions, rows.Count);
+    }
+}

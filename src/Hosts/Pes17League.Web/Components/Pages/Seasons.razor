@@ -1,0 +1,55 @@
+@page "/mua"
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@* Các mùa (PO uỷ quyền 06/11 "làm theo đề xuất"): mùa đang chạy + mùa đã xong, mới nhất trước; mỗi mùa: các giải + vô địch/đầu bảng,
+   link xem lại BXH, lịch & kết quả, nhánh đấu của mùa đó (?mua=N). *@
+@if (!loaded) { return; }
+<section class="hero"><span class="pill">Lịch sử</span><h1>Các mùa</h1><p>Xem lại bảng xếp hạng, kết quả và vô địch từng mùa.</p></section>
+@if (items.Count == 0) { <section class="panel"><p>Chưa có mùa nào bắt đầu.</p></section> }
+@foreach (var it in items)
+{
+    var s = it.Season;
+    <section class="panel">
+        <div class="panel-head">
+            <h2>@s.Name</h2>
+            <small class="muted">@(s.Status == SeasonStatus.Active ? "Đang chạy" : "Đã kết thúc") · @s.Clubs.Count CLB · đã đá @it.Played/@it.Total trận</small>
+        </div>
+        @if (it.Summaries.Count > 0)
+        {
+            <CompetitionList Season="s" Items="it.Summaries" />
+        }
+        else if (it.Leader is { } top)
+        {
+            @* Mùa alpha 1 giải: đầu bảng (vô địch khi đá hết). *@
+            <p>@(it.Played == it.Total ? "🏆 Vô địch" : "Đầu bảng"): <b>@s.Clubs[top]</b></p>
+        }
+        <div class="actions">
+            <a class="btn" href="@s.Url(it.Summaries.Count > 0 ? "giai" : "bxh")">@(it.Summaries.Count > 0 ? "Các giải" : "Bảng xếp hạng") →</a>
+            <a class="btn" href="@s.Url("lich")">Lịch &amp; kết quả →</a>
+        </div>
+    </section>
+}
+
+@code {
+    sealed record Item(SeasonInfo Season, List<CompetitionSummary> Summaries, Guid? Leader, int Played, int Total);
+
+    bool loaded;
+    List<Item> items = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        foreach (var number in await Q.SeasonNumbersAsync())
+        {
+            if (await Q.ViewSeasonAsync(number) is not { } s) continue;
+            if (s.Status == SeasonStatus.Active) s = s with { Pinned = false };     // mùa đang chạy: link tới trang thường, không ?mua=N
+            var editions = await Q.EditionsAsync(s.Id);
+            var summaries = editions.Count > 0 ? await Q.SummariesAsync(s.Id, editions, Store, Clock) : [];
+            Guid? leader = editions.Count > 0 ? null : (await Q.StandingsAsync(s.Id, Store, Clock)).FirstOrDefault()?.Club;
+            var (played, total) = await Q.FixtureCountAsync(s.Id);
+            items.Add(new(s, summaries, played > 0 ? leader : null, played, total));
+        }
+        loaded = true;
+    }
+}

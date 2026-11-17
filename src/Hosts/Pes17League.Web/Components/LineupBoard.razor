@@ -1,0 +1,280 @@
+@* Sân đội hình kiểu game quản lý bóng đá (PO 05/11): 11 cầu thủ đứng theo sơ đồ, dự bị dưới sân; kéo thả (chuột/cảm ứng, lineup.js)
+   hoặc chạm 2 cầu thủ để đổi chỗ; kéo cầu thủ sân vào chỗ trống = vị trí tự do; sơ đồ, 4 thiết lập đội, 4 chiến thuật phím L2,
+   đội trưởng + người đá phạt lưu ngay khi đổi. Locked: chỉ xem (đội hình đã chốt cho trận đang vào). *@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@using Pes17League.OptionFile
+@implements IAsyncDisposable
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject IJSRuntime JS
+
+<div class="board @(Locked ? "locked" : "")">
+    @* FM đợt 10: phong cách dựng sẵn (TacticPresets) — 1 chạm đặt sơ đồ + thiết lập + L2; chỉnh tay sau đó vẫn được. *@
+    <div class="preset-bar"><span>Phong cách</span>
+        @foreach (var pr in TacticPresets.All)
+        {
+            <button class="@(preset == pr.Key ? "on" : "")" title="@pr.Note" disabled="@Locked" @onclick="() => ApplyPreset(pr.Key)">@pr.Name</button>
+        }
+        @if (preset is null && tactics is not null) { <small>tự chỉnh</small> }
+    </div>
+    <div class="tactics-bar">
+        <label>Sơ đồ
+            <select value="@(formation ?? "")" disabled="@Locked" @onchange="SetFormation">
+                <option value="">Theo patch@(patchName is null ? "" : $" ({patchName})")</option>
+                @foreach (var n in Formations.Names) { <option value="@n">@n</option> }
+            </select>
+        </label>
+        @if (custom)
+        {
+            <button class="ghost-btn" disabled="@Locked" @onclick="ResetPositions">↺ Vị trí theo sơ đồ</button>
+        }
+        @foreach (var (label, i) in Settings)
+        {
+            <div class="seg"><span>@label</span>
+                @foreach (var (text, v) in Choices)
+                {
+                    <button class="@(settings[i] == v ? "on" : "")" disabled="@Locked" title="@(v is null ? "Theo patch" : "")" @onclick="() => SetSetting(i, v)">@text</button>
+                }
+            </div>
+        }
+    </div>
+    @if (message is not null) { <p class="msg">@message</p> }
+    <div class="pitch" @ref="root">
+        <div class="mark half"></div><div class="mark circle"></div><div class="mark box top"></div><div class="mark box bottom"></div>
+        @for (var slot = 0; slot <= 10; slot++)
+        {
+            var p = squad.FirstOrDefault(x => x.Slot == slot);
+            var (left, top) = Spot(slot);
+            var role = layout?.Roles[slot] ?? "";
+            if (p is null) { <div class="pl empty" style="left:@(left)%;top:@(top)%"><small>@role</small></div> continue; }
+            <div class="pl @Fit(p.Position, role) @(picked == p.PlayerId ? "picked" : "")" style="left:@(left)%;top:@(top)%" data-pid="@p.PlayerId" data-slot="@slot" @onclick="() => Tap(p)">
+                @if (jobs.GetValueOrDefault(TeamJob.Captain)?.PlayerId == p.PlayerId) { <i class="cap">C</i> }
+                <b>@p.Shirt</b><span>@Short(p.Name)</span><small>@role · @p.Overall</small>
+            </div>
+        }
+    </div>
+    <div class="bench">
+        <h3>Dự bị</h3>
+        <div class="bench-list">
+            @foreach (var p in squad.Where(x => x.Slot > 10))
+            {
+                <div class="pl @(picked == p.PlayerId ? "picked" : "")" data-pid="@p.PlayerId" @onclick="() => Tap(p)">
+                    <b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall</small>
+                </div>
+            }
+        </div>
+    </div>
+    <p class="muted legend"><i class="fit"></i>đúng vị trí <i class="near"></i>cùng tuyến <i class="off"></i>trái tuyến · Kéo thả hoặc chạm 2 cầu thủ để đổi chỗ (ô thủ môn chỉ dành cho GK); kéo cầu thủ vào chỗ trống trên sân để đặt vị trí tự do.</p>
+    <div class="board-cols">
+        <div>
+            <h3>Đội trưởng & đá phạt</h3>
+            @foreach (var (job, label) in JobLabels)
+            {
+                var chosen = TacticsService.GetJob(tactics, job);
+                var auto = TeamJobPicker.Auto(job, starters);
+                <label class="row-field">@label
+                    <select value="@(starters.Any(s => s.PlayerId == chosen) ? chosen.ToString() : "")" disabled="@Locked" @onchange="e => SetJob(job, e)">
+                        <option value="">Tự động@(auto is null ? "" : $" ({NameOf(auto.PlayerId)})")</option>
+                        @foreach (var s in starters) { <option value="@s.PlayerId">@NameOf(s.PlayerId)</option> }
+                    </select>
+                </label>
+            }
+        </div>
+        <div>
+            <h3>Chiến thuật phím tắt (L2 +)</h3>
+            @for (var b = 0; b < 4; b++)
+            {
+                var button = b;
+                <label class="row-field">L2 + @TeamStrategies.Buttons[b]
+                    <select value="@(strategies[b]?.ToString() ?? "")" disabled="@Locked" @onchange="e => SetStrategy(button, e)">
+                        <option value="">Theo patch</option>
+                        @for (var v = 0; v < TeamStrategies.Names.Count; v++) { <option value="@v">@TeamStrategies.Names[v]</option> }
+                    </select>
+                </label>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid ClubId { get; set; }
+    [Parameter] public bool Locked { get; set; }
+    [Parameter] public string? LockedMessage { get; set; }
+    /// <summary>Sau khi đổi chỗ (trang chứa đọc lại bảng cầu thủ).</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    static readonly (string, int)[] Settings = [("Hàng thủ", 0), ("Pressing", 1), ("Bẫy việt vị", 2), ("Phản công", 3)];
+    static readonly (string, int?)[] Choices = [("–", null), ("A", 0), ("B", 1), ("C", 2)];
+    static readonly (TeamJob, string)[] JobLabels =
+    [
+        (TeamJob.Captain, "Đội trưởng"), (TeamJob.Penalty, "Penalty"), (TeamJob.LongFreeKick, "Đá phạt xa"),
+        (TeamJob.ShortFreeKick, "Đá phạt gần"), (TeamJob.LeftCorner, "Phạt góc trái"), (TeamJob.RightCorner, "Phạt góc phải"),
+    ];
+    List<SquadRow> squad = [];
+    List<StarterInfo> starters = [];
+    Dictionary<TeamJob, StarterInfo?> jobs = [];
+    ClubTactics? tactics;
+    FormationLayout? layout, patchLayout;
+    string? formation, patchName, message;
+    int?[] settings = new int?[4];
+    IReadOnlyList<int?> strategies = new int?[4];
+    bool custom;
+    Guid? picked;
+    ElementReference root;
+    DotNetObjectReference<LineupBoard>? self;
+
+    Guid loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loaded == ClubId) return;   // trang chứa vẽ lại theo nhật ký trận → không đọc lại DB mỗi lần
+        loaded = ClubId;
+        patchLayout = null; patchName = null;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!first) return;
+        self = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("pesLineup.attach", root, self);
+    }
+
+    async Task LoadAsync()
+    {
+        squad = await Q.SquadAsync(Season.Id, ClubId);
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new TacticsService(db, Clock);
+        tactics = await svc.GetAsync(ClubId);
+        formation = tactics?.Formation;
+        preset = TacticPresets.Match(tactics)?.Key;
+        settings = [tactics?.BackLine, tactics?.Pressure, tactics?.OffsideTrap, tactics?.CounterAttack];
+        strategies = TacticsService.StrategiesOf(tactics) ?? new int?[4];
+        patchLayout ??= await Q.PatchLayoutAsync(Season.Id, ClubId, Store);
+        patchName ??= patchLayout is null ? null : Formations.Names.FirstOrDefault(n => Formations.Layout(n).Positions.SequenceEqual(patchLayout.Positions));
+        var baseLayout = formation is null ? patchLayout ?? Formations.Layout(Formations.Names[0]) : Formations.Layout(formation);
+        var positions = TacticsService.PositionsOf(tactics);
+        custom = positions is not null;
+        layout = positions is null ? baseLayout : new FormationLayout(positions, baseLayout.Roles);
+        starters = (await svc.StartersAsync(Season.Id, [ClubId])).GetValueOrDefault(ClubId) ?? [];
+        jobs = Enum.GetValues<TeamJob>().ToDictionary(j => j, j => TeamJobPicker.Resolve(j, TacticsService.GetJob(tactics, j), starters));
+    }
+
+    /// <summary>Vị trí trên sân dọc (đội tấn công lên trên): Y của OF → ngang (19 trái … 85 phải), X → dọc (9 hàng thủ … 43 tiền đạo).</summary>
+    (string Left, string Top) Spot(int slot)
+    {
+        var (x, y) = slot == 0 || layout is null ? (-2, 52) : layout.Positions[slot - 1];
+        double left = Math.Clamp(y, 6, 94), top = Math.Clamp(88 - x * 1.75, 7, 92);
+        return (left.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture), top.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    static string Short(string name) => name.Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: > 1 } w ? w[^1] : name;
+    string NameOf(Guid id) => squad.FirstOrDefault(s => s.PlayerId == id)?.Name ?? "?";
+
+    // Vai trò của ô (sơ đồ PES6) → vị trí đăng ký hợp; cùng tuyến = vàng, khác tuyến = đỏ.
+    static Position RolePosition(string role) => role switch
+    {
+        "GK" => Position.GK, "CWP" or "ASW" => Position.SW, "CB" => Position.CB, "LB" or "RB" => Position.SB, "DM" => Position.DMF,
+        "LWB" or "RWB" => Position.WB, "CM" => Position.CMF, "LM" or "RM" => Position.SMF, "AM" => Position.AMF, "LW" or "RW" => Position.WF,
+        "SS" => Position.SS, _ => Position.CF,
+    };
+    static string Fit(Position p, string role) => role == "" ? "" : p == RolePosition(role) ? "fit" : p.Group() == RolePosition(role).Group() ? "near" : "off";
+
+    bool Blocked()
+    {
+        if (Locked) message = LockedMessage ?? "Đội hình đã chốt.";
+        return Locked;
+    }
+
+    /// <summary>Lưu 1 thay đổi chiến thuật rồi đọc lại (bị khoá → chỉ đọc lại để bỏ giá trị vừa chọn trên giao diện).</summary>
+    async Task SaveAsync(Func<TacticsService, Task<TacticsError?>> save)
+    {
+        if (!Blocked())
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var err = await save(new TacticsService(db, Clock));
+            message = err is null ? null : $"Không lưu được chiến thuật: {err}";
+        }
+        await LoadAsync();
+    }
+
+    string? preset;
+
+    Task ApplyPreset(string key) => SaveAsync(s => TacticPresets.ApplyAsync(s, ClubId, key));
+
+    Task SaveTacticsAsync() => SaveAsync(s => s.SetAsync(ClubId, new(formation, settings[0], settings[1], settings[2], settings[3])));
+
+    async Task SetFormation(ChangeEventArgs e)
+    {
+        formation = e.Value as string is { Length: > 0 } f ? f : null;
+        await SaveTacticsAsync();
+    }
+
+    async Task SetSetting(int i, int? v)
+    {
+        settings[i] = v;
+        await SaveTacticsAsync();
+    }
+
+    Task SetStrategy(int button, ChangeEventArgs e) =>
+        SaveAsync(s => s.SetStrategyAsync(ClubId, button, int.TryParse(e.Value as string, out var v) ? v : null));
+
+    Task SetJob(TeamJob job, ChangeEventArgs e) =>
+        SaveAsync(s => s.SetJobAsync(ClubId, job, Guid.TryParse(e.Value as string, out var id) ? id : null));
+
+    Task ResetPositions() => SaveAsync(s => s.SetPositionsAsync(ClubId, null));
+
+    /// <summary>Thả cầu thủ sân vào chỗ trống (lineup.js): % trên sân → toạ độ OF (ngược với <see cref="Spot"/>).</summary>
+    [JSInvokable]
+    public async Task Move(string pid, double left, double top)
+    {
+        picked = null;
+        if (layout is not null && Guid.TryParse(pid, out var id) && squad.FirstOrDefault(s => s.PlayerId == id) is { Slot: >= 1 and <= 10 } p)
+        {
+            var x = Math.Clamp((int)Math.Round((88 - top) / 1.75), FormationBounds.MinX, FormationBounds.MaxX);
+            var y = Math.Clamp((int)Math.Round(left), FormationBounds.MinY, FormationBounds.MaxY);
+            var positions = layout.Positions.ToList();
+            positions[p.Slot - 1] = (x, y);
+            await SaveAsync(s => s.SetPositionsAsync(ClubId, positions));
+        }
+        StateHasChanged();
+    }
+
+    async Task Tap(SquadRow p)
+    {
+        if (picked is null) { picked = p.PlayerId; return; }
+        var a = picked.Value;
+        picked = null;
+        if (a != p.PlayerId) await SwapAsync(a, p.PlayerId);
+    }
+
+    /// <summary>Thả cầu thủ <paramref name="from"/> lên <paramref name="to"/> (lineup.js).</summary>
+    [JSInvokable]
+    public async Task Drop(string from, string to)
+    {
+        picked = null;
+        if (Guid.TryParse(from, out var a) && Guid.TryParse(to, out var b) && a != b) await SwapAsync(a, b);
+        StateHasChanged();
+    }
+
+    async Task SwapAsync(Guid a, Guid b)
+    {
+        if (Blocked()) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var err = await new LineupService(db).SwapAsync(ClubId, a, b);
+        message = err switch { null => null, LineupError.GoalkeeperSlot => "Ô thủ môn chỉ dành cho GK.", _ => $"Không đổi được: {err}" };
+        await LoadAsync();
+        if (err is null) await Changed.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (self is null) return;   // chưa gắn (vẽ sẵn phía server) → không gọi JS
+        try { await JS.InvokeVoidAsync("pesLineup.detach", root); } catch (JSDisconnectedException) { }
+        self?.Dispose();
+    }
+}

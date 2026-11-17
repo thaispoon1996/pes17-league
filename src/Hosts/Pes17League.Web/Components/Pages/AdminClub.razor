@@ -1,0 +1,187 @@
+@page "/admin/clb/{Key}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@using Pes17League.OptionFile
+@using ClubEntity = Pes17League.Clubs.Domain.Club
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Key = Id CLB (thêm CLB ở AdminClubNew, route "moi" ưu tiên hơn). Xoá khi chưa có lịch sử, có thì lưu trữ (PO chọn 05/11), không có khôi phục. *@
+<h1>@(club?.Name ?? "CLB")</h1>
+<AdminNav />
+@if (club is null) { if (loaded) { <p>Không tìm thấy CLB.</p> } return; }
+<p><a href="admin/clb">← Danh sách CLB</a> · <a href="clb/@club.Id">Trang CLB</a></p>
+@if (club.Status != ClubStatus.Active) { <p class="warn">CLB đã lưu trữ: cầu thủ đã thành tự do, không dự giải, không tính ngân sách/lương.</p> }
+@if (msg is not null) { <p class="msg">@msg</p> }
+
+<div class="panel">
+    <h2>Thông tin</h2>
+    <div class="fields">
+        <label>Tên CLB (web) <input @bind="form.Name" maxlength="100" /></label>
+        <label>Tên ngắn <input @bind="form.ShortName" maxlength="10" placeholder="MUN, RMA…" /></label>
+        <label>Mã nước (FIFA) <input @bind="form.Country" maxlength="3" list="club-countries" placeholder="ENG" /></label>
+    </div>
+    <datalist id="club-countries">@foreach (var c in countries) { <option value="@c"></option> }</datalist>
+    <LogoUpload @bind-Value="form.LogoPath" Prefix="@($"club-{club.Id:N}")" Name="@form.Name" Default="@(current is { } cur ? FederationSetupService.LogoPath(cur.Slot) : null)" />
+    <p class="muted">Tên và logo ở đây chỉ đổi trên web.</p>
+    <div class="actions">
+        <button class="primary" @onclick="Save">Lưu</button>
+        @if (club.Status == ClubStatus.Active) { <button class="danger" @onclick="DeleteOrArchive">@(history ? "Lưu trữ" : "Xoá")</button> }
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Trong game</h2>
+    @if (maps.Count == 0) { <p class="muted">Chưa gán ô PES.</p> }
+    else
+    {
+        <table class="table">
+            <thead><tr><th class="left">Patch</th><th>Ô PES</th><th class="left">Tên trong game</th><th>Viết tắt</th></tr></thead>
+            <tbody>
+                @foreach (var m in maps)
+                {
+                    <tr>
+                        <td class="left">@m.Patch@if (m == current) { <small> · mùa đang mở</small> }</td>
+                        <td>@m.Slot</td>
+                        <td class="left">@(m.GameName ?? "không đọc được OF gốc")</td>
+                        <td>@m.GameAbbr</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    <p class="muted">Tên trong game theo patch, chỉ đổi đầu mùa (C15, chưa làm). Logo trong game nằm trong file game, không đổi.</p>
+    <p>Đội hình: @players cầu thủ.</p>
+</div>
+
+<div class="panel">
+    <h2>Giải đấu</h2>
+    @if (editions.Count == 0) { <p class="muted">Chưa có trong mùa giải nào.</p> }
+    else
+    {
+        <table class="table">
+            <thead><tr><th class="left">Mùa</th><th class="left">Giải</th><th>Trạng thái</th></tr></thead>
+            <tbody>
+                @foreach (var e in editions)
+                {
+                    <tr @onclick='() => Nav.NavigateTo($"admin/giai/mua-giai/{e.Id}")'>
+                        <td class="left">@e.Season</td><td class="left">@e.Competition</td><td>@AdminText.Status(e.Status)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    ClubEntity? club;
+    Form form = new();
+    List<string> countries = [];
+    List<MapRow> maps = [];
+    MapRow? current;
+    List<EditionRow> editions = [];
+    int players, originPlayers;
+    bool loaded, history;
+    string? msg;
+
+    sealed record MapRow(string Patch, int Slot, string? GameName, string? GameAbbr);
+    sealed record EditionRow(Guid Id, string Season, string Competition, EditionStatus Status);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        msg = null;
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        club = Guid.TryParse(Key, out var id) ? await db.Clubs.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id) : null;
+        loaded = true;
+        if (club is null) return;
+        form = Form.From(club);
+        countries = await db.Clubs.Where(c => c.Country != null).Select(c => c.Country!).Distinct().OrderBy(c => c).ToListAsync();
+        var openPatch = await db.Seasons.Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).Select(s => s.PatchVersionId).FirstOrDefaultAsync();
+        var mapped = await (from m in db.ClubPesMappings
+                            where m.ClubId == id
+                            join p in db.PatchVersions on m.PatchVersionId equals p.Id
+                            orderby p.ImportedAt descending
+                            select new { p.Id, p.Name, p.BaseOptionFilePath, m.PesClubIndex }).ToListAsync();
+        (maps, current) = ([], null);
+        foreach (var x in mapped)
+        {
+            var (name, abbr) = await GameNameAsync(x.BaseOptionFilePath, x.PesClubIndex);
+            maps.Add(new(x.Name, x.PesClubIndex, name, abbr));
+            if (x.Id == openPatch) current = maps[^1];
+        }
+        players = await db.SquadMemberships.CountAsync(m => m.ClubId == id && m.LeftAt == null);
+        originPlayers = await db.Players.CountAsync(p => p.OriginClubId == id);
+        history = club.Status == ClubStatus.Active && await new ClubAdminService(db, Clock).HasHistoryAsync(id);
+        editions = await (from ec in db.EditionClubs
+                          where ec.ClubId == id
+                          join e in db.Editions on ec.EditionId equals e.Id
+                          join s in db.Seasons on e.SeasonId equals s.Id
+                          join c in db.Competitions on e.CompetitionId equals c.Id
+                          orderby s.Number descending, c.Type, c.Tier
+                          select new EditionRow(e.Id, s.Name, c.Name, e.Status)).ToListAsync();
+    }
+
+    /// <summary>Tên/viết tắt CLB trong OF gốc của patch; null khi không đọc được file.</summary>
+    async Task<(string?, string?)> GameNameAsync(string path, int slot)
+    {
+        try
+        {
+            var of = OptionFileCodec.Decode(await Store.ReadAsync(path));
+            return (of.GetClubName(slot), of.GetClubAbbreviation(slot));
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException) { return (null, null); }
+    }
+
+    async Task Save()
+    {
+        msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new ClubAdminService(db, Clock).UpdateAsync(club!.Id, form.Input(), AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        await LoadAsync();
+        msg = "Đã lưu.";
+    }
+
+    async Task DeleteOrArchive()
+    {
+        var c = club!;
+        var slot = current is { } cur ? $"ô PES {cur.Slot}" : "ô PES";
+        if (!await JS.InvokeAsync<bool>("confirm", history
+            ? $"Lưu trữ {c.Name}? Đã có lịch sử nên không xoá hẳn được. {players} cầu thủ thành tự do, CLB không dự giải nữa; {slot} vẫn giữ tới hết mùa. Không khôi phục được."
+            : $"Xoá hẳn {c.Name}? Xoá luôn {originPlayers} cầu thủ tạo cùng CLB (cầu thủ khác thành tự do), {slot} thành ô dư.")) return;
+        msg = null;
+        bool deleted;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            deleted = await new ClubAdminService(db, Clock).DeleteOrArchiveAsync(c.Id, AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        if (deleted) { Nav.NavigateTo("admin/clb"); return; }
+        await LoadAsync();
+        msg = "Đã lưu trữ.";
+    }
+
+    sealed class Form
+    {
+        public string? Name { get; set; }
+        public string? ShortName { get; set; }
+        public string? Country { get; set; }
+        public string? LogoPath { get; set; }
+
+        public static Form From(ClubEntity c) => new() { Name = c.Name, ShortName = c.ShortName, Country = c.Country, LogoPath = c.LogoPath };
+        public ClubInput Input() => new(Name ?? "", ShortName, Country, LogoPath);
+    }
+}

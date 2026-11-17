@@ -1,0 +1,55 @@
+@* Bảng xếp hạng: đầy đủ (trang BXH) hoặc gọn (cột phải trang chủ). Phong độ = 5 trận gần nhất, cũ → mới.
+   Zones (bước 7) = vùng tô màu theo luật giải (suất cúp, lên/xuống hạng, play-off) kèm chú thích; không có thì tô hạng 1 và cuối bảng. *@
+<table class="table">
+    <thead>
+        <tr>
+            <th>#</th><th class="left">CLB</th><th>Tr</th>
+            @if (!Compact) { <th>T</th><th>H</th><th>B</th><th class="hide-sm">BT</th><th class="hide-sm">BB</th> }
+            <th>HS</th><th>Đ</th>
+            @if (!Compact) { <th class="hide-sm">Phong độ</th> }
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var (r, i) in Rows.Select((r, i) => (r, i)))
+        {
+            var zone = Zones.FirstOrDefault(z => i + 1 >= z.From && i + 1 <= z.To);
+            var cls = (r.Club == Season.HumanClubId ? "mine " : "") + (Zones.Count > 0 ? zone is null ? "" : $"z {zone.Css}" : i == 0 ? "top" : i == Rows.Count - 1 ? "bottom" : "");
+            <tr class="@cls">
+                <td class="pos" title="@(zone?.Label)">@(i + 1)</td>
+                <td class="left"><span class="club"><Crest Name="@Season.Clubs[r.Club]" Logo="@Season.Logo(r.Club)" />@Season.Clubs[r.Club]</span></td>
+                <td>@r.Played</td>
+                @if (!Compact) { <td>@r.Won</td><td>@r.Drawn</td><td>@r.Lost</td><td class="hide-sm">@r.GoalsFor</td><td class="hide-sm">@r.GoalsAgainst</td> }
+                <td>@((r.GoalsFor - r.GoalsAgainst).ToString("+0;-0;0"))</td>
+                <td class="pts">@(r.Won * 3 + r.Drawn)</td>
+                @if (!Compact)
+                {
+                    <td class="hide-sm"><span class="form">@foreach (var x in Form(r.Club)) { <i class="@x" title="@Title(x)">@Short(x)</i> }</span></td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+@if (Zones.Count > 0)
+{
+    <div class="legend">@foreach (var z in Zones) { <span class="z @z.Css">@z.Label</span> }</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<StandingRow<Guid>> Rows { get; set; } = [];
+    [Parameter] public IReadOnlyList<FixtureView> Fixtures { get; set; } = [];
+    [Parameter] public IReadOnlyList<Zone> Zones { get; set; } = [];
+    [Parameter] public bool Compact { get; set; }
+
+    IEnumerable<string> Form(Guid club) => Fixtures
+        .Where(f => f.Status == FixtureStatus.Played && (f.Home == club || f.Away == club))
+        .OrderByDescending(f => f.Matchday).Take(5).Reverse()
+        .Select(f =>
+        {
+            var (s, c) = f.Home == club ? (f.HomeGoals!.Value, f.AwayGoals!.Value) : (f.AwayGoals!.Value, f.HomeGoals!.Value);
+            return s > c ? "W" : s == c ? "D" : "L";
+        });
+
+    static string Short(string x) => x switch { "W" => "T", "D" => "H", _ => "B" };
+    static string Title(string x) => x switch { "W" => "Thắng", "D" => "Hoà", _ => "Thua" };
+}

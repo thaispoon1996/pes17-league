@@ -1,0 +1,58 @@
+@page "/thong-ke"
+@inject LeagueQueries Q
+@inject NavigationManager Nav
+
+@* Trung tâm thống kê: bảng cầu thủ (bàn, điểm TB, xuất sắc trận, sút trúng, thủ môn, ra sân) và bảng CLB (công, thủ, sạch lưới, giữ bóng, chuyền, sút).
+   ?giai=<id mùa giải> lọc theo giải, ?mua=N xem mùa cũ. Bàn tính theo bảng bàn thắng có tên người ghi (như Vua phá lưới). *@
+@if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
+@if (season is not null && stats is not null)
+{
+    <section class="hero hero-stats @Insight.Tone(Edition)">
+        <a class="pill" href="mua" title="Các mùa">@season.Label</a>
+        <h1>Thống kê</h1>
+        <div class="kpis">
+            <span><b>@stats.Matches</b>trận đã đá</span>
+            <span><b>@stats.Goals</b>bàn thắng</span>
+            <span><b>@(stats.Matches == 0 ? "0" : ((double)stats.Goals / stats.Matches).ToString("0.00"))</b>bàn/trận</span>
+        </div>
+    </section>
+    @if (editions.Count > 0)
+    {
+        <nav class="chips">
+            <a class="@(Giai is null ? "on" : "")" href="@season.Url("thong-ke")">Tất cả giải</a>
+            @foreach (var e in editions)
+            {
+                <a class="@(Giai == e.Id ? "on" : "")" href="@season.Url($"thong-ke?giai={e.Id}")">@e.Name</a>
+            }
+        </nav>
+    }
+    <h2 class="section-title">Cầu thủ</h2>
+    <div class="lb-grid">
+        @foreach (var b in stats.Players) { <LeaderBoard Season="season" Board="b" /> }
+    </div>
+    <h2 class="section-title">Câu lạc bộ</h2>
+    <div class="lb-grid">
+        @foreach (var b in stats.Teams) { <LeaderBoard Season="season" Board="b" /> }
+    </div>
+    <p class="muted">Điểm, cú sút và giữ bóng lấy từ thống kê đọc sau trận (trận đá trước 07/11 chưa có). Xem thêm: <a href="@season.Url("tong-ket")">Tổng kết vòng</a> · <a href="vinh-danh">Vinh danh</a>.</p>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+    [SupplyParameterFromQuery(Name = "giai")] public Guid? Giai { get; set; }
+
+    bool loaded;
+    SeasonInfo? season;
+    List<EditionView> editions = [];
+    StatsPage? stats;
+    EditionView? Edition => editions.FirstOrDefault(e => e.Id == Giai);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.ViewSeasonAsync(Mua);
+        loaded = true;
+        if (season is null) return;
+        editions = await Q.EditionsAsync(season.Id);
+        stats = await Q.StatsAsync(season, Edition?.Id);
+    }
+}

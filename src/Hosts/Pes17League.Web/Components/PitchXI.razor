@@ -1,0 +1,38 @@
+@inject FaceStore Faces
+@* Sân bóng 11 người theo tuyến (vị trí đăng ký): tiền đạo trên cùng, thủ môn dưới cùng; mỗi cầu thủ có điểm, bàn, link hồ sơ.
+   Có ảnh mặt (chụp trong game) → hiện mặt trong chấm. ShowClub = đội hình tiêu biểu (cầu thủ nhiều CLB) → hiện huy hiệu (góc chấm nếu có mặt). *@
+<div class="xi">
+    @foreach (var g in new[] { PositionGroup.Forward, PositionGroup.Midfielder, PositionGroup.Defender, PositionGroup.Goalkeeper })
+    {
+        var row = Players.Where(p => p.Position.Group() == g).ToList();
+        if (row.Count == 0) continue;
+        <div class="xi-row">
+            @foreach (var p in row)
+            {
+                <a class="xi-p @(p.PlayerId == Star ? "star" : "")" href="@Season.Url($"cau-thu/{p.PlayerId}")" title="@p.Name · @p.Position">
+                    <span class="dot">
+                        @if (Faces.WebPath(p.PlayerId) is { } face)
+                        {
+                            <img class="face" src="@face" alt="" loading="lazy" />
+                            @if (ShowClub) { <span class="club"><Crest Name="@Season.Clubs.GetValueOrDefault(p.ClubId, "?")" Logo="@Season.Logo(p.ClubId)" /></span> }
+                        }
+                        else if (ShowClub) { <Crest Name="@Season.Clubs.GetValueOrDefault(p.ClubId, "?")" Logo="@Season.Logo(p.ClubId)" /> }
+                        else { <i>@p.Position</i> }
+                        @if (p.Rating is { } r) { <em class="rating @(r >= 7.5m ? "hi" : r <= 5.0m ? "lo" : "")">@r.ToString("0.0")</em> }
+                    </span>
+                    <span class="nm">@Surname(p.Name)@(p.Goals > 0 ? " " + string.Concat(Enumerable.Repeat("⚽", Math.Min(p.Goals, 3))) : "")</span>
+                </a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<PlayerLine> Players { get; set; } = [];
+    [Parameter] public bool ShowClub { get; set; }
+    [Parameter] public Guid? Star { get; set; }
+
+    /// <summary>Tên ngắn trên sân: từ cuối ("C. RONALDO" → "RONALDO").</summary>
+    static string Surname(string name) => name.Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: > 1 } w ? w[^1] : name;
+}

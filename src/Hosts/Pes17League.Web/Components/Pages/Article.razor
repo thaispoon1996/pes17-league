@@ -1,0 +1,53 @@
+@page "/tin/{Id:guid}"
+@inject LeagueQueries Q
+@inject NewsStore News
+
+@if (!loaded) { return; }
+@if (post is null) { <p>Không có bài này. <a href="tin">Tin tức →</a></p> return; }
+@{ var n = post.Card; }
+<p class="crumbs"><a href="@post.Season.Url(Filter())">← Tin tức</a></p>
+<article class="article">
+    <p class="muted">@(n.Competition is { } c ? $"{c} · " : "")Vòng @n.Round · @n.PublishedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+    <h1>@n.Title</h1>
+    <p class="by">@(post.ByAi ? "Bài AI, chỉ từ số liệu trận." : "Bài từ số liệu trận.") <a href="@post.Season.Url($"tran/{n.FixtureId}")">Xem trận →</a></p>
+    @if (post.Photos.FirstOrDefault() is { } lead)
+    {
+        <figure class="lead"><img src="/tin-anh/@lead.File" alt="@lead.Caption" /><figcaption>@lead.Caption</figcaption></figure>
+    }
+    <div class="body">
+        @foreach (var p in post.Body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            <p>@p</p>
+        }
+    </div>
+    @if (post.Photos.Count > 1)
+    {
+        <div class="shots">
+            @foreach (var p in post.Photos.Skip(1))
+            {
+                <figure><img src="/tin-anh/@p.File" alt="@p.Caption" /><figcaption>@p.Caption</figcaption></figure>
+            }
+        </div>
+    }
+</article>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    NewsPost? post;
+    bool loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        post = await Q.NewsPostAsync(Id);
+        loaded = true;
+    }
+
+    string Filter()
+    {
+        if (post is null) return "tin";
+        var q = new List<string>();
+        if (post.Card.Round > 0) q.Add($"vong={post.Card.Round}");
+        if (post.Card.CompetitionId is { } c) q.Add($"giai={c:D}");
+        return "tin" + (q.Count == 0 ? "" : "?" + string.Join("&", q));
+    }
+}

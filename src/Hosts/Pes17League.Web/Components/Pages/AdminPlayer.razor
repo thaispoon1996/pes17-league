@@ -1,0 +1,205 @@
+@page "/admin/cau-thu/{Id:guid}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@using Pes17League.OptionFile
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+@* Bước 3c (PO duyệt 06/11). Tên/vị trí/chỉ số có hiệu lực trong game ở OF vòng sau (A7); năm sinh, quốc tịch chỉ trên web (cầu thủ tạo mới: ghi cả vào game, PO chọn 06/11).
+   Giải nghệ = rời CLB, hợp đồng kết thúc không tiền, ẩn khỏi thị trường; "Còn đá" hiện lại.
+   Phần 2: cầu thủ admin tạo (ô 32768+) xoá hẳn được khi chưa từng ra sân/thuộc CLB (tạo ở /admin/cau-thu/moi). *@
+<h1>@(d?.Player.Name ?? "Cầu thủ")</h1>
+<AdminNav />
+@if (d is null) { if (loaded) { <p>@(msg ?? "Không tìm thấy cầu thủ.")</p> } return; }
+<p><a href="admin/cau-thu">← Danh sách cầu thủ</a>@if (d.ClubId is { } cid) { <span> · <a href="clb/@cid">@d.ClubName</a></span> }</p>
+@if (msg is not null) { <p class="msg">@msg</p> }
+
+<div class="panel">
+    <h2>Thông tin</h2>
+    <p class="muted">
+        @(d.PesId is { } pes ? $"Ô PES {pes}{(Created ? " (admin tạo)" : "")}" : "Không thuộc patch mùa đang mở") ·
+        @(d.ClubName is null ? (d.Visible ? "tự do" : "ẩn khỏi thị trường (giải nghệ)") : $"{d.ClubName}, số {d.ShirtNumber}{(d.Starter ? ", đá chính" : "")}")
+        @if (d.Contract is { } k) { <span> · hợp đồng @k.MatchesPlayed/@(k.MatchesTotal?.ToString() ?? "không hạn") trận, lương @Fmt.Money(k.Wage ?? 0)</span> }
+        @if (d.Price is { } pr) { <span> · OVR @pr.Overall · giá @Fmt.Money(pr.Price)</span> }
+    </p>
+    <div class="fields">
+        <label>Tên (web + trong game) <input @bind="form.Name" @bind:event="oninput" maxlength="40" /></label>
+        <label>Vị trí <select @bind="form.Position">@foreach (var p in Enum.GetValues<Position>()) { <option value="@p">@p</option> }</select></label>
+        <label>Năm sinh <input type="number" @bind="form.BirthYear" min="1900" placeholder="—" /></label>
+        <label>Quốc tịch (mã trong game) <input @bind="form.Nationality" maxlength="3" placeholder="VIE" list="nations" /></label>
+        <datalist id="nations">@foreach (var n in GameText.Nations.Distinct()) { <option value="@n" /> }</datalist>
+    </div>
+    @{ var game = GameText.ToDisplayable(form.Name ?? ""); }
+    <p class="muted">
+        Tên trong game: <b class="@(game.Length > OptionFileImage.MaxNameLength ? "warn" : "")">@game</b> (@game.Length/@OptionFileImage.MaxNameLength ký tự).
+        Tên + vị trí đăng ký có hiệu lực từ OF vòng sau.
+        @if (Created)
+        {
+            <span>Tên in áo tự sinh: <b>@GameText.ShirtName(form.Name ?? "")</b>; vị trí đá được = vị trí đăng ký; chân thuận, kỹ năng, ngoại hình như ô mẫu của game.
+                Quốc tịch ghi vào game (mã không có trong game → Tự do); có năm sinh thì tuổi trong game = năm hiện tại − năm sinh (thay chỉ số AGE).</span>
+        }
+        else
+        {
+            <span>Đổi vị trí: bật thêm ô vị trí đá được của vị trí mới, giữ các ô cũ; tên in áo, chân thuận, kỹ năng, ngoại hình giữ như patch.</span>
+        }
+        @if (!Created) { <span>Năm sinh, quốc tịch chỉ trên web (tuổi trong game = chỉ số AGE).</span> }
+    </p>
+    <div class="actions">
+        <button class="primary" @onclick="SaveInfo">Lưu thông tin</button>
+        @if (d.ClubId is not null || d.Visible) { <button class="danger" @onclick="Retire">Giải nghệ</button> }
+        @if (!d.Visible) { <button @onclick="Unretire">Còn đá (hiện lên chợ)</button> }
+        @if (Created && deleteBlock is null) { <button class="danger" @onclick="Delete">Xoá hẳn</button> }
+    </div>
+    @if (Created && deleteBlock is not null) { <p class="muted">Không xoá hẳn được: @deleteBlock.</p> }
+</div>
+
+<div class="panel">
+    <h2>Chỉ số @d.Season.Name</h2>
+    @if (d.Current is null || d.Start is null) { <p class="muted">Chưa có chỉ số đầu mùa (cầu thủ không thuộc patch của mùa đang mở).</p> }
+    else
+    {
+        <p class="muted">
+            OVR @Overall(d.Current) → <b>@Overall(values)</b>. Số nhỏ = đầu mùa. Sửa ghi thành thay đổi admin của mùa (không tính vào trần ±3 của tiến hoá theo trận),
+            có hiệu lực từ OF vòng sau; mùa đã có giá thì giá gốc tính lại.
+        </p>
+        <div class="attrs">
+            @foreach (var f in PlayerField.Verified)
+            {
+                var (min, max) = PlayerAdminService.Range(f);
+                <label class="@(values[f.Name] != d.Current[f.Name] ? "changed" : "")">
+                    <span>@f.Name</span>
+                    <input type="number" min="@min" max="@max" @bind="values[f.Name]" />
+                    <small>@d.Start[f.Name]</small>
+                </label>
+            }
+        </div>
+        <div class="actions">
+            <button class="primary" @onclick="SaveAttributes">Lưu chỉ số</button>
+            <button @onclick="Reset">Bỏ thay đổi</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    PlayerDetail? d;
+    Form form = new();
+    Dictionary<string, int> values = [];
+    bool loaded;
+    string? msg, deleteBlock;
+    readonly PriceModel price = new();
+
+    bool Created => d?.PesId >= OptionFileImage.FirstEditId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        msg = null;
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new PlayerAdminService(db, Clock);
+        try
+        {
+            d = await svc.DetailAsync(Id);
+            deleteBlock = Created ? await svc.DeleteBlockAsync(Id) : null;
+        }
+        catch (AdminRuleException e) { (d, msg) = (null, e.Message); }
+        loaded = true;
+        if (d is null) return;
+        form = Form.From(d.Player);
+        Reset();
+    }
+
+    void Reset() => values = d?.Current is { } c ? new(c) : [];
+
+    int Overall(IReadOnlyDictionary<string, int> v) => price.Overall(d!.Player.Position, v);
+
+    async Task SaveInfo()
+    {
+        msg = null;
+        PlayerChangeResult r;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            r = await new PlayerAdminService(db, Clock).UpdateInfoAsync(Id, form.Input(), AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        await LoadAsync();
+        msg = "Đã lưu." + (r.NewStartingGoalkeeper is { } gk ? $" {gk} lên bắt chính." : "")
+            + (r.NeedsLineupReview ? " Cầu thủ đang đá chính đổi vị trí: CLB nên xem lại đội hình." : "");
+    }
+
+    async Task SaveAttributes()
+    {
+        msg = null;
+        int n;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            n = await new PlayerAdminService(db, Clock).SetAttributesAsync(Id, values, AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        await LoadAsync();
+        msg = n == 0 ? "Không có chỉ số nào đổi." : $"Đã lưu {n} chỉ số.";
+    }
+
+    async Task Retire()
+    {
+        var p = d!;
+        if (!await JS.InvokeAsync<bool>("confirm", p.ClubName is null
+            ? $"Giải nghệ {p.Player.Name}? Ẩn khỏi thị trường; hiện lại được bằng nút \"Còn đá\"."
+            : $"Giải nghệ {p.Player.Name}? Rời {p.ClubName}, hợp đồng kết thúc ngay (không tiền), ẩn khỏi thị trường. Hiện lại được nhưng không về lại CLB.")) return;
+        msg = null;
+        PlayerChangeResult r;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            r = await new PlayerAdminService(db, Clock).RetireAsync(Id, AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        await LoadAsync();
+        msg = "Đã giải nghệ." + (r.NeedsLineupReview ? $" {p.ClubName} không có dự bị cùng vị trí: nên xếp lại đội hình." : "");
+    }
+
+    async Task Unretire()
+    {
+        msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new PlayerAdminService(db, Clock).SetVisibilityAsync(Id, true, AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        await LoadAsync();
+        msg = "Đã hiện lại trên thị trường (cầu thủ tự do).";
+    }
+
+    async Task Delete()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Xoá hẳn {d!.Player.Name}? Ô PES {d.PesId} trống lại cho lần tạo sau, không hoàn tác được (nhật ký vẫn giữ).")) return;
+        msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new PlayerAdminService(db, Clock).DeleteAsync(Id, AdminText.Actor);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        Nav.NavigateTo("admin/cau-thu");
+    }
+
+    sealed class Form
+    {
+        public string? Name { get; set; }
+        public Position Position { get; set; }
+        public int? BirthYear { get; set; }
+        public string? Nationality { get; set; }
+
+        public static Form From(FootballPlayer p) => new() { Name = p.Name, Position = p.Position, BirthYear = p.BirthYear, Nationality = p.Nationality };
+        public PlayerInput Input() => new(Name ?? "", Position, BirthYear, Nationality);
+    }
+}

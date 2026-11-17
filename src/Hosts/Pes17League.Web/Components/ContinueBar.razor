@@ -1,0 +1,42 @@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+
+@* FM đợt 10: thanh "Tiếp tục" — số việc cần làm của CLB mình (từ hộp thư), nút đi tới việc đầu tiên. Ẩn ở trang admin. *@
+@if (tasks is { Count: > 0 } && !Nav.ToBaseRelativePath(Nav.Uri).StartsWith("admin"))
+{
+    <div class="continue-bar"><div class="in">
+        <span><b>@tasks.Count</b> việc cần làm: @tasks[0].Title</span>
+        <a href="hop-thu">Hộp thư</a>
+        <a class="go" href="@(tasks[0].Link ?? "hop-thu")">Tiếp tục →</a>
+    </div></div>
+}
+
+@code {
+    List<InboxItem>? tasks;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnMove;
+        await Load();
+    }
+
+    async void OnMove(object? s, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        try { await Load(); await InvokeAsync(StateHasChanged); } catch { /* thanh phụ, lỗi không chặn trang */ }
+    }
+
+    async Task Load()
+    {
+        var season = await Q.SeasonAsync();
+        if (season is null || season.HumanClubId == Guid.Empty) { tasks = null; return; }
+        await using var db = await Dbs.CreateDbContextAsync();
+        tasks = (await new MediaService(db, Clock).DeskAsync(season.Id, season.HumanClubId)).Inbox.Where(i => i.Kind == InboxKind.Task).ToList();
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnMove;
+}

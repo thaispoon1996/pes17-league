@@ -1,0 +1,111 @@
+@page "/tap-luyen"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* FM đợt 4 (PO 12/11 duyệt mặc định): giáo án tập luyện CLB + tiềm năng ẩn (sao). Áp khi chốt vòng chia hết 5; luật TrainingRules. *@
+@if (season is null) { return; }
+@{ var me = season.HumanClubId; }
+<div class="fm">
+    <ManagerNav />
+    <header class="fm-head">
+        @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
+        <div class="fm-title">
+            <h1>Tập luyện</h1>
+            <p>@season.Name · tập luyện có hiệu lực ở các vòng 5, 10, 15… (khi khoá vòng) · thể lực/chấn thương mô phỏng mỗi vòng, BOT tự để cầu thủ chấn thương/mệt ra ngoài</p>
+        </div>
+    </header>
+    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (message is not null) { <p class="msg">@message</p> }
+
+    <section class="offer-form">
+        <h2>Giáo án</h2>
+        <div class="offer-grid">
+            <label>Trọng tâm
+                <select @bind="focus">
+                    @foreach (var (f, label) in Focuses) { <option value="@f">@label</option> }
+                </select>
+            </label>
+            <label>Cường độ
+                <select @bind="intensity">
+                    <option value="@TrainingIntensity.Light">Nhẹ</option>
+                    <option value="@TrainingIntensity.Normal">Vừa</option>
+                    <option value="@TrainingIntensity.Hard">Nặng</option>
+                </select>
+            </label>
+        </div>
+        <p class="fm-note">
+            Trẻ ≤@TrainingRules.YouthMaxAge chưa chạm tiềm năng: +1 ở @(TrainingRules.GrowthFields(20, intensity)) chỉ số trọng tâm.
+            24–@TrainingRules.PrimeMaxAge: +@TrainingRules.GrowthFields(26, intensity). Từ @TrainingRules.DeclineAge tuổi: −1 thể lực
+            (trọng tâm Thể lực thì không giảm; Nặng giảm 2). Mỗi chỉ số đổi tối đa ±@AttributeEvolution.MaxChangePerSeason/mùa (tính chung với điểm trận).
+        </p>
+        <button class="primary" disabled="@busy" @onclick="Save">Lưu giáo án</button>
+    </section>
+
+    <section>
+        <h2>Đội hình</h2>
+        <table class="table">
+            <thead><tr><th>Cầu thủ</th><th>VT</th><th>Tuổi</th><th>Chỉ số</th><th>Tiềm năng</th><th>Mùa này</th><th>Thể lực</th><th>Tinh thần</th></tr></thead>
+            <tbody>
+                @foreach (var p in rows)
+                {
+                    <tr>
+                        <td><a href="@season.Url($"cau-thu/{p.PlayerId}")">@p.Name</a></td>
+                        <td>@p.Position</td>
+                        <td>@p.Age</td>
+                        <td>@p.Overall</td>
+                        <td class="stars" title="Ước lượng của ban huấn luyện">@Stars(p.PotentialStars)</td>
+                        <td class="@(p.SeasonDelta > 0 ? "up" : p.SeasonDelta < 0 ? "down" : "")">@(p.SeasonDelta > 0 ? "+" : "")@p.SeasonDelta</td>
+                        @{ var c = cond.GetValueOrDefault(p.PlayerId); var fit = 100 - (c?.Fatigue ?? 0); var mor = c?.Morale ?? ConditionRules.DefaultMorale; }
+                        <td>
+                            @if (c is { InjuredRounds: > 0 }) { <span class="injury" title="@c.Injury">+ @c.Injury (@c.InjuredRounds vòng)</span> }
+                            else { <span class="cond-bar @(fit < 30 ? "low" : fit < 50 ? "tired" : "")" title="@fit%"><i style="width:@(fit)%"></i></span> }
+                        </td>
+                        <td><span class="cond-bar @(mor < 35 ? "low" : mor < 50 ? "tired" : "")" title="@mor/100"><i style="width:@(mor)%"></i></span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+</div>
+
+@code {
+    static readonly (TrainingFocus, string)[] Focuses =
+    [
+        (TrainingFocus.Balanced, "Cân bằng (theo vị trí)"), (TrainingFocus.Attack, "Tấn công / dứt điểm"), (TrainingFocus.Technique, "Kỹ thuật / chuyền"),
+        (TrainingFocus.Defence, "Phòng ngự"), (TrainingFocus.Physical, "Thể lực"), (TrainingFocus.Goalkeeping, "Thủ môn"),
+    ];
+
+    SeasonInfo? season;
+    List<TrainingPlayerRow> rows = [];
+    Dictionary<Guid, PlayerCondition> cond = [];
+    TrainingFocus focus;
+    TrainingIntensity intensity = TrainingIntensity.Normal;
+    string? message;
+    bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.SeasonAsync();
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new TrainingService(db, Clock);
+        var plan = await svc.GetAsync(season.HumanClubId);
+        (focus, intensity) = (plan.Focus, plan.Intensity);
+        rows = await svc.SquadAsync(season.Id, season.HumanClubId);
+        cond = await new ConditionService(db, Clock).ForPlayersAsync(rows.Select(r => r.PlayerId).ToList());   // FM đợt 5
+    }
+
+    async Task Save()
+    {
+        busy = true;
+        await using var db = await Dbs.CreateDbContextAsync();
+        await new TrainingService(db, Clock).SetAsync(season!.HumanClubId, focus, intensity);
+        message = "Đã lưu giáo án.";
+        busy = false;
+    }
+
+    static string Stars(double s) => new string('★', (int)s) + (s % 1 >= 0.5 ? "½" : "");
+}

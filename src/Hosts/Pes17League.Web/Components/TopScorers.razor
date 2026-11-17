@@ -1,0 +1,31 @@
+@* Vua phá lưới (top 10) từ các trận truyền vào: cả mùa alpha hoặc 1 giải. Ảnh mặt + huy hiệu CLB ở góc (chưa có mặt → huy hiệu). Bàn tính theo CLB lúc ghi; chuyển CLB giữa mùa → CLB ghi nhiều nhất. *@
+@if (rows.Count == 0)
+{
+    <p class="muted">Chưa có bàn thắng ghi được tên người ghi.</p>
+}
+else
+{
+    <table class="table">
+        <thead><tr><th class="left">Cầu thủ</th><th>Bàn</th></tr></thead>
+        <tbody>
+            @foreach (var s in rows)
+            {
+                <tr class="@(s.Club == Season.HumanClubId ? "mine" : "")">
+                    <td class="left"><span class="club"><Face Id="@s.Id" Name="@s.Name" Size="row"><Badge><Crest Name="@Season.Clubs[s.Club]" Logo="@Season.Logo(s.Club)" /></Badge><ChildContent><Crest Name="@Season.Clubs[s.Club]" Logo="@Season.Logo(s.Club)" /></ChildContent></Face><a href="@Season.Url($"cau-thu/{s.Id}")">@s.Name</a></span></td>
+                    <td><b>@s.Goals</b></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public IEnumerable<FixtureView> Fixtures { get; set; } = [];
+    List<(Guid Id, string Name, Guid Club, int Goals)> rows = [];
+
+    protected override void OnParametersSet() =>
+        rows = [.. Fixtures.SelectMany(f => f.Goals).Where(g => g.ScorerId is not null).GroupBy(g => g.ScorerId)
+            .Select(g => (g.Key!.Value, g.First().Scorer!, g.GroupBy(x => x.ClubId).MaxBy(c => c.Count())!.Key, g.Count()))
+            .OrderByDescending(x => x.Item4).ThenBy(x => x.Item2).Take(10)];
+}

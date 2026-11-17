@@ -1,0 +1,378 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Pes17League.Clubs.Application;
+using Pes17League.Clubs.Domain;
+using Pes17League.Clubs.Infrastructure;
+
+namespace Pes17League.Web;
+
+/// <param name="RecordingDir">Bản ghi hình cả trận (giữ 7 ngày); <paramref name="HighlightDir"/>: highlight theo trận (C7). null = không ghi hình.</param>
+/// <param name="MinFreeDiskGb">Đá BOT: ổ ghi hình còn dưới mức này thì dừng trước trận kế (<see cref="MatchOrchestratorOptions.FreeDiskBytes"/>).</param>
+/// <param name="StatsDir">File thô thống kê trận (B3, <see cref="MatchOrchestratorOptions.StatsDir"/>).</param>
+/// <param name="LiveDir">Hình xem trực tiếp (<see cref="LiveStore"/>); cần có ghi hình.</param>
+public sealed record MatchJobOptions(string Script, string WorkDir, string StreamUrl, string? RecordingDir = null, string? HighlightDir = null, int MinFreeDiskGb = 20,
+    string? StatsDir = null, string? LiveDir = null);
+
+/// <summary>Ảnh bài báo: {Dir}/{fixture:N}/{n}.jpg, web phục vụ ở <see cref="RequestPath"/>.</summary>
+public sealed record NewsStore(string Dir)
+{
+    public const string RequestPath = "/tin-anh";
+    /// <summary>Ảnh bàn đầu của trận (nếu có bài tin), dùng làm thumbnail dự phòng khi chưa có poster highlight.</summary>
+    public string? ThumbUrl(Guid fixtureId)
+    {
+        var rel = $"{fixtureId:N}/1.jpg";
+        return File.Exists(Path.Combine(Dir, rel)) ? $"{RequestPath}/{rel}" : null;
+    }
+}
+
+/// <summary>Highlight đã cắt: {Dir}/{fixture:N}.mp4 (16:9), {fixture:N}-doc.mp4 (9:16), {fixture:N}.jpg (thumbnail); web: /highlight/{id}, /doc, /anh.</summary>
+public sealed record HighlightStore(string Dir)
+{
+    public string PathFor(Guid fixtureId, bool vertical = false) => ScriptHighlightRenderer.PathFor(Dir, fixtureId, vertical);
+    public string PosterPathFor(Guid fixtureId) => ScriptHighlightRenderer.PosterPathFor(Dir, fixtureId);
+    public bool Has(Guid fixtureId, bool vertical = false) => File.Exists(PathFor(fixtureId, vertical));
+    public bool HasPoster(Guid fixtureId) => File.Exists(PosterPathFor(fixtureId));
+    /// <summary>URL ảnh thumbnail nếu đã có poster; null → trang tự dùng ảnh tin hoặc để trống.</summary>
+    public string? PosterUrl(Guid fixtureId) => HasPoster(fixtureId) ? $"/highlight/{fixtureId}/anh" : null;
+}
+
+/// <summary>Xem trực tiếp (PO 07/11): pesmatch.py ghi thêm HLS {Dir}/{fixture:N}.m3u8 + {fixture:N}-00000.ts… (đoạn 2 s, giữ ~12 s) từ cùng bản mã hoá
+/// ghi hình, chỉ giữ trận đang ghi; web phục vụ ở <see cref="RequestPath"/>/{file}.</summary>
+public sealed record LiveStore(string Dir)
+{
+    public const string RequestPath = "/truc-tiep/hls";
+    private static readonly System.Text.RegularExpressions.Regex FileName = new(@"^[0-9a-f]{32}(\.m3u8|-\d{5,}\.ts)\z");
+
+    public static string PlaylistUrl(Guid fixtureId) => $"{RequestPath}/{fixtureId:N}.m3u8";
+    /// <summary>Tên playlist/đoạn hợp lệ → đường dẫn; tên khác (../, file .tmp đang ghi) → null.</summary>
+    public string? PathFor(string file) => FileName.IsMatch(file) ? Path.Combine(Dir, file) : null;
+}
+
+/// <summary>
+/// Việc chạy nền của web (đá trận BOT, trận của PO, đóng kỳ CN): mỗi lúc 1 việc vì chỉ có 1 container trận (pes17-bench).
+/// Nhật ký sống từ sự kiện JSON của pesmatch.py; trang đăng ký <see cref="Changed"/> để vẽ lại.
+/// </summary>
+public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOptionFileStore store, TimeProvider clock, MatchJobOptions o, ILogger<MatchJobService> log,
+    IArticleWriter articles, IFrameGrabber frames, NewsStore news)
+{
+    private readonly object _gate = new();
+    private readonly List<string> _log = [];
+    private CancellationTokenSource? _cts;
+    private Dictionary<Guid, string> _names = [];
+    private TaskCompletionSource? _go;
+    private CancellationTokenSource? _stop;
+    private Guid? _declined;
+    private Guid? _botMatchday;   // vòng của việc "Đá các trận BOT" đang chạy (để đá tiếp sau trận admin chen ngang)
+
+    /// <summary>Chuẩn bị sẵn mà quá hạn này chưa bấm Đá → huỷ, trả máy (PO 05/11: 30 phút).</summary>
+    public static readonly TimeSpan PrepareTimeout = TimeSpan.FromMinutes(30);
+
+    public MatchJobOptions Options => o;
+    public string? Title { get; private set; }
+    public bool Running { get; private set; }
+    /// <summary>Bước vào trận của việc đang chạy: boot / menu / teams / ready (chuẩn bị sẵn) / loading (pesmatch.py "stage") → kickoff (màn chờ /vao-tran).</summary>
+    public string? Stage { get; private set; }
+    /// <summary>Trận của PO gần nhất (trang kết quả /vao-tran sau khi hết giờ).</summary>
+    public (Guid FixtureId, MatchSide Side)? HumanFixture { get; private set; }
+    public event Action? Changed;
+    /// <summary>Lúc vào bước hiện tại (<see cref="Stage"/>).</summary>
+    public DateTimeOffset StageAt { get; private set; }
+    /// <summary>Trận của bước hiện tại (sự kiện pesmatch.py gần nhất); null = việc chưa vào trận nào.</summary>
+    public Guid? CurrentFixtureId { get; private set; }
+    /// <summary>Trận đã bắt đầu ghi hình trực tiếp (sự kiện "live", <see cref="LiveStore"/>); lần chạy mới ("boot") → null tới khi ghi lại.</summary>
+    public Guid? LiveFixtureId { get; private set; }
+
+    // Giây còn lại tới giao bóng tính từ lúc vào mỗi bước. Mặc định đo 05/11 (4 trận BOT: boot→menu ~28 s, menu→chọn đội ~50,
+    // chọn đội→tải ~35–50, tải→giao bóng ~21); sau mỗi trận PO vào được tới giao bóng thì chỉnh dần theo thực đo (chỉ trong bộ nhớ).
+    private static readonly Dictionary<string, double> Eta = new() { [""] = 140, ["boot"] = 135, ["menu"] = 105, ["teams"] = 55, ["ready"] = 21, ["loading"] = 21 };
+    private readonly Dictionary<string, DateTimeOffset> _stageTimes = [];
+
+    /// <summary>Ước lượng giây từ lúc bấm Sẵn sàng tới giao bóng.</summary>
+    public int SecondsToKickoffEstimate { get { lock (_gate) return (int)Math.Round(Eta[""]); } }
+
+    /// <summary>Đếm ngược vào trận PO (màn chờ /vao-tran): giây ước lượng tới giao bóng; null = không trong lúc vào trận.</summary>
+    public int? SecondsToKickoff
+    {
+        get
+        {
+            if (!Running || Title != "Trận của tôi" || Ready || Stage is "kickoff" or "fulltime") return null;
+            lock (_gate) return (int)Math.Max(0, Math.Ceiling(Eta.GetValueOrDefault(Stage ?? "", 21) - (clock.GetUtcNow() - StageAt).TotalSeconds));
+        }
+    }
+    /// <summary>Trận PO đang chuẩn bị sẵn (game đi menu / chờ ở màn Thiết lập), chưa bấm Đá.</summary>
+    public bool Preparing => Running && _go is { Task.IsCompleted: false };
+    /// <summary>Game đã chờ ở màn Thiết lập: bấm Đá → ~15 s tới giao bóng.</summary>
+    public bool Ready => Preparing && Stage == "ready";
+    /// <summary>Đội hình đã chốt: OF trận PO dựng lúc bắt đầu (chuẩn bị hoặc đang đá) → khoá sửa đội hình trên web.</summary>
+    public bool LineupLocked => Running && Title == "Trận của tôi";
+    /// <summary>Trận PO đã huỷ chuẩn bị / quá hạn / lỗi lúc chuẩn bị → trang vòng không tự chuẩn bị lại (tránh lặp).</summary>
+    public bool Declined(Guid fixtureId) => _declined == fixtureId;
+
+    public IReadOnlyList<string> Log { get { lock (_gate) return [.. _log]; } }
+
+    /// <summary>Đang đá BOT, chưa xin dừng → hiện nút "Dừng sau trận này".</summary>
+    public bool CanStopAfterCurrent => Running && _stop is { IsCancellationRequested: false };
+    /// <summary>Đã xin dừng, trận BOT đang đá chưa xong.</summary>
+    public bool StopPending => Running && _stop is { IsCancellationRequested: true };
+
+    // Đo khung 1 (06/11, trận BOT): giao bóng → hết giờ 11–12,7 phút; hết giờ → trận sau (đọc điểm, cắt highlight) ~1 phút.
+    private const double BotInPlayMinutes = 12.5, BotAfterMinutes = 1;
+
+    /// <summary>Đá BOT: ước lượng phút tới khi trận đang đá xong; null = không đá BOT.</summary>
+    public int? BotMinutesLeft
+    {
+        get
+        {
+            if (!Running || Title != "Đá các trận BOT") return null;
+            lock (_gate)
+            {
+                var since = (clock.GetUtcNow() - StageAt).TotalMinutes;
+                var left = Stage switch
+                {
+                    "fulltime" => BotAfterMinutes - since,
+                    "kickoff" => BotInPlayMinutes - since + BotAfterMinutes,
+                    _ => Math.Max(0, Eta.GetValueOrDefault(Stage ?? "", 21) / 60 - since) + BotInPlayMinutes + BotAfterMinutes,
+                };
+                return (int)Math.Max(1, Math.Ceiling(left));
+            }
+        }
+    }
+
+    // Đo khung 1 (07/11): 39 trận BOT liền nhau 9 giờ 56 phút → ~15,3 phút/trận kể cả lúc chuyển trận.
+    public const double BotMatchMinutes = 15.3;
+
+    /// <summary>Đá BOT: ước lượng phút tới khi xong trận đang đá và <paramref name="queued"/> trận BOT chưa đá; null = không đá BOT.</summary>
+    public int? BotQueueMinutesLeft(int queued) => BotMinutesLeft is { } m ? m + (int)Math.Ceiling(queued * BotMatchMinutes) : null;
+
+    public bool PlayBots(Guid matchdayId)
+    {
+        var stop = new CancellationTokenSource();
+        return Start("Đá các trận BOT", async ct =>
+        {
+            var orch = Orchestrator();
+            foreach (var id in await orch.ReleaseStaleAttemptsAsync(matchdayId, ct)) Write($"{Name(id)}: lần chạy trước bị ngắt giữa trận (web khởi động lại?) → đá lại");
+            var r = await orch.PlayBotFixturesAsync(matchdayId, ct, stop.Token);
+            foreach (var f in r.Fixtures)
+            {
+                Write($"{Name(f.FixtureId)}: {(f.Played ? "xong" : $"CHƯA ĐÁ ({f.LastError})")} sau {f.Attempts} lần");
+                if (f.HighlightError is not null) Write($"  Highlight lỗi: {f.HighlightError}");
+                if (f.StatsError is not null) Write($"  Thống kê lỗi: {f.StatsError}");
+                if (f.PressError is not null) Write($"  Bài tường thuật lỗi: {f.PressError}");
+            }
+            if (r.LowDiskFreeBytes is { } free)
+                Write($"DỪNG: ổ ghi hình còn {free / (double)(1L << 30):0.#} GB (dưới {o.MinFreeDiskGb} GB), các trận chưa đá giữ nguyên lịch. Dọn bớt ổ rồi bấm lại \"Đá các trận BOT\".");
+            if (r.Stopped) Write("ĐÃ DỪNG theo yêu cầu, các trận BOT chưa đá giữ nguyên lịch. Bấm lại \"Đá các trận BOT\" để đá tiếp.");
+            if (r.WaitingForHuman.Count > 0) Write($"Chờ PO: {string.Join(", ", r.WaitingForHuman.Select(Name))}");
+            if (r.Settlement is not null) Write("Vòng đã chốt.");
+        }, () => { _stop = stop; _botMatchday = matchdayId; });
+    }
+
+    /// <summary>Đang đá BOT → admin được chen ngang (<see cref="PlayHumanNowAsync"/>).</summary>
+    public bool CanPreemptBots => Running && Title == "Đá các trận BOT";
+
+    /// <summary>PO 15/11 (chọn A, chỉ admin): bấm Sẵn sàng lúc BOT đang đá → ngắt ngay trận BOT (lượt Aborted, trận về lịch, đá lại sau),
+    /// vào trận của PO, đá xong tự đá tiếp các trận BOT của vòng đó. Admin bấm Huỷ trận của PO thì không tự đá tiếp.</summary>
+    public async Task<bool> PlayHumanNowAsync(Guid fixtureId, MatchSide side)
+    {
+        Guid? resume = null;
+        if (CanPreemptBots)
+        {
+            resume = _botMatchday;
+            Write("Admin vào trận của mình: ngắt trận BOT đang đá (trận đó về lịch, đá lại sau).");
+            Cancel();
+            for (var i = 0; i < 240 && Running; i++) await Task.Delay(250);   // chờ script BOT thoát (tối đa 60s)
+            if (Running) return false;
+        }
+        CancellationTokenSource? mine = null;
+        var ok = PlayHuman(fixtureId, side, then: resume is { } md ? () => { if (mine is { IsCancellationRequested: false }) PlayBots(md); } : null);
+        if (ok) mine = _cts;
+        return ok;
+    }
+
+    /// <summary>Đá BOT: xong trận đang đá thì dừng, nhường máy cho trận của PO (khác Huỷ: không bỏ ngang trận). Trận chưa đá giữ lịch.</summary>
+    public void StopAfterCurrent()
+    {
+        if (!CanStopAfterCurrent) return;
+        _stop!.Cancel();
+        Write("Sẽ dừng sau trận đang đá (nhường máy cho trận của tôi).");
+    }
+
+    /// <param name="prepare">true: chuẩn bị sẵn tới màn Thiết lập, chờ <see cref="Go"/> (tối đa <see cref="PrepareTimeout"/>).</param>
+    public bool PlayHuman(Guid fixtureId, MatchSide side, bool prepare = false, Action? then = null)
+    {
+        var go = prepare ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+        return Start("Trận của tôi", async ct =>
+        {
+            HumanFixture = (fixtureId, side);
+            if (go is not null)
+            {
+                _ = ExpireAsync(go.Task, ct);
+                Write($"Đang chuẩn bị trận — game tự đi menu và chờ sẵn, bấm Đá là vào (tự huỷ sau {PrepareTimeout.TotalMinutes:0} phút).");
+            }
+            else Write($"Mở stream {o.StreamUrl} — game đang tự vào trận, PO điều khiển đội {(side == MatchSide.Home ? "nhà" : "khách")}.");
+            try
+            {
+                var r = await Orchestrator().PlayFixtureAsync(fixtureId, side, ct: ct, go: go?.Task);
+                Write(r.Played ? "Trận đã ghi kết quả." : $"Chưa ghi kết quả: {r.LastError} (sau {r.Attempts} lần)");
+                if (r.HighlightError is not null) Write($"Highlight lỗi: {r.HighlightError}");
+                if (r.StatsError is not null) Write($"Thống kê lỗi: {r.StatsError}");
+                if (r.PressError is not null) Write($"Bài tường thuật lỗi: {r.PressError}");
+            }
+            finally { if (go is { Task.IsCompleted: false }) _declined = fixtureId; }
+        }, () => { _go = go; _declined = null; }, then);
+    }
+
+    /// <summary>Bấm Đá khi đã chuẩn bị: game vào trận ngay (chưa tới màn Thiết lập thì đi tiếp vào thẳng).</summary>
+    public void Go()
+    {
+        _go?.TrySetResult();
+        Changed?.Invoke();
+    }
+
+    private async Task ExpireAsync(Task go, CancellationToken ct)
+    {
+        try { await Task.WhenAny(go, Task.Delay(PrepareTimeout, clock, ct)); } catch (OperationCanceledException) { return; }
+        if (go.IsCompleted || ct.IsCancellationRequested) return;
+        Write($"Quá {PrepareTimeout.TotalMinutes:0} phút chưa bấm Đá — huỷ chuẩn bị, trả máy.");
+        Cancel();
+    }
+
+    /// <summary>Trận kẹt "Đang đá" vì web khởi động lại giữa trận (kể cả trận của PO) → về lịch, đá lại bằng nút như thường.</summary>
+    public bool ReleaseStale(Guid matchdayId) => Start("Đặt lại trận kẹt", async ct =>
+    {
+        var ids = await Orchestrator().ReleaseStaleAttemptsAsync(matchdayId, ct);
+        Write(ids.Count == 0 ? "Không có trận nào kẹt." : $"Đã đặt lại {ids.Count} trận: {string.Join(", ", ids.Select(Name))}.");
+    });
+
+    /// <summary>Khoá vòng (đóng kỳ CN nếu có); khoá được thì các trận BOT tự đá lần lượt (PO 07/11: BOT không chờ trận của PO,
+    /// PO nhường máy bằng "Dừng sau trận này").</summary>
+    public bool CloseWindow(Guid matchdayId)
+    {
+        var locked = false;
+        return Start("Đóng kỳ chuyển nhượng", async ct =>
+        {
+            await using var db = await dbs.CreateDbContextAsync(ct);
+            var r = await new CompetitionService(db, store, clock).CloseTransferWindowAsync(matchdayId, ct);
+            if (r.Ok) Write("Đã đóng kỳ CN, sinh option file cho vòng.");
+            else Write($"Lỗi: {r.Error} {string.Join("; ", r.Issues?.Select(i => i.ToString()) ?? [])}");
+            locked = r.Ok;
+        }, then: () => { if (locked) PlayBots(matchdayId); });
+    }
+
+    public void Cancel() => _cts?.Cancel();
+
+    private MatchOrchestrator Orchestrator() =>
+        new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, OnEvent, o.RecordingDir, o.LiveDir),
+            new MatchOrchestratorOptions { FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null, MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
+            null,   // PO 12/11: bỏ highlight từng trận; bàn thắng cắt từ bản ghi trong RoundReelService (đoạn từng bàn + clip vòng)
+            new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));
+
+    /// <summary>Số byte trống của ổ chứa <paramref name="dir"/> (thư mục chưa tạo → thư mục cha gần nhất).</summary>
+    private static long FreeBytes(string dir)
+    {
+        var d = new DirectoryInfo(Path.GetFullPath(dir));
+        while (!d.Exists && d.Parent is { } parent) d = parent;
+        return new DriveInfo(d.FullName).AvailableFreeSpace;
+    }
+
+    /// <param name="then">Chạy sau khi việc kết thúc (đã nhả máy), vd khoá vòng xong thì đá BOT.</param>
+    private bool Start(string title, Func<CancellationToken, Task> work, Action? init = null, Action? then = null)
+    {
+        lock (_gate)
+        {
+            if (Running) return false;
+            Running = true;
+            Title = title;
+            Stage = null;
+            CurrentFixtureId = null;
+            LiveFixtureId = null;
+            _log.Clear();
+            _cts = new CancellationTokenSource();
+            _go = null;
+            _stop = null;
+            StageAt = clock.GetUtcNow();
+            _stageTimes.Clear();
+            _stageTimes[""] = StageAt;
+            init?.Invoke();
+        }
+        var ct = _cts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                _names = await FixtureNamesAsync();
+                Write($"Bắt đầu: {title}");
+                await work(ct);
+            }
+            catch (OperationCanceledException) { Write("Đã huỷ."); }
+            catch (Exception e) { log.LogError(e, "Job {Title}", title); Write($"Lỗi: {e.Message}"); }
+            finally
+            {
+                lock (_gate) Running = false;
+                Write("Kết thúc.");
+            }
+            then?.Invoke();
+        });
+        Changed?.Invoke();
+        return true;
+    }
+
+    private void OnEvent(MatchRunRequest r, JsonElement e)
+    {
+        var name = Name(r.FixtureId);
+        string S(string p) => e.TryGetProperty(p, out var v) ? v.ToString() : "?";
+        if (S("event") is "stage" or "kickoff" or "fulltime")
+        {
+            var now = clock.GetUtcNow();
+            lock (_gate)
+            {
+                Stage = S("event") == "stage" ? S("stage") : S("event");
+                StageAt = now;
+                CurrentFixtureId = r.FixtureId;
+                if (Stage == "boot") LiveFixtureId = null;
+                if (Stage == "boot" && _stageTimes.ContainsKey("boot")) _stageTimes.Clear();   // thử lại → lần này không dùng để chỉnh ước lượng
+                if (Stage == "kickoff" && r.HumanSide is not null && _stageTimes.Count > 0 && !_stageTimes.ContainsKey("ready"))
+                    foreach (var (st, at) in _stageTimes) Eta[st] = (Eta.GetValueOrDefault(st, 21) + (now - at).TotalSeconds) / 2;
+                _stageTimes.TryAdd(Stage, now);
+            }
+            Changed?.Invoke();
+        }
+        if (S("event") == "live")
+        {
+            lock (_gate) LiveFixtureId = r.FixtureId;
+            Changed?.Invoke();
+        }
+        var text = S("event") switch
+        {
+            "kickoff" => $"{name}: bắt đầu",
+            "goal" => $"{name}: BÀN THẮNG đội {(S("side") == "home" ? "nhà" : "khách")} phút {S("minute")}",
+            "fulltime" => $"{name}: hết giờ {S("home")}-{S("away")}, đang đọc thống kê + điểm cầu thủ",
+            "stats_error" => $"{name}: không đọc được thống kê ({S("reason")})",
+            "penalties" => $"{name}: loạt penalty {S("home")}-{S("away")}",
+            "penalties_error" => $"{name}: không đọc được loạt penalty ({S("reason")}), admin nhập sau",
+            "end" => $"{name}: hết trận {S("home")}-{S("away")}",
+            "error" => $"{name}: lỗi {S("reason")}",
+            "nav_retry" => $"{name}: vào trận lại lần {S("attempt")} ({S("reason")})",
+            "audio_error" => $"{name}: ghi hình không có tiếng ({S("reason")})",
+            _ => null,
+        };
+        if (text is not null) Write(text);
+    }
+
+    private void Write(string line)
+    {
+        lock (_gate) _log.Add($"{DateTime.Now:HH:mm:ss} {line}");
+        Changed?.Invoke();
+    }
+
+    private string Name(Guid fixtureId) => _names.GetValueOrDefault(fixtureId, fixtureId.ToString()[..8]);
+
+    private async Task<Dictionary<Guid, string>> FixtureNamesAsync()
+    {
+        await using var db = await dbs.CreateDbContextAsync();
+        return await (from f in db.Fixtures
+                      join h in db.Clubs on f.HomeClubId equals h.Id
+                      join a in db.Clubs on f.AwayClubId equals a.Id
+                      select new { f.Id, Text = h.Name + " – " + a.Name }).ToDictionaryAsync(x => x.Id, x => x.Text);
+    }
+}

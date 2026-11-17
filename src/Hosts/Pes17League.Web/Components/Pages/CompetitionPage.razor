@@ -1,0 +1,124 @@
+@page "/giai/{CompetitionId:guid}"
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@* Trang 1 giải trong mùa đang chạy (bước 7, PO chọn 06/11): BXH tô vùng theo luật + vua phá lưới, lịch & kết quả theo vòng, nhánh đấu (cúp). ?mua=N xem lại mùa cũ. *@
+@if (!loaded) { return; }
+@if (season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> return; }
+@if (edition is null) { <p>Giải này không đá trong mùa @season.Name. <a href="@season.Url("giai")">Các giải →</a></p> return; }
+<section class="hero">
+    <a class="pill" href="mua" title="Các mùa">@season.Label · @Fmt.Kind(edition)</a>
+    <div class="hero-club">
+        <Crest Name="@edition.Name" Logo="@edition.Logo" Large="true" />
+        <div><h1>@edition.Name</h1><p>@(Stopped ? "Dừng giữa mùa" : AdminText.Status(edition.Status))@(Champion is { } c ? $" · Vô địch: {season.Clubs[c]}" : "")</p></div>
+    </div>
+</section>
+<nav class="subnav">
+    @if (Continental)
+    {
+        <a href="@season.Url($"giai/{CompetitionId}")" class="@(Tab == "lich" || Tab == "nhanh" && bracket is not null ? "" : "active")">League phase</a>
+    }
+    else if (!Cup)
+    {
+        <a href="@season.Url($"giai/{CompetitionId}")" class="@(Tab == "lich" || Tab == "nhanh" && bracket is not null ? "" : "active")">Bảng xếp hạng</a>
+    }
+    <a href="@season.Url($"giai/{CompetitionId}?tab=lich")" class="@(Tab == "lich" || (Cup && !Continental && Tab != "nhanh") ? "active" : "")">Lịch &amp; kết quả</a>
+    @if (bracket is not null) { <a href="@season.Url($"giai/{CompetitionId}?tab=nhanh")" class="@(Tab == "nhanh" ? "active" : "")">Nhánh đấu</a> }
+</nav>
+@if (Tab == "nhanh" && bracket is not null)
+{
+    <section class="panel">
+        <CupBracketView Season="season" Rounds="bracket" Matchdays="matchdays" />
+        <p class="muted note">
+            @if (Continental)
+            {
+                <text>Ô tỷ số: lượt 1 · lượt 2 · <b>tổng</b>. Lượt 1 trên sân đội xếp hạng league phase thấp hơn; đi tiếp: tổng tỷ số → bàn thắng sân khách → đội xếp hạng cao hơn.
+                Chung kết 1 trận, hoà thì đá penalty. <i class="proj">dự kiến</i> = theo BXH league phase hiện tại, chưa chốt.</text>
+            }
+            else
+            {
+                <text>Cúp quốc gia: mỗi vòng 1 trận, bốc lại cặp đấu; hoà sau 120' thì đá penalty. Hạt giống mạnh được bye vòng đầu nếu số đội không phải luỹ thừa của 2.</text>
+            }
+        </p>
+    </section>
+}
+else if (Tab == "lich" || (Cup && !Continental && Tab != "nhanh"))
+{
+    <div class="grid">
+        <div>
+            @foreach (var g in own.GroupBy(f => f.Matchday))
+            {
+                <div class="round-title"><b>@Fmt.Round(own, g.Key)</b><small class="muted"><a href="@season.Url($"lich?khung={g.Key}")">Vòng @g.Key</a> · @Fmt.Played(g)</small></div>
+                <ul class="fixtures">
+                    @foreach (var f in g) { <FixtureCard Season="season" F="f" /> }
+                </ul>
+            }
+            @if (Continental && own.All(f => f.Stage == FixtureStage.LeaguePhase))
+            {
+                <p class="muted">Vòng loại trực tiếp bốc sau khi league phase đá xong — xem tab Nhánh đấu.</p>
+            }
+        </div>
+        @if (Continental)
+        {
+            <aside class="panel">
+                <div class="panel-head"><h2>League phase</h2><a href="@season.Url($"giai/{CompetitionId}")">Đầy đủ →</a></div>
+                <StandingsTable Season="season" Rows="rows" Zones="zones" Compact="true" />
+            </aside>
+        }
+    </div>
+}
+else
+{
+    <div class="grid">
+        <section class="panel">
+            <StandingsTable Season="season" Rows="rows" Fixtures="table" Zones="zones" />
+        </section>
+        <aside class="panel">
+            <div class="panel-head"><h2>Vua phá lưới</h2></div>
+            <TopScorers Season="season" Fixtures="own" />
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid CompetitionId { get; set; }
+    /// <summary>null = BXH, "lich" = lịch & kết quả, "nhanh" = nhánh đấu.</summary>
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    bool loaded;
+    (Guid, int?) loadedFor;
+    SeasonInfo? season;
+    EditionView? edition;
+    IReadOnlyList<StandingRow<Guid>> rows = [];
+    List<FixtureView> own = [], table = [];
+    IReadOnlyList<Zone> zones = [];
+    IReadOnlyList<BracketRound>? bracket;
+    List<Matchday> matchdays = [];
+    bool Continental => edition?.Type == CompetitionType.ContinentalCup;
+    bool Cup => edition?.Type is CompetitionType.ContinentalCup or CompetitionType.DomesticCup;
+    /// <summary>Giải bị chốt khi chưa đá hết (mùa dừng giữa chừng, vd alpha).</summary>
+    bool Stopped => edition?.Status == EditionStatus.Finished && own.Any(f => f.Status != FixtureStatus.Played);
+    Guid? Champion => Cup ? bracket?.LastOrDefault()?.Ties.FirstOrDefault()?.Winner : edition?.Status == EditionStatus.Finished && own.All(f => f.Status == FixtureStatus.Played) ? rows.FirstOrDefault()?.Club : null;
+
+    // Đổi tab chỉ đổi query (cùng trang) → không đọc lại; đổi giải/mùa → đọc lại.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loaded && loadedFor == (CompetitionId, Mua)) return;
+        loadedFor = (CompetitionId, Mua);
+        season = await Q.ViewSeasonAsync(Mua);
+        List<EditionView> editions = season is null ? [] : await Q.EditionsAsync(season.Id);
+        edition = editions.FirstOrDefault(e => e.CompetitionId == CompetitionId);
+        if (season is not null && edition is not null)
+        {
+            rows = await Q.EditionStandingsAsync(edition.Id, Store, Clock);
+            own = await Q.FixturesAsync(season.Id, editionId: edition.Id);
+            table = [.. own.Where(f => f.Stage is FixtureStage.League or FixtureStage.LeaguePhase)];     // phong độ theo trận tính BXH
+            zones = Fmt.Zones(edition, editions, rows.Count);
+            bracket = Cup ? await Q.BracketAsync(edition.Id, Store, Clock) : null;
+            matchdays = Cup ? await Q.MatchdaysAsync(season.Id) : [];
+        }
+        loaded = true;
+    }
+}

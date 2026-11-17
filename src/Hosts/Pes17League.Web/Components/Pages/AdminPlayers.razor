@@ -1,0 +1,73 @@
+@page "/admin/cau-thu"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@using Pes17League.OptionFile
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+
+<h1>Quản trị</h1>
+<AdminNav />
+@if (msg is not null) { <p class="msg">@msg</p> }
+@if (rows is null) { return; }
+@{ var shown = Shown().ToList(); }
+<div class="panel">
+    <div class="panel-head"><h2>Cầu thủ</h2><a href="admin/cau-thu/moi">+ Tạo cầu thủ (còn @(OptionFileImage.EditCount - rows.Count(Created))/@OptionFileImage.EditCount ô)</a></div>
+    <div class="filters">
+        <input @bind="q" @bind:event="oninput" placeholder="Tìm tên cầu thủ / CLB / ô PES" />
+        <select @bind="pos"><option value="">Mọi vị trí</option>@foreach (var p in Enum.GetValues<Position>()) { <option value="@p">@p</option> }</select>
+        <select @bind="state">
+            <option value="">Mọi trạng thái</option>
+            <option value="club">Trong CLB (@rows.Count(r => r.ClubId is not null))</option>
+            <option value="free">Tự do (@rows.Count(r => r.ClubId is null && r.Visible))</option>
+            <option value="hidden">Ẩn khỏi thị trường (@rows.Count(r => !r.Visible))</option>
+            <option value="created">Admin tạo (@rows.Count(Created))</option>
+        </select>
+    </div>
+    <p class="muted">@shown.Count cầu thủ thuộc patch của @(season!.Name)@(shown.Count > Max ? $", hiện {Max} người OVR cao nhất" : ""). OVR, tuổi theo chỉ số hiện tại; giá mùa nếu đã tính, chưa thì giá gốc.</p>
+    <table class="table">
+        <thead><tr><th>Ô PES</th><th class="left">Cầu thủ</th><th>Vị trí</th><th>Tuổi</th><th>OVR</th><th>Giá</th><th class="left">CLB</th></tr></thead>
+        <tbody>
+            @foreach (var r in shown.Take(Max))
+            {
+                <tr @onclick='() => Nav.NavigateTo($"admin/cau-thu/{r.Id}")'>
+                    <td>@r.PesId</td>
+                    <td class="left"><b>@r.Name</b></td>
+                    <td>@r.Position</td>
+                    <td>@r.Age</td>
+                    <td>@r.Overall</td>
+                    <td>@Fmt.Money(r.Price)</td>
+                    <td class="left">@(r.ClubName ?? "Tự do")@if (!r.Visible) { <small class="warn"> · ẩn</small> }</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    const int Max = 200;
+    Season? season;
+    IReadOnlyList<PlayerListRow>? rows;
+    string q = "", state = "";
+    Position? pos;
+    string? msg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        try { (season, rows) = await new PlayerAdminService(db, Clock).ListAsync(); }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    IEnumerable<PlayerListRow> Shown()
+    {
+        var t = q.Trim();
+        return rows!.Where(r => (pos is null || r.Position == pos)
+            && (state == "" || state == "club" && r.ClubId is not null || state == "free" && r.ClubId is null && r.Visible || state == "hidden" && !r.Visible
+                || state == "created" && Created(r))
+            && (t == "" || r.Name.Contains(t, StringComparison.OrdinalIgnoreCase) || r.ClubName?.Contains(t, StringComparison.OrdinalIgnoreCase) == true
+                || r.PesId.ToString() == t));
+    }
+
+    static bool Created(PlayerListRow r) => r.PesId >= OptionFileImage.FirstEditId;
+}

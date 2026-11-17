@@ -1,0 +1,62 @@
+@* Ảnh trên bảng tỷ số trong game. Lưu file ngay; trận sau mới hiện. Không cần bấm Lưu của trang giải. *@
+@using Microsoft.AspNetCore.Components.Forms
+@inject ScoreboardStore Boards
+
+<div class="guide">
+    <p><b>Cách tải ảnh</b></p>
+    <p>1. <b>Logo giải</b> — ảnh vuông, nền trong. Hiện nhỏ cạnh tên giải, trên dòng chữ dưới tỉ số.</p>
+    <p>2. <b>Ảnh bảng tỉ số</b> — ảnh ngang (nên khoảng 1280×160). Thay nền thanh tỉ số. Giữa ảnh để một khoảng sáng, vì game viết tỉ số vào giữa. Tên hai đội do game viết đè lên, nên nền đừng quá rối.</p>
+    <p class="muted">Bấm tải là lưu ngay, không cần nút Lưu. Ảnh PNG, JPEG hoặc WebP, tối đa 4 MB. Trận đang đá không đổi. Trận sau mới hiện trong game. Chưa tải ảnh bảng thì game vẫn đổi màu thanh và ghi tên giải.</p>
+</div>
+
+<div class="logo-edit">
+    @if (logo is not null) { <img class="logo lg" src="@logo" alt="" /> }
+    <label class="upload">Tải logo giải<InputFile accept="image/png,image/jpeg,image/webp" OnChange="e => Upload(e, false)" /></label>
+    @if (logo is not null) { <button class="link" @onclick="() => Clear(false)">Bỏ logo</button> }
+    @if (logoError is not null) { <span class="warn">@logoError</span> }
+</div>
+
+<div class="logo-edit">
+    @if (board is not null) { <img class="logo board" src="@board" alt="" /> }
+    <label class="upload">Tải ảnh bảng tỉ số<InputFile accept="image/png,image/jpeg,image/webp" OnChange="e => Upload(e, true)" /></label>
+    @if (board is not null) { <button class="link" @onclick="() => Clear(true)">Bỏ ảnh bảng</button> }
+    @if (boardError is not null) { <span class="warn">@boardError</span> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CompetitionId { get; set; }
+    string? logo, board, logoError, boardError;
+
+    protected override void OnParametersSet()
+    {
+        logo = Boards.WebPath(CompetitionId);
+        board = Boards.WebPath(CompetitionId, board: true);
+    }
+
+    async Task Upload(InputFileChangeEventArgs e, bool isBoard)
+    {
+        SetError(isBoard, null);
+        if (e.File.Size > ScoreboardStore.MaxBytes) { SetError(isBoard, "Ảnh tối đa 4 MB"); return; }
+        using var ms = new MemoryStream();
+        await using (var s = e.File.OpenReadStream(ScoreboardStore.MaxBytes)) await s.CopyToAsync(ms);
+        try
+        {
+            await Boards.SaveAsync(CompetitionId, ms.ToArray(), isBoard);
+            var path = Boards.WebPath(CompetitionId, isBoard) + "?v=" + DateTime.UtcNow.Ticks;
+            if (isBoard) board = path; else logo = path;
+        }
+        catch (AdminRuleException x) { SetError(isBoard, x.Message); }
+    }
+
+    void Clear(bool isBoard)
+    {
+        SetError(isBoard, null);
+        Boards.Clear(CompetitionId, isBoard);
+        if (isBoard) board = null; else logo = null;
+    }
+
+    void SetError(bool isBoard, string? message)
+    {
+        if (isBoard) boardError = message; else logoError = message;
+    }
+}

@@ -1,0 +1,75 @@
+@page "/admin/nhat-ky"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+
+<h1>Quản trị</h1>
+<AdminNav />
+@if (rows is null) { return; }
+<div class="panel">
+    <h2>Nhật ký admin</h2>
+    <p class="muted">@rows.Count thao tác gần nhất. Bấm một dòng để xem thay đổi.</p>
+    <table class="table">
+        <thead><tr><th class="left">Lúc</th><th class="left">Đối tượng</th><th class="left">Thao tác</th><th>Ai</th></tr></thead>
+        <tbody>
+            @foreach (var a in rows)
+            {
+                <tr @onclick="() => Toggle(a.Id)">
+                    <td class="left">@a.At.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                    @{ var (type, name) = Name(a); }
+                    <td class="left">@if (type is not null) { <small>@($"{type} ")</small> }<b>@name</b></td>
+                    <td class="left">@AdminText.Action(a.Action)</td>
+                    <td>@a.Actor</td>
+                </tr>
+                @if (open.Contains(a.Id))
+                {
+                    <tr><td colspan="4" class="left"><small>@foreach (var line in AdminText.Diff(a.Before, a.After, Label)) { @line<br /> }</small></td></tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    List<AdminAuditEntry>? rows;
+    Dictionary<Guid, string> names = [];
+    readonly HashSet<Guid> open = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        rows = await db.AdminAudit.AsNoTracking().OrderByDescending(a => a.At).Take(200).ToListAsync();
+        names = await db.Competitions.ToDictionaryAsync(c => c.Id, c => c.Name);
+        foreach (var s in await db.Seasons.Select(s => new { s.Id, s.Name }).ToListAsync()) names[s.Id] = s.Name;
+        foreach (var e in await (from e in db.Editions
+                                 join c in db.Competitions on e.CompetitionId equals c.Id
+                                 join s in db.Seasons on e.SeasonId equals s.Id
+                                 select new { e.Id, c.Name, Season = s.Name }).ToListAsync())
+            names[e.Id] = $"{e.Name} — {e.Season}";
+        foreach (var c in await db.Clubs.Select(c => new { c.Id, c.Name }).ToListAsync()) names[c.Id] = c.Name;
+        var players = rows.Where(a => a.EntityType == "Player").Select(a => a.EntityId).Distinct().ToList();
+        foreach (var p in await db.Players.Where(p => players.Contains(p.Id)).Select(p => new { p.Id, p.Name }).ToListAsync()) names[p.Id] = p.Name;
+        // Mùa giải đã xoá: tên lấy từ dòng "Tạo" ({Competition, Season}).
+        foreach (var a in rows.Where(a => a.EntityType == nameof(CompetitionEdition) && a.Action == "Create" && a.After is not null && !names.ContainsKey(a.EntityId)))
+        {
+            using var d = System.Text.Json.JsonDocument.Parse(a.After!);
+            if (d.RootElement.TryGetProperty("Competition", out var c) && d.RootElement.TryGetProperty("Season", out var s)) names[a.EntityId] = $"{c} — {s} (đã xoá)";
+        }
+    }
+
+    /// <summary>"Giải Premier League"; đối tượng đã xoá thì lấy "Name" trong ảnh chụp trước/sau. Tên đã có loại ("Mùa 1") thì không lặp.</summary>
+    (string? Type, string Name) Name(AdminAuditEntry a)
+    {
+        var name = names.GetValueOrDefault(a.EntityId) ?? AdminText.JsonName(a.Before) ?? AdminText.JsonName(a.After) ?? "(đã xoá)";
+        var type = AdminText.Entity(a.EntityType);
+        return (name.StartsWith(type) ? null : type, name);
+    }
+
+    /// <summary>Id trong ảnh chụp (liên kết lên/xuống hạng, mùa…) → tên.</summary>
+    string Label(string value) => Guid.TryParse(value, out var g) && names.TryGetValue(g, out var n) ? n : value;
+
+    void Toggle(Guid id)
+    {
+        if (!open.Remove(id)) open.Add(id);
+    }
+}

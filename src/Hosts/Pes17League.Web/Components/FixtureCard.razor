@@ -1,0 +1,29 @@
+@* Một trận: CLB nhà – tỷ số – CLB khách; nội dung thêm (nút, bàn thắng) qua ChildContent. *@
+<li class="@(Mine ? "mine" : "")">
+    <span class="team"><Crest Name="@Season.Clubs[F.Home]" Logo="@Season.Logo(F.Home)" /><span>@Season.Clubs[F.Home]</span></span>
+    <span class="score @(F.Status == FixtureStatus.Played ? "" : F.Status == FixtureStatus.Playing ? "live" : "pending")">
+        @(F.Status == FixtureStatus.Played ? Fmt.Score(F.HomeGoals, F.AwayGoals, F.HomePenalties, F.AwayPenalties) : F.Status == FixtureStatus.Playing ? "Đang đá" : "vs")
+    </span>
+    <span class="team away"><Crest Name="@Season.Clubs[F.Away]" Logo="@Season.Logo(F.Away)" /><span>@Season.Clubs[F.Away]</span></span>
+    @if (F.Goals.Count > 0)
+    {
+        <small class="goals">⚽ @string.Join(" · ", F.Goals.Select(x => $"{x.Scorer ?? Season.Clubs[x.ClubId]} {x.Minute}'"))</small>
+    }
+    @if (F.Status == FixtureStatus.Played)
+    {
+        <span class="wide hl"><a href="/tran/@F.Id">📊 Thống kê</a>
+        </span>
+    }
+    else if (F.Status == FixtureStatus.Scheduled)
+    {
+        <span class="wide hl"><a href="/tran/@F.Id">🔎 Nhận định</a></span>
+    }
+    @ChildContent
+</li>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public FixtureView F { get; set; } = null!;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    bool Mine => F.Home == Season.HumanClubId || F.Away == Season.HumanClubId;
+}

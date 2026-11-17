@@ -1,0 +1,9 @@
+@page "/highlight"
+@* PO 12/11: bỏ highlight từng trận; link cũ /highlight sang trang tổng hợp bàn thắng (giữ ?mua=). *@
+@inject NavigationManager Nav
+
+@code {
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    protected override void OnInitialized() => Nav.NavigateTo(Mua is { } m ? $"ban-thang?mua={m}" : "ban-thang", replace: true);
+}

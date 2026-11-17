@@ -1,0 +1,38 @@
+@* 1 bảng chỉ số (trang Thống kê): người/CLB đứng đầu nổi bật, các dòng còn lại dạng danh sách. Bảng cầu thủ: ảnh mặt + huy hiệu CLB ở góc. *@
+<section class="panel lb">
+    <div class="panel-head"><h2>@Board.Title</h2></div>
+    <p class="lb-hint">@Board.Hint</p>
+    @if (Board.Rows.Count == 0)
+    {
+        <p class="muted">Chưa có số liệu.</p>
+    }
+    else
+    {
+        var top = Board.Rows[0];
+        <a class="lb-top" href="@Link(top)">
+            @if (Board.Players) { <Face Id="@top.Id" Name="@top.Name" Size="md"><Badge>@ClubCrest(top)</Badge><ChildContent><Crest Name="@Season.Clubs.GetValueOrDefault(top.ClubId, top.Name)" Logo="@Season.Logo(top.ClubId)" Large="true" /></ChildContent></Face> }
+            else { <Crest Name="@Season.Clubs.GetValueOrDefault(top.ClubId, top.Name)" Logo="@Season.Logo(top.ClubId)" Large="true" /> }
+            <span class="who"><b>@top.Name</b><small>@(Board.Players ? Season.Clubs.GetValueOrDefault(top.ClubId, "") : top.Note)@(Board.Players && top.Note is { } n ? $" · {n}" : "")</small></span>
+            <span class="v">@top.Value</span>
+        </a>
+        <ol class="lb-list" start="2">
+            @foreach (var r in Board.Rows.Skip(1))
+            {
+                <li class="@(r.ClubId == Season.HumanClubId ? "mine" : "")">
+                    <a href="@Link(r)">@if (Board.Players) { <Face Id="@r.Id" Name="@r.Name" Size="row"><Badge>@ClubCrest(r)</Badge><ChildContent>@ClubCrest(r)</ChildContent></Face> } else { @ClubCrest(r) }<span class="n">@r.Name</span>
+                        @if (r.Note is { } note) { <small>@note</small> }
+                        <b>@r.Value</b></a>
+                </li>
+            }
+        </ol>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public Board Board { get; set; } = null!;
+
+    string Link(Leader r) => Board.Players ? Season.Url($"cau-thu/{r.Id}") : $"clb/{r.Id}";
+
+    RenderFragment ClubCrest(Leader r) => @<Crest Name="@Season.Clubs.GetValueOrDefault(r.ClubId, r.Name)" Logo="@Season.Logo(r.ClubId)" />;
+}

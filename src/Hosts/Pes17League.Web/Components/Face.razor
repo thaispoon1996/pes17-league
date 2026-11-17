@@ -1,0 +1,24 @@
+@inject FaceStore Faces
+@* Mặt cầu thủ chụp trong game (bo tròn, giữ nền xanh của game), Badge = huy hiệu nhỏ ở góc. Chưa có ảnh → ChildContent nếu có, không thì hình bóng người. *@
+@if (Faces.WebPath(Id) is { } src)
+{
+    @if (Badge is null) { <img class="face @Size" src="@src" alt="" title="@Name" loading="lazy" /> }
+    else { <span class="face-b @Size"><img class="face @Size" src="@src" alt="" title="@Name" loading="lazy" />@Badge</span> }
+}
+else if (ChildContent is not null)
+{
+    @ChildContent
+}
+else
+{
+    <span class="face none @Size" title="@Name" aria-hidden="true"></span>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid Id { get; set; }
+    [Parameter] public string? Name { get; set; }
+    /// <summary>"sm" (bảng), "row" (bảng xếp hạng cầu thủ), "md" (thẻ trinh sát, người đứng đầu), "lg" (đầu trang hồ sơ).</summary>
+    [Parameter] public string Size { get; set; } = "sm";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Badge { get; set; }
+}

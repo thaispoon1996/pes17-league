@@ -1,0 +1,61 @@
+@implements IDisposable
+@inject LeagueQueries Q
+@inject MatchJobService Jobs
+
+@* Thanh tỉ số đầu trang: các trận của khung đang diễn ra (mọi giải), trận đang đá nhấp nháy; bấm → trang trận. Đọc lại khi có kết quả như trang chủ. *@
+@if (data is { } d)
+{
+    <div class="ticker" aria-label="Tỉ số vòng @d.Matchday">
+        <div class="in">
+            <a class="ticker-head" href="lich?khung=@d.Matchday"><b>Vòng @d.Matchday</b><small>@d.Status</small></a>
+            <div class="ticker-track">
+                @{ Guid? edition = null; }
+                @foreach (var f in d.Fixtures)
+                {
+                    if (f.EditionId != edition && f.EditionId is { } e && d.Editions.TryGetValue(e, out var name))
+                    {
+                        edition = f.EditionId;
+                        <span class="ticker-comp">@name</span>
+                    }
+                    var live = f.Id == Jobs.CurrentFixtureId || f.Status == FixtureStatus.Playing;
+                    <a class="tk @(live ? "live" : f.Status == FixtureStatus.Played ? "done" : "")" href="tran/@f.Id">
+                        <span class="t @(d.Season.HumanClubId == f.Home ? "mine" : "")">@Short(d, f.Home)</span>
+                        <span class="s">@(f.Status == FixtureStatus.Played ? $"{f.HomeGoals}–{f.AwayGoals}" : live ? "LIVE" : "–")</span>
+                        <span class="t @(d.Season.HumanClubId == f.Away ? "mine" : "")">@Short(d, f.Away)</span>
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    TickerData? data;
+    Guid? loadedFor;
+    bool wasRunning;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Jobs.Changed += OnJob;
+        await LoadAsync();
+    }
+
+    async Task LoadAsync()
+    {
+        loadedFor = Jobs.CurrentFixtureId;
+        try { data = await Q.TickerAsync(); }
+        catch (Exception) { data = null; }      // thanh phụ: lỗi đọc không được làm hỏng trang
+    }
+
+    static string Short(TickerData d, Guid club) => d.Short.GetValueOrDefault(club) ?? d.Season.Clubs.GetValueOrDefault(club, "?");
+
+    void OnJob() => InvokeAsync(async () =>
+    {
+        var last = Jobs.Log.LastOrDefault() ?? "";
+        if (last.Contains("hết trận") || last.Contains("xong") || last.Contains("Kết thúc") || wasRunning != Jobs.Running || loadedFor != Jobs.CurrentFixtureId) await LoadAsync();
+        wasRunning = Jobs.Running;
+        StateHasChanged();
+    });
+
+    public void Dispose() => Jobs.Changed -= OnJob;
+}

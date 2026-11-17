@@ -1,0 +1,58 @@
+@* Sơ đồ nhánh cúp (bước 7, PO chọn 06/11): mỗi vòng 1 cột; cột play-off xếp theo cặp vòng sau mà nó dẫn vào cho thẳng hàng.
+   Bên chưa rõ: "Hạng N" (league phase chưa đá), CLB theo BXH hiện tại kèm "dự kiến", "Thắng PO k". Ô tỷ số: lượt 1, lượt 2, tổng; chung kết: 1 trận + penalty. *@
+<div class="bracket">
+    @for (var ri = 0; ri < Rounds.Count; ri++)
+    {
+        var round = Rounds[ri];
+        var prev = ri > 0 ? Short(Rounds[ri - 1].Stage) : "";
+        var khung = Matchdays.Where(m => m.Stage == round.Stage).Select(m => m.Number).ToList();
+        var ties = ri == 0 && Rounds.Count > 1 ? round.Ties.OrderBy(t => Rounds[1].Ties.ToList().FindIndex(x => x.B.From == t.Number)) : round.Ties.AsEnumerable();
+        <div class="bracket-round">
+            <h3>@AdminText.Stage(round.Stage) @if (khung.Count > 0) { <small> · vòng @string.Join(", ", khung)</small> }</h3>
+            <div class="ties">
+                @foreach (var t in ties)
+                {
+                    <div class="tie">
+                        <small>@Short(round.Stage)@(round.Stage == FixtureStage.Final ? "" : $" {t.Number}")</small>
+                        @foreach (var s in new[] { t.A, t.B })
+                        {
+                            var result = s.Club is { } sc0 && t.Winner is { } w ? sc0 == w ? "win" : "lose" : "";
+                            <div class="side @result @(s.Club == Season.HumanClubId ? "mine" : "")">
+                                @if (s.Club is { } c)
+                                {
+                                    @if (s.Rank is { } rk) { <small class="rk">@rk</small> }
+                                    <Crest Name="@Season.Clubs[c]" Logo="@Season.Logo(c)" />
+                                    <span class="n">@Season.Clubs[c]</span>
+                                    @if (s.Projected) { <i class="proj">dự kiến</i> }
+                                    @foreach (var f in t.Legs) { <span class="g">@(GoalsFor(f, c)?.ToString() ?? "–")</span> }
+                                    @if (t.Legs.Count == 2 && t.Legs.All(f => f.Status == FixtureStatus.Played)) { <b class="g">@(t.Legs.Sum(f => GoalsFor(f, c)))</b> }
+                                    @if (t.Legs is [var fin] && (fin.HomeClubId == c ? fin.HomePenalties : fin.AwayPenalties) is { } p) { <small class="g">(@p)</small> }
+                                }
+                                else
+                                {
+                                    <span class="n muted">@(s.Rank is { } r ? $"Hạng {r}" : $"Thắng {prev} {s.From}")</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<BracketRound> Rounds { get; set; } = [];
+    /// <summary>Khung ngày của mùa: ghi số khung từng vòng ở đầu cột.</summary>
+    [Parameter] public IReadOnlyList<Matchday> Matchdays { get; set; } = [];
+
+    static string Short(FixtureStage s) => s switch
+    {
+        FixtureStage.KnockoutPlayoff => "PO", FixtureStage.RoundOf64 => "1/32", FixtureStage.RoundOf32 => "1/16", FixtureStage.RoundOf16 => "1/8",
+        FixtureStage.QuarterFinal => "TK", FixtureStage.SemiFinal => "BK", FixtureStage.Final => "CK",
+        _ => s.ToString(),
+    };
+
+    static int? GoalsFor(Fixture f, Guid club) => f.Status != FixtureStatus.Played ? null : f.HomeClubId == club ? f.HomeGoals : f.AwayGoals;
+}

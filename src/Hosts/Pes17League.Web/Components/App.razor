@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <base href="/" />
+    <title>PES League</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#0b1f4b" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="controls.js"></script>
+    <script src="lineup.js"></script>
+    <script src="live.js"></script>
+    <script>document.addEventListener('click',e=>{const a=e.target.closest('[data-seek]');const v=a&&document.getElementById(a.dataset.seek);if(!v)return;e.preventDefault();const go=()=>{v.currentTime=+a.dataset.t;v.play();};v.readyState>0?go():(v.addEventListener('loadedmetadata',go,{once:true}),v.load());v.scrollIntoView({behavior:'smooth',block:'center'});});</script>
+    <script>window.pesPrefersReducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;</script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

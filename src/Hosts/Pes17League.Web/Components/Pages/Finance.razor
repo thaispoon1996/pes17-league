@@ -1,0 +1,124 @@
+@page "/tai-chinh"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* FM đợt 6 (PO 12/11 duyệt mặc định): thu chi theo vòng — vé, tài trợ, bản quyền TV, thưởng, bảo trì sân. Luật FinanceRules. *@
+@if (season is null) { return; }
+@{ var me = season.HumanClubId; }
+<div class="fm">
+    <ManagerNav />
+    <header class="fm-head">
+        @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
+        <div class="fm-title">
+            <h1>Tài chính</h1>
+            <p>@season.Name · thu chi ghi khi khoá vòng</p>
+        </div>
+    </header>
+    @if (me == Guid.Empty || report is null) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (message is not null) { <p class="msg">@message</p> }
+    @{ var f = report.Finance; }
+    <div class="fm-cards">
+        <div><small>Số dư</small><b>@Fmt.Money(report.Balance)</b></div>
+        <div><small>Dự báo cuối mùa (@report.RoundsLeft vòng còn)</small><b class="@(report.Forecast < 0 ? "down" : "")">@Fmt.Money(report.Forecast)</b></div>
+        <div><small>Sân</small><b>@f.Capacity.ToString("N0") chỗ</b></div>
+        <div><small>Cổ động viên</small><b>@f.Fans.ToString("N0")</b></div>
+        <div><small>Tài trợ/vòng</small><b>@Fmt.Money(f.SponsorPerRound)</b></div>
+        <div><small>Khán giả dự kiến</small><b>@FinanceRules.Attendance(f.Capacity, f.Fans, price).ToString("N0")</b></div>
+    </div>
+
+    <section class="offer-form">
+        <h2>Sân vận động</h2>
+        <div class="offer-grid">
+            <label>Giá vé (@FinanceRules.MinTicketPrice–@FinanceRules.MaxTicketPrice)
+                <input type="number" min="@FinanceRules.MinTicketPrice" max="@FinanceRules.MaxTicketPrice" @bind="price" @bind:event="oninput" />
+            </label>
+            <label>Doanh thu vé/trận sân nhà
+                <input disabled value="@Fmt.Money(FinanceRules.Attendance(f.Capacity, f.Fans, price) * price)" />
+            </label>
+        </div>
+        <p class="fm-note">Vé đắt → ít khán giả. Thắng +1% CĐV, thua −0,5%. Bảo trì @FinanceRules.UpkeepPerSeat/chỗ/vòng.
+            Bản quyền TV @Fmt.Money(FinanceRules.TvPerRound)/vòng, thưởng thắng @Fmt.Money(FinanceRules.WinPrize), hoà @Fmt.Money(FinanceRules.DrawPrize).</p>
+        <button class="primary" disabled="@busy" @onclick="SavePrice">Lưu giá vé</button>
+        <button disabled="@busy" @onclick="Expand">Mở rộng +@FinanceRules.ExpandSeats.ToString("N0") chỗ (@Fmt.Money(FinanceRules.ExpandCost))</button>
+    </section>
+
+    <section>
+        <h2>Tổng mùa theo khoản</h2>
+        <table class="table">
+            <tbody>
+                @foreach (var (r, v) in report.Totals.OrderByDescending(x => x.Value))
+                {
+                    <tr><td>@Label(r)</td><td class="num @(v < 0 ? "down" : "up")">@Fmt.Money(v)</td></tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>Các vòng gần nhất</h2>
+        <table class="table">
+            <thead><tr><th>Vòng</th><th>Vé</th><th>Tài trợ+TV</th><th>Thưởng</th><th>Lương+thuế</th><th>Khác</th><th>Ròng</th></tr></thead>
+            <tbody>
+                @foreach (var r in report.Rounds)
+                {
+                    var b = r.ByReason;
+                    long G(params LedgerReason[] k) => k.Sum(x => b.GetValueOrDefault(x));
+                    var main = G(LedgerReason.Ticket, LedgerReason.Sponsor, LedgerReason.TvRights, LedgerReason.Prize, LedgerReason.Wage, LedgerReason.LuxuryTax);
+                    <tr>
+                        <td>@r.Matchday</td>
+                        <td class="num">@Fmt.Money(G(LedgerReason.Ticket))</td>
+                        <td class="num">@Fmt.Money(G(LedgerReason.Sponsor, LedgerReason.TvRights))</td>
+                        <td class="num">@Fmt.Money(G(LedgerReason.Prize))</td>
+                        <td class="num">@Fmt.Money(G(LedgerReason.Wage, LedgerReason.LuxuryTax))</td>
+                        <td class="num">@Fmt.Money(r.Net - main)</td>
+                        <td class="num @(r.Net < 0 ? "down" : "up")">@Fmt.Money(r.Net)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+</div>
+
+@code {
+    SeasonInfo? season;
+    FinanceReport? report;
+    long price;
+    string? message;
+    bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.SeasonAsync();
+        await Load();
+    }
+
+    async Task Load()
+    {
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        report = await new FinanceService(db, Clock).ReportAsync(season.Id, season.HumanClubId);
+        price = report.Finance.TicketPrice;
+    }
+
+    async Task Run(Func<FinanceService, Task<string?>> act, string ok)
+    {
+        busy = true;
+        await using (var db = await Dbs.CreateDbContextAsync()) message = await act(new FinanceService(db, Clock)) ?? ok;
+        await Load();
+        busy = false;
+    }
+
+    Task SavePrice() => Run(s => s.SetTicketPriceAsync(season!.Id, season.HumanClubId, price), "Đã lưu giá vé.");
+    Task Expand() => Run(s => s.ExpandStadiumAsync(season!.Id, season.HumanClubId), "Đã mở rộng sân.");
+
+    static string Label(LedgerReason r) => r switch
+    {
+        LedgerReason.InitialBudget => "Ngân sách đầu mùa", LedgerReason.TransferIn => "Mua cầu thủ", LedgerReason.TransferOut => "Bán cầu thủ",
+        LedgerReason.Adjustment => "Điều chỉnh", LedgerReason.Wage => "Lương", LedgerReason.LuxuryTax => "Thuế xa xỉ", LedgerReason.RenewalFee => "Phí gia hạn",
+        LedgerReason.SellOn => "% bán lại", LedgerReason.Ticket => "Vé", LedgerReason.Sponsor => "Tài trợ", LedgerReason.TvRights => "Bản quyền TV",
+        LedgerReason.Prize => "Thưởng trận", LedgerReason.Facility => "Bảo trì sân", LedgerReason.Staff => "Nhân sự", LedgerReason.Upgrade => "Nâng cấp", _ => r.ToString(),
+    };
+}

@@ -1,0 +1,27 @@
+@if (Items.Count == 0)
+{
+    <p class="muted">@Empty</p>
+}
+else
+{
+    <ul class="news-grid">
+        @foreach (var n in Items)
+        {
+            <li>
+                <a class="news-card" href="tin/@n.Id">
+                    @if (n.Image is { } img) { <img src="/tin-anh/@img" alt="@n.Title" /> }
+                    else { <span class="ph">@Fmt.Score(n.HomeGoals, n.AwayGoals, n.HomePenalties, n.AwayPenalties)</span> }
+                    <span class="txt">
+                        <small>@(n.Competition is { } c ? $"{c} · " : "")Vòng @n.Round</small>
+                        <h3>@n.Title</h3>
+                    </span>
+                </a>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<NewsCard> Items { get; set; } = [];
+    [Parameter] public string Empty { get; set; } = "Chưa có tin.";
+}

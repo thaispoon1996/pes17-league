@@ -1,0 +1,30 @@
+@* Huy hiệu CLB/giải: logo thật nếu có (lấy từ game hoặc admin tải lên, bước 7), không thì chữ viết tắt + màu cố định theo tên. *@
+@if (Logo is not null)
+{
+    <img class="crest img @(Large ? "lg" : "")" src="@Logo" alt="" title="@Name" />
+}
+else
+{
+    <span class="crest @(Large ? "lg" : "")" style="--c:@Color" title="@Name">@Initials</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string? Logo { get; set; }
+    [Parameter] public bool Large { get; set; }
+
+    static readonly string[] Palette = ["#c8102e", "#034694", "#6cabdd", "#da291c", "#132257", "#fdb913", "#7a263a", "#003399", "#ef0107", "#00a650", "#95bfe5", "#e03a3e", "#5c2d91", "#0057b8"];
+    static readonly HashSet<string> Skip = ["fc", "cf", "afc", "sc", "ac", "the", "de", "clb"];
+
+    string Initials
+    {
+        get
+        {
+            var words = Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => !Skip.Contains(w.ToLowerInvariant())).ToList();
+            if (words.Count == 0) return "?";
+            return words.Count == 1 ? words[0][..Math.Min(3, words[0].Length)].ToUpperInvariant() : string.Concat(words.Take(3).Select(w => char.ToUpperInvariant(w[0])));
+        }
+    }
+
+    string Color => Palette[Name.Aggregate(7, (h, ch) => (h * 31 + ch) & 0x7fffffff) % Palette.Length];
+}

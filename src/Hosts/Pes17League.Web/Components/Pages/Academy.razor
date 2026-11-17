@@ -1,0 +1,101 @@
+@page "/hoc-vien"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* FM đợt 8 (PO 12/11 duyệt mặc định): đôn cầu thủ trẻ (tối đa YouthRules.PerSeason/mùa, dùng ô tạo cầu thủ 184/OF), danh sách báo cáo trinh sát. *@
+@if (season is null) { return; }
+@{ var me = season.HumanClubId; }
+<div class="fm">
+    <ManagerNav />
+    <header class="fm-head">
+        @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
+        <div class="fm-title">
+            <h1>Học viện &amp; trinh sát</h1>
+            <p>@season.Name · cầu thủ trẻ vào game từ file game vòng sau</p>
+        </div>
+    </header>
+    @if (me == Guid.Empty || youth is null) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (message is not null) { <p class="msg">@message</p> }
+
+    <div class="fm-cards">
+        <div><small>Đã đôn mùa này</small><b>@youth.UsedThisSeason/@youth.PerSeason</b></div>
+        <div><small>Ô tạo cầu thủ còn trống (file game)</small><b>@youth.FreeSlots</b></div>
+        <div><small>Báo cáo trinh sát</small><b>@scouts.Count(s => s.RoundsLeft == 0) xong · @scouts.Count(s => s.RoundsLeft > 0) chờ</b></div>
+    </div>
+
+    <section class="offer-form">
+        <h2>Đôn cầu thủ trẻ</h2>
+        <div class="offer-grid">
+            <label>Vị trí
+                <select @bind="position">
+                    @foreach (var p in Enum.GetValues<Position>()) { <option value="@p">@Fmt.PositionName(p) (@p)</option> }
+                </select>
+            </label>
+        </div>
+        <p class="fm-note">16–17 tuổi, chỉ số thấp hơn mặt bằng vị trí 8–17 điểm nhưng tiềm năng cao (tăng qua tập luyện). HĐ @YouthRules.ContractMatches trận, lương @Fmt.Money(YouthRules.Wage)/vòng.</p>
+        <button class="primary" disabled="@(busy || youth.UsedThisSeason >= youth.PerSeason)" @onclick="Promote">Đôn lên đội một</button>
+        @if (youth.Players.Count > 0)
+        {
+            <ul class="facts">
+                @foreach (var y in youth.Players) { <li><a href="@season.Url($"cau-thu/{y.PlayerId}")">@y.Name</a><b>@y.Position</b></li> }
+            </ul>
+        }
+    </section>
+
+    <section>
+        <h2>Trinh sát</h2>
+        <p class="fm-note">Chỉ số cầu thủ CLB khác bị che (hiện khoảng, vd 70–79) đến khi có báo cáo. Giao trinh sát ở trang cầu thủ (phí @Fmt.Money(ScoutRules.Fee)).</p>
+        @if (scouts.Count > 0)
+        {
+            <table class="table">
+                <thead><tr><th>Cầu thủ</th><th>CLB</th><th>Trạng thái</th></tr></thead>
+                <tbody>
+                    @foreach (var s in scouts)
+                    {
+                        <tr>
+                            <td><a href="@season.Url($"cau-thu/{s.PlayerId}")">@s.Name</a></td>
+                            <td>@(s.ClubId is { } c ? season.Clubs.GetValueOrDefault(c, "") : "Tự do")</td>
+                            <td class="@(s.RoundsLeft == 0 ? "up" : "")">@(s.RoundsLeft == 0 ? "Đã có báo cáo" : $"Còn {s.RoundsLeft} vòng")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+</div>
+
+@code {
+    SeasonInfo? season;
+    YouthStatus? youth;
+    List<ScoutRow> scouts = [];
+    Position position = Position.CF;
+    string? message;
+    bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.SeasonAsync();
+        await Load();
+    }
+
+    async Task Load()
+    {
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new YouthService(db, Clock);
+        youth = await svc.StatusAsync(season.Id, season.HumanClubId);
+        scouts = await svc.ScoutListAsync(season.HumanClubId);
+    }
+
+    async Task Promote()
+    {
+        busy = true;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            message = await new YouthService(db, Clock).PromoteAsync(season!.Id, season.HumanClubId, position) ?? "Đã đôn cầu thủ trẻ lên đội một.";
+        await Load();
+        busy = false;
+    }
+}

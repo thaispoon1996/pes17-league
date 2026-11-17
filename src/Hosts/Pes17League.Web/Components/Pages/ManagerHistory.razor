@@ -1,0 +1,37 @@
+@page "/hlv/{Id:guid}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+
+@* FM đợt 10: lịch sử HLV — các CLB đã dẫn dắt (theo phân công TeamAssignment). *@
+@if (m is null) { <p>@(loaded ? "Không có HLV này." : "")</p> return; }
+<div class="fm">
+    <header class="fm-head"><div class="fm-title"><h1>@m.DisplayName</h1><p>HLV · tham gia @m.CreatedAt.ToString("dd/MM/yyyy")@(m.Disabled ? " · đã khoá" : "")</p></div></header>
+    <div class="table-wrap">
+    <table class="table">
+        <thead><tr><th class="left">CLB</th><th>Từ</th><th>Đến</th></tr></thead>
+        <tbody>
+            @foreach (var r in rows) { <tr><td class="left"><a href="clb/@r.ClubId">@r.Club</a></td><td>@r.From.ToString("dd/MM/yyyy")</td><td>@(r.To?.ToString("dd/MM/yyyy") ?? "nay")</td></tr> }
+            @if (rows.Count == 0) { <tr><td colspan="3" class="muted">Chưa dẫn dắt CLB nào.</td></tr> }
+        </tbody>
+    </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    Manager? m;
+    bool loaded;
+    List<(Guid ClubId, string Club, DateTimeOffset From, DateTimeOffset? To)> rows = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        m = await db.Managers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == Id);
+        rows = (await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
+                       where a.ParticipantId == Id orderby a.From descending
+                       select new { a.ClubId, c.Name, a.From, a.To }).ToListAsync())
+            .Select(x => (x.ClubId, x.Name, x.From, x.To)).ToList();
+        loaded = true;
+    }
+}

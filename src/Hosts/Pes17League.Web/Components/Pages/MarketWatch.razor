@@ -1,0 +1,116 @@
+@page "/thi-truong"
+@inject LeagueQueries Q
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* Chuyên mục Thị trường (chỉ đọc): chuyển nhượng gần đây, cầu thủ đắt giá nhất, tăng/giảm giá so với giá gốc đầu mùa, tài chính các CLB.
+   Chỉ tính cầu thủ đang có CLB (không lộ cầu thủ tự do đang ẩn). Mua bán ở trang Chuyển nhượng. *@
+@if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
+@if (season is not null && m is not null)
+{
+    <section class="hero hero-market">
+        <a class="pill" href="mua" title="Các mùa">@season.Label</a>
+        <h1>Thị trường</h1>
+        <div class="kpis">
+            <span><b>@m.Transfers.Count</b>vụ chuyển nhượng gần đây</span>
+            <span><b>@Fmt.Money(m.Clubs.Sum(c => c.SquadValue))</b>tổng giá trị đội hình</span>
+            <span><b>@Fmt.Money(m.Clubs.Sum(c => c.Payroll))</b>tổng quỹ lương/vòng</span>
+        </div>
+        <a class="btn" href="chuyen-nhuong">Mua bán cầu thủ →</a>
+    </section>
+    <div class="grid">
+        <section class="panel">
+            <div class="panel-head"><h2>Chuyển nhượng gần đây</h2></div>
+            @if (m.Transfers.Count == 0)
+            {
+                <p class="muted">Chưa có vụ chuyển nhượng nào hoàn tất trong mùa này.</p>
+            }
+            else
+            {
+                <table class="table">
+                    <thead><tr><th class="left">Cầu thủ</th><th class="left">Từ → đến</th><th>Phí</th><th class="hide-sm">Ngày</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in m.Transfers)
+                        {
+                            <tr>
+                                <td class="left"><a href="@season.Url($"cau-thu/{t.PlayerId}")">@t.Player</a> <small class="muted">@t.Position</small></td>
+                                <td class="left">@Name(t.From, "Tự do") → @(t.Kind == TransferKind.Release ? "giải phóng" : Name(t.To, "?"))</td>
+                                <td>@Fmt.Money(t.Fee)</td>
+                                <td class="hide-sm">@t.At.ToLocalTime().ToString("dd/MM")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+        <aside class="panel">
+            <div class="panel-head"><h2>Đắt giá nhất</h2></div>
+            <ol class="lb-list">
+                @foreach (var r in m.Top)
+                {
+                    <li class="@(r.ClubId == season.HumanClubId ? "mine" : "")">
+                        <a href="@season.Url($"cau-thu/{r.PlayerId}")"><Crest Name="@season.Clubs[r.ClubId]" Logo="@season.Logo(r.ClubId)" /><span class="n">@r.Name</span><small>@r.Position · @(hidden.Contains(r.PlayerId) ? ScoutRules.Mask(r.Overall) : r.Overall.ToString())</small><b>@Fmt.Money(r.Price)</b></a>
+                    </li>
+                }
+            </ol>
+        </aside>
+    </div>
+    <div class="lb-grid two">
+        @foreach (var (title, rows) in new[] { ("Tăng giá mạnh", m.Risers), ("Giảm giá mạnh", m.Fallers) })
+        {
+            <section class="panel lb">
+                <div class="panel-head"><h2>@title</h2></div>
+                <p class="lb-hint">So với giá gốc đầu mùa (theo phong độ)</p>
+                @if (rows.Count == 0) { <p class="muted">Chưa có biến động.</p> }
+                <ol class="lb-list">
+                    @foreach (var r in rows)
+                    {
+                        <li class="@(r.ClubId == season.HumanClubId ? "mine" : "")">
+                            <a href="@season.Url($"cau-thu/{r.PlayerId}")"><Crest Name="@season.Clubs[r.ClubId]" Logo="@season.Logo(r.ClubId)" /><span class="n">@r.Name</span><small>@Fmt.Money(r.Price)</small><b class="@(r.Change >= 0 ? "up" : "down")">@((r.Change * 100).ToString("+0;-0"))%</b></a>
+                        </li>
+                    }
+                </ol>
+            </section>
+        }
+    </div>
+    <section class="panel">
+        <div class="panel-head"><h2>Tài chính các CLB</h2><small class="muted">Giá trị đội hình = tổng giá cầu thủ đang có</small></div>
+        <table class="table">
+            <thead><tr><th>#</th><th class="left">CLB</th><th>Giá trị đội hình</th><th class="hide-sm">Cầu thủ</th><th>Quỹ lương/vòng</th><th class="hide-sm">Số dư</th></tr></thead>
+            <tbody>
+                @foreach (var (c, i) in m.Clubs.Select((c, i) => (c, i)))
+                {
+                    <tr class="@(c.ClubId == season.HumanClubId ? "mine" : "")">
+                        <td>@(i + 1)</td>
+                        <td class="left"><a class="club" href="clb/@c.ClubId"><Crest Name="@season.Clubs[c.ClubId]" Logo="@season.Logo(c.ClubId)" />@season.Clubs[c.ClubId]</a></td>
+                        <td><b>@Fmt.Money(c.SquadValue)</b></td>
+                        <td class="hide-sm">@c.Squad</td>
+                        <td>@Fmt.Money(c.Payroll)</td>
+                        <td class="hide-sm">@Fmt.Money(c.Balance)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    bool loaded;
+    SeasonInfo? season;
+    MarketOverview? m;
+    HashSet<Guid> hidden = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.ViewSeasonAsync(Mua);
+        m = season is null ? null : await Q.MarketOverviewAsync(season);
+        if (season is not null && Mua is null) { await using var db = await Dbs.CreateDbContextAsync(); hidden = await new YouthService(db, Clock).HiddenAsync(season.HumanClubId); }
+        loaded = true;
+    }
+
+    string Name(Guid? club, string none) => club is { } c ? m!.Names.GetValueOrDefault(c, "?") : none;
+}

@@ -1,0 +1,53 @@
+@page "/tin"
+@inject LeagueQueries Q
+
+@if (!loaded) { return; }
+@if (season is null) { <p>Chưa có mùa. <a href="mua">Các mùa →</a></p> return; }
+<section class="hero">
+    <a class="pill" href="@season.Url("mua")">@season.Label</a>
+    <h1>Tin tức</h1>
+    <p>Bài tường thuật sau mỗi trận, viết từ tỷ số, bàn thắng và thống kê.</p>
+</section>
+<NewsNav Season="season" Here="tin" />
+<nav class="chips">
+    <a class="@(Vong is null && Giai is null ? "on" : "")" href="@season.Url("tin")">Tất cả</a>
+    @foreach (var n in rounds)
+    {
+        <a class="@(Vong == n ? "on" : "")" href="@Href(n, Giai)">Vòng @n</a>
+    }
+    @foreach (var c in comps)
+    {
+        <a class="@(Giai == c.Id ? "on" : "")" href="@Href(Vong, c.Id)">@c.Name</a>
+    }
+</nav>
+<NewsList Items="items" Empty="Chưa có tin. Bài được đăng sau mỗi trận." />
+
+@code {
+    [SupplyParameterFromQuery(Name = "vong")] public int? Vong { get; set; }
+    [SupplyParameterFromQuery(Name = "giai")] public Guid? Giai { get; set; }
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    SeasonInfo? season;
+    List<NewsCard> items = [];
+    List<int> rounds = [];
+    List<NewsComp> comps = [];
+    bool loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.ViewSeasonAsync(Mua);
+        loaded = true;
+        if (season is null) return;
+        (rounds, comps) = await Q.NewsFiltersAsync(season.Id);
+        items = await Q.NewsAsync(season.Id, Vong, Giai, 48);
+    }
+
+    string Href(int? round, Guid? comp)
+    {
+        var q = new List<string>();
+        if (round is { } r) q.Add($"vong={r}");
+        if (comp is { } c) q.Add($"giai={c:D}");
+        var path = "tin" + (q.Count == 0 ? "" : "?" + string.Join("&", q));
+        return season?.Url(path) ?? path;
+    }
+}

@@ -1,0 +1,130 @@
+@page "/chuan-bi/{FixtureId:guid}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject LeagueQueries Q
+@inject MatchJobService Jobs
+@inject NavigationManager Nav
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+
+@* Chuẩn bị trận của PO (PO 05/11): chỉnh đội hình/chiến thuật trên sân → "Sẵn sàng" = chốt đội hình, game khởi động và tự vào trận
+   (màn chờ /vao-tran đếm ngược). Game chỉ đọc đội hình lúc khởi động nên sau Sẵn sàng không sửa được nữa. *@
+@if (season is null || fixture is null) { <p>Không tìm thấy trận.</p> return; }
+<section class="hero">
+    <span class="pill">Chuẩn bị trận · Vòng @fixture.Matchday</span>
+    <h1>@season.Clubs[fixture.Home] – @season.Clubs[fixture.Away]</h1>
+    <p>Bạn đá đội @(side == MatchSide.Home ? "nhà" : "khách"). Chỉnh đội hình, chiến thuật rồi bấm Sẵn sàng.</p>
+</section>
+<div class="grid">
+    <section class="panel">
+        <LineupBoard Season="season" ClubId="season.HumanClubId" Locked="Jobs.LineupLocked" LockedMessage="Đội hình đã chốt cho trận đang vào." />
+    </section>
+    <aside class="panel">
+        <div class="panel-head"><h2>Vào trận</h2></div>
+        @if (fixture.Status == FixtureStatus.Played)
+        {
+            <p>Trận đã đá xong.</p>
+        }
+        else if (season.IsHuman(fixture.Home) && season.IsHuman(fixture.Away))
+        {
+            @* Đợt 2 (PO ok 12/11): người vs người = máy đá theo chiến thuật của 2 HLV *@
+            <p>Trận giữa 2 HLV người: máy đá theo đội hình, chiến thuật của hai bên khi admin chạy vòng. Chỉnh chiến thuật bên trái trước khi vòng đá.</p>
+        }
+        else if (fixture.AssistantPlays)
+        {
+            <p>Trợ lý sẽ đá thay trận này (máy đá theo chiến thuật của bạn).</p>
+            <button class="wide" @onclick="() => SetAssistant(false)">↩ Huỷ, tôi tự đá</button>
+        }
+        else if (!locked)
+        {
+            <p class="muted">Vòng chưa khoá (còn mở kỳ chuyển nhượng) — đóng kỳ CN ở trang Vòng đấu rồi mới vào trận được.</p>
+        }
+        else if (Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id)
+        {
+            <p>Đội hình đã chốt, game đang vào trận.</p>
+            <a class="btn primary wide" href="vao-tran">📺 Màn hình chờ vào trận</a>
+        }
+        else if (admin && Jobs.CanPreemptBots)
+        {
+            @* PO 15/11: admin được ưu tiên — ngắt BOT, vào trận ngay, xong BOT tự đá tiếp *@
+            <p class="muted">BOT đang đá@(Jobs.BotMinutesLeft is { } m0 ? $" (trận hiện tại còn khoảng {m0} phút)" : ""). Bấm Sẵn sàng: trận BOT bị ngắt (về lịch, đá lại sau), trận của bạn vào ngay; đá xong BOT tự đá tiếp.</p>
+            <button class="primary wide" disabled="@starting" @onclick="Ready">✅ Sẵn sàng — ngắt BOT & vào trận ngay</button>
+        }
+        else if (Jobs.Running)
+        {
+            <p class="muted">Máy trận đang bận: @Jobs.Title@(Jobs.BotMinutesLeft is { } m ? $" (trận đang đá còn khoảng {m} phút)" : ""). Chờ xong rồi bấm Sẵn sàng.</p>
+            @if (admin && Jobs.CanStopAfterCurrent)
+            {
+                <button class="wide" @onclick="Jobs.StopAfterCurrent">⏸ Dừng BOT sau trận đang đá</button>
+            }
+            else if (Jobs.StopPending)
+            {
+                <p class="muted">BOT sẽ dừng sau trận đang đá, nút Sẵn sàng tự mở khi máy rảnh. Đá xong trận của bạn thì bấm lại "Đá các trận BOT" ở trang Vòng đấu.</p>
+            }
+            <button class="primary wide" disabled>✅ Sẵn sàng</button>
+        }
+        else
+        {
+            <p class="muted">Bấm Sẵn sàng: đội hình được chốt, game khởi động và tự vào trận (~@(Jobs.SecondsToKickoffEstimate) giây, có đếm ngược).</p>
+            <button class="primary wide" @onclick="Ready">✅ Sẵn sàng — chốt đội hình & vào trận</button>
+        }
+        @if (fixture.Status == FixtureStatus.Scheduled && season.NeedsHuman(fixture) && !(Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id))
+        {
+            <button class="wide" title="Không đá được: máy đá thay theo đội hình, chiến thuật hiện tại" @onclick="() => SetAssistant(true)">🧑‍💼 Để trợ lý đá trận này</button>
+        }
+        <p><a href="">← Vòng đấu</a></p>
+    </aside>
+</div>
+
+@code {
+    [Parameter] public Guid FixtureId { get; set; }
+    SeasonInfo? season;
+    FixtureView? fixture;
+    MatchSide side;
+    bool locked, admin;
+    Timer? tick;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Jobs.Changed += OnJob;
+        tick = new Timer(_ => { if (Jobs.BotMinutesLeft is not null) InvokeAsync(StateHasChanged); }, null, 30000, 30000);   // phút còn lại của trận BOT
+        admin = await Me.IsAdminAsync();
+        season = await Q.SeasonAsync();
+        if (season is null) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var md = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id where f.Id == FixtureId select m).SingleOrDefaultAsync();
+        if (md is null) return;
+        locked = md.Status is MatchdayStatus.Locked or MatchdayStatus.Playing;
+        fixture = (await Q.FixturesAsync(season.Id, md.Id)).FirstOrDefault(f => f.Id == FixtureId);
+        if (fixture is null || (fixture.Home != season.HumanClubId && fixture.Away != season.HumanClubId)) { fixture = null; return; }
+        side = fixture.Home == season.HumanClubId ? MatchSide.Home : MatchSide.Away;
+    }
+
+    async Task SetAssistant(bool on)
+    {
+        await using (var db = await Dbs.CreateDbContextAsync())
+            await db.Fixtures.Where(f => f.Id == FixtureId && f.Status == FixtureStatus.Scheduled).ExecuteUpdateAsync(x => x.SetProperty(f => f.AssistantPlays, on));
+        fixture = fixture! with { AssistantPlays = on };
+    }
+
+    bool starting;
+
+    async Task Ready()
+    {
+        starting = true;
+        try
+        {
+            if (admin ? await Jobs.PlayHumanNowAsync(fixture!.Id, side) : Jobs.PlayHuman(fixture!.Id, side)) Nav.NavigateTo("vao-tran");
+        }
+        finally { starting = false; }
+    }
+
+    void OnJob() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Jobs.Changed -= OnJob;
+        tick?.Dispose();
+    }
+}

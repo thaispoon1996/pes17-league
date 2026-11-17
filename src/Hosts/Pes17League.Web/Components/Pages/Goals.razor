@@ -1,0 +1,119 @@
+@page "/ban-thang"
+@inject LeagueQueries Q
+@inject RoundReelStore Reels
+
+@if (!loaded) { return; }
+@if (season is null) { <p>Chưa có mùa. <a href="mua">Các mùa →</a></p> return; }
+<section class="hero">
+    <a class="pill" href="@season.Url("mua")">@season.Label</a>
+    <h1>Tổng hợp bàn thắng</h1>
+    <p>Clip tổng hợp bàn thắng mỗi vòng của từng giải.</p>
+</section>
+<NewsNav Season="season" Here="ban-thang" />
+@if (rounds.Count == 0)
+{
+    <p class="muted">Chưa có bàn thắng.</p>
+}
+else
+{
+    <nav class="chips">
+        <a class="@(Vong is null ? "on" : "")" href="@Href(null)">Tất cả</a>
+        @foreach (var n in rounds) { <a class="@(Vong == n ? "on" : "")" href="@Href(n)">Vòng @n</a> }
+    </nav>
+    @if (shown.Count == 0) { <p class="muted">Vòng này chưa có bàn thắng.</p> }
+    @foreach (var round in shown)
+    {
+        <h2 class="round-title">Vòng @round.Number <small class="muted">@round.Goals bàn</small></h2>
+        @foreach (var comp in round.Comps)
+        {
+            @if (comp.Edition is { } e)
+            {
+                <div class="round-title"><a class="comp" href="@season.Url($"giai/{e.CompetitionId}")"><Crest Name="@e.Name" Logo="@e.Logo" /><b>@e.Name</b></a></div>
+            }
+            var reel = Reels.Info(comp.Edition?.Id, season.Id, round.Number);
+            <RoundReel Info="@reel" />
+            @* mỗi bàn 1 dòng (PO 12/11: không ảnh/video lẻ); bấm ▶ phút → tua clip vòng tới bàn đó (data-seek, App.razor) *@
+            <ol class="goal-rows">
+                @foreach (var line in comp.Lines)
+                {
+                    var rg = InReel(reel, line);
+                    <li>
+                        @if (rg is not null)
+                        {
+                            <a class="no" href="#reel-@reel!.Key" data-seek="reel-@reel.Key" data-t="@rg.Start.ToString(System.Globalization.CultureInfo.InvariantCulture)" title="Xem trong clip">▶ @line.Minute'</a>
+                        }
+                        else { <span class="no off" title="Không có hình">@line.Minute'</span> }
+                        <div class="txt">
+                            <p><span class="who">@line.Who</span> <span class="muted">· @line.Club</span></p>
+                            <p class="muted"><a href="@season.Url($"tran/{line.FixtureId}")">@line.Home @line.Running @line.Away</a></p>
+                        </div>
+                    </li>
+                }
+            </ol>
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "vong")] public int? Vong { get; set; }
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    SeasonInfo? season;
+    List<int> rounds = [];
+    List<RoundBlock> shown = [];
+    bool loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.ViewSeasonAsync(Mua);
+        loaded = true;
+        if (season is null) return;
+        var editions = await Q.EditionsAsync(season.Id);
+        var fixtures = await Q.FixturesAsync(season.Id);
+        var played = fixtures.Where(f => f.Status == FixtureStatus.Played && f.Goals.Count > 0).ToList();
+        var blocks = RoundBlock.Build(played, editions, season);
+        rounds = [.. blocks.Select(b => b.Number)];
+        shown = Vong is { } n ? [.. blocks.Where(b => b.Number == n)] : blocks;
+    }
+
+    string Href(int? round)
+    {
+        var path = round is { } n ? $"ban-thang?vong={n}" : "ban-thang";
+        return season?.Url(path) ?? path;
+    }
+
+    /// <summary>Bàn trong clip vòng: cùng trận + cùng tỷ số lúc ghi (tỷ số chạy là duy nhất trong 1 trận).</summary>
+    static ReelGoal? InReel(RoundReelInfo? r, GoalLine l) =>
+        r?.Items.FirstOrDefault(i => i.FixtureId == l.FixtureId && i.Score == $"{l.Home} {l.Running} {l.Away}");
+
+    sealed record GoalLine(int Minute, string Who, string Club, string Home, string Running, string Away, Guid FixtureId);
+    sealed record CompBlock(EditionView? Edition, List<GoalLine> Lines);
+    sealed record RoundBlock(int Number, List<CompBlock> Comps)
+    {
+        public int Goals => Comps.Sum(c => c.Lines.Count);
+
+        public static List<RoundBlock> Build(IReadOnlyList<FixtureView> fixtures, IReadOnlyList<EditionView> editions, SeasonInfo season)
+        {
+            GoalLine Line(FixtureView f, GoalView g, int home, int away) => new(
+                g.Minute, g.Scorer ?? "Không rõ người ghi", season.Clubs[g.ClubId], season.Clubs[f.Home], $"{home}–{away}", season.Clubs[f.Away],
+                f.Id);
+
+            List<GoalLine> Lines(FixtureView f)
+            {
+                int h = 0, a = 0;
+                var list = new List<GoalLine>();
+                foreach (var g in f.Goals)
+                {
+                    if (g.ClubId == f.Home) h++; else a++;
+                    list.Add(Line(f, g, h, a));
+                }
+                return list;
+            }
+
+            return [.. fixtures.GroupBy(f => f.Matchday).OrderByDescending(g => g.Key).Select(g => new RoundBlock(g.Key,
+                [.. g.GroupBy(f => f.EditionId).OrderBy(x => editions.ToList().FindIndex(e => e.Id == x.Key))
+                    .Select(x => new CompBlock(editions.FirstOrDefault(e => e.Id == x.Key),
+                        [.. x.OrderBy(f => season.Clubs[f.Home], StringComparer.Ordinal).SelectMany(Lines)]))]))];
+        }
+    }
+}

@@ -1,0 +1,18 @@
+@page "/dieu-khien"
+@inject IJSRuntime JS
+
+@* Cấu hình bàn phím / tay cầm (PO 04/11): toàn bộ ở trình duyệt (wwwroot/controls.js), lưu localStorage, gửi sang stream lúc vào trận. *@
+<section class="hero">
+    <span class="pill">Cài đặt</span><h1>Điều khiển</h1>
+    <p>Bấm vào ô phím/nút rồi bấm phím hoặc nút muốn dùng. Tự lưu trên trình duyệt này, có tác dụng từ lần mở màn hình game tiếp theo.</p>
+</section>
+<div @ref="host"></div>
+
+@code {
+    ElementReference host;
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) await JS.InvokeVoidAsync("pesCtl.mount", host);
+    }
+}

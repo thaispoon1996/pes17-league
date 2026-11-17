@@ -1,0 +1,86 @@
+@page "/tong-ket"
+@inject LeagueQueries Q
+
+@* Tổng kết 1 khung ngày (mọi giải): con số của vòng, cầu thủ xuất sắc, đội hình tiêu biểu 4-3-3 (điểm → bàn → sút trúng → sút → đá chính),
+   kết quả bất ngờ (OVR trung bình đá chính của đội thắng thấp hơn đội thua ≥ 2), trận đậm nhất / nhiều bàn nhất, tin của vòng. *@
+@if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
+@if (season is not null && loaded && recap is null) { <p class="muted">Mùa này chưa có trận nào đá xong.</p> }
+@if (season is not null && recap is { } r)
+{
+    <section class="hero hero-recap">
+        <a class="pill" href="mua" title="Các mùa">@season.Label</a>
+        <h1>Tổng kết vòng @r.Number</h1>
+        <div class="kpis">
+            <span><b>@r.Played</b>trận</span>
+            <span><b>@r.Goals</b>bàn thắng</span>
+            <span><b>@r.HomeWins – @r.Draws – @r.AwayWins</b>chủ thắng – hoà – khách thắng</span>
+        </div>
+    </section>
+    <nav class="chips">
+        @foreach (var n in r.Rounds)
+        {
+            <a class="@(n == r.Number ? "on" : "")" href="@season.Url($"tong-ket?vong={n}")">Vòng @n</a>
+        }
+    </nav>
+    <div class="grid recap-grid">
+        <section class="panel">
+            <div class="panel-head"><h2>Đội hình tiêu biểu</h2><small class="muted">4-3-3 theo vị trí đăng ký</small></div>
+            @if (r.Team.Count == 0) { <p class="muted">Các trận của vòng này chưa có điểm cầu thủ.</p> }
+            else { <PitchXI Season="season" Players="r.Team" ShowClub="true" Star="r.Best?.PlayerId" /> }
+        </section>
+        <aside class="stack">
+            @if (r.Best is { } b)
+            {
+                <a class="panel star-card" href="@season.Url($"cau-thu/{b.PlayerId}")">
+                    <span class="kicker">Cầu thủ xuất sắc vòng @r.Number</span>
+                    <span class="big-rating">@b.Rating?.ToString("0.0")</span>
+                    <b>@b.Name</b>
+                    <span class="club"><Crest Name="@season.Clubs.GetValueOrDefault(b.ClubId, "?")" Logo="@season.Logo(b.ClubId)" />@season.Clubs.GetValueOrDefault(b.ClubId, "?")</span>
+                    <small>@b.Position · @b.Goals bàn · @b.ShotsOnTarget/@b.Shots sút trúng · gặp @season.Clubs.GetValueOrDefault(b.OpponentId, "?")</small>
+                </a>
+            }
+            <section class="panel">
+                <div class="panel-head"><h2>Đáng chú ý</h2></div>
+                <ul class="facts">
+                    @if (r.Biggest is { } big) { <li><span>Thắng đậm nhất</span><a href="tran/@big.Id">@Line(big)</a></li> }
+                    @if (r.Wildest is { } wild) { <li><span>Nhiều bàn nhất</span><a href="tran/@wild.Id">@Line(wild)</a></li> }
+                    @foreach (var u in r.Upsets)
+                    {
+                        <li class="upset"><span>Bất ngờ · OVR @u.WinnerOvr.ToString("0.0") thắng @u.LoserOvr.ToString("0.0")</span><a href="tran/@u.Fixture.Id">@Line(u.Fixture)</a></li>
+                    }
+                    @if (r.Upsets.Count == 0) { <li><span>Bất ngờ</span><em class="muted">Không có đội yếu hơn rõ (≥ 2 OVR) thắng.</em></li> }
+                </ul>
+                <p><a class="btn" href="@season.Url($"ban-thang?vong={r.Number}")">⚽ Bàn thắng của vòng</a></p>
+            </section>
+        </aside>
+    </div>
+    @if (news.Count > 0)
+    {
+        <h2 class="section-title">Tin của vòng</h2>
+        <NewsList Items="news" />
+    }
+    <h2 class="section-title">Kết quả</h2>
+    <ul class="fixtures">
+        @foreach (var f in r.Fixtures) { <FixtureCard Season="season" F="f" /> }
+    </ul>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+    [SupplyParameterFromQuery(Name = "vong")] public int? Vong { get; set; }
+
+    bool loaded;
+    SeasonInfo? season;
+    RoundRecap? recap;
+    List<NewsCard> news = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.ViewSeasonAsync(Mua);
+        recap = season is null ? null : await Q.RoundRecapAsync(season, Vong);
+        news = season is null || recap is null ? [] : await Q.NewsAsync(season.Id, recap.Number, null, 6);
+        loaded = true;
+    }
+
+    string Line(FixtureView f) => $"{season!.Clubs[f.Home]} {Fmt.Score(f.HomeGoals, f.AwayGoals, f.HomePenalties, f.AwayPenalties)} {season.Clubs[f.Away]}";
+}

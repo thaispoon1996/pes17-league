@@ -1,0 +1,64 @@
+@page "/so-sanh"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* FM đợt 10: so sánh 2 cầu thủ cạnh nhau. Cầu thủ CLB khác chưa trinh sát → chỉ số che như trang cầu thủ. *@
+<div class="fm">
+    <header class="fm-head"><div class="fm-title"><h1>So sánh cầu thủ</h1><p>Bôi đậm bên cao hơn</p></div></header>
+    @if (a is null) { <p>Chọn cầu thủ thứ nhất: <a href="tim-kiem">Tìm kiếm →</a></p> }
+    else
+    {
+        <div class="table-wrap">
+        <table class="table compare">
+            <thead><tr><th></th>
+                <th><a href="cau-thu/@a.Id">@a.Name</a><br /><small>@a.Position · @(a.Club ?? "Tự do")</small></th>
+                <th>@if (b is null) { <a href="tim-kiem?so-sanh=@a.Id">+ Chọn cầu thủ</a> }
+                    else { <a href="cau-thu/@b.Id">@b.Name</a><br /><small>@b.Position · @(b.Club ?? "Tự do") · <a href="tim-kiem?so-sanh=@a.Id">đổi</a></small> }</th></tr></thead>
+            <tbody>
+                @Row("OVR", a.Overall, b?.Overall, knownA, knownB)
+                <tr><td>Giá trị</td><td class="num">@Fmt.Money(a.Price)</td><td class="num">@(b is null ? "" : Fmt.Money(b.Price))</td></tr>
+                <tr><td>Tuổi</td><td class="num">@Age(a)</td><td class="num">@(b is null ? "" : Age(b))</td></tr>
+                @foreach (var x in a.Attributes.Where(x => x.Max == 99))
+                {
+                    var y = b?.Attributes.FirstOrDefault(v => v.Field == x.Field);
+                    @Row(x.Label, x.Value, y?.Value, knownA, knownB)
+                }
+            </tbody>
+        </table>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "a")] public Guid? A { get; set; }
+    [SupplyParameterFromQuery(Name = "b")] public Guid? B { get; set; }
+    PlayerProfile? a, b;
+    bool knownA = true, knownB = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var season = await Q.SeasonAsync();
+        if (season is null) return;
+        a = A is { } ia ? await Q.PlayerAsync(ia, season) : null;
+        b = B is { } ib ? await Q.PlayerAsync(ib, season) : null;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var y = new YouthService(db, Clock);
+        knownA = a is null || await y.KnowsAsync(season.HumanClubId, a.Id);
+        knownB = b is null || await y.KnowsAsync(season.HumanClubId, b.Id);
+    }
+
+    static string Age(PlayerProfile p) => p.Info.TryGetValue("AGE", out var v) ? v.ToString() : "–";
+
+    RenderFragment Row(string label, int va, int? vb, bool ka, bool kb) => __b =>
+    {
+        var cmp = vb is null || !ka || !kb ? 0 : va.CompareTo(vb.Value);
+        __b.OpenElement(0, "tr");
+        __b.OpenElement(1, "td"); __b.AddContent(2, label); __b.CloseElement();
+        __b.OpenElement(3, "td"); __b.AddAttribute(4, "class", "num" + (cmp > 0 ? " best" : "")); __b.AddContent(5, ka ? va.ToString() : ScoutRules.Mask(va)); __b.CloseElement();
+        __b.OpenElement(6, "td"); __b.AddAttribute(7, "class", "num" + (cmp < 0 ? " best" : "")); __b.AddContent(8, vb is { } v ? kb ? v.ToString() : ScoutRules.Mask(v) : ""); __b.CloseElement();
+        __b.CloseElement();
+    };
+}

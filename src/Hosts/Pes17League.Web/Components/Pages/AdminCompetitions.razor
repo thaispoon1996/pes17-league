@@ -1,0 +1,150 @@
+@page "/admin"
+@page "/admin/giai"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<h1>Quản trị</h1>
+<AdminNav />
+@if (all is null) { return; }
+@foreach (var w in CompetitionAdminService.Warnings(all)) { <p class="warn">⚠ @w</p> }
+@if (msg is not null) { <p class="msg">@msg</p> }
+
+<div class="panel">
+    <div class="panel-head"><h2>Giải đấu</h2><a href="admin/giai/moi">+ Thêm giải</a></div>
+    @if (!all.Any(c => c.Status == CompetitionStatus.Active))
+    {
+        <p class="muted">Chưa có giải nào đang hoạt động. Bộ mặc định: 4 nước × 2 hạng + 4 cúp quốc gia (FA Cup, Copa del Rey, Coppa Italia, DFB-Pokal) + Champions League + Europa League.</p>
+        <button class="primary" @onclick="Seed">Tạo 14 giải mặc định</button>
+    }
+    else if (all.Any(c => c.Status == CompetitionStatus.Active && c.Type == CompetitionType.DomesticLeague)
+        && !all.Any(c => c.Type == CompetitionType.DomesticCup))
+    {
+        <p class="muted">Đã có giải quốc nội nhưng chưa có cúp quốc gia.</p>
+        <button class="primary" @onclick="SeedCups">Thêm 4 cúp quốc gia</button>
+    }
+    <table class="table">
+        <thead><tr><th class="left">Giải</th><th>Nước</th><th>Hạng</th><th class="left">Luật</th><th>Mùa giải</th><th>Trạng thái</th></tr></thead>
+        <tbody>
+            @foreach (var c in all.OrderBy(c => c.Status).ThenBy(c => c.Type).ThenBy(c => c.Country).ThenBy(c => c.Tier))
+            {
+                <tr @onclick='() => Nav.NavigateTo($"admin/giai/{c.Id}")'>
+                    <td class="left"><b>@c.Name</b>@if (c.ShortName is not null) { <small> · @c.ShortName</small> }</td>
+                    <td>@c.Country</td>
+                    <td>@AdminText.Tier(c)</td>
+                    <td class="left"><small>@AdminText.Rules(c, all)</small></td>
+                    <td>@editions.GetValueOrDefault(c.Id)</td>
+                    <td>@(c.Status == CompetitionStatus.Active ? "Hoạt động" : "Lưu trữ")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (seasons.Count > 0 && all.Any(c => c.Status == CompetitionStatus.Active))
+{
+    <div class="panel">
+        <h2>Chia đội vào các giải của mùa</h2>
+        <p class="muted"><b>Mùa đầu</b> (chưa có mùa trước): xếp CLB theo OVR trung bình đội hình, nửa mạnh vào hạng 1 (Đức 10/8). C1 = 4 đội đầu hạng 1 mỗi nước + 8 CLB lẻ mạnh nhất;
+            C2 = đội thứ 5–6 + CLB lẻ còn lại + suất thêm cho CLB quốc nội OVR cao nhất chưa có suất. Cúp quốc gia = mọi CLB hạng 1+2 cùng nước.<br />
+            <b>Mùa sau</b>: theo BXH cuối mùa trước — 2 lên 2 xuống, C1/C2 theo thứ hạng, suất C2 thêm cho vô địch C2 (đã có suất → đội thứ 7 nhiều điểm nhất),
+            CLB lẻ theo vòng đi xa nhất ở cúp châu lục. Ghi đè CLB các mùa giải còn Nháp.</p>
+        <div class="filters">
+            <select @bind="seasonId">
+                @foreach (var s in seasons) { <option value="@s.Id">@s.Name</option> }
+            </select>
+            <button @onclick="Preview">Xem trước</button>
+            @if (plan is { Errors.Count: 0 }) { <button class="primary" @onclick="Apply">Ghi vào các mùa giải</button> }
+        </div>
+        @if (plan is not null)
+        {
+            <p><b>@(plan.FromPreviousSeason ? "Lên/xuống hạng từ mùa trước" : "Chia theo OVR (mùa đầu)")</b></p>
+            @foreach (var e in plan.Errors) { <p class="warn">⚠ @e</p> }
+            @foreach (var n in plan.Notes) { <p class="msg">@n</p> }
+            @if (plan.Unassigned.Count > 0) { <p class="muted">Không xếp (không có nước@(plan.FromPreviousSeason ? " hoặc mùa trước chưa dự giải quốc gia — thêm tay sau khi ghi" : "")): @string.Join(", ", plan.Unassigned.Select(c => c.Name))</p> }
+            @foreach (var e in plan.Editions)
+            {
+                <h3>@e.Competition.Name (@e.Clubs.Count)</h3>
+                <table class="table">
+                    <thead><tr><th>Hạt giống</th><th class="left">CLB</th><th>Nước</th><th>OVR</th><th>Số cầu thủ</th></tr></thead>
+                    <tbody>
+                        @foreach (var (c, seed) in e.Clubs)
+                        {
+                            <tr><td>@seed</td><td class="left">@c.Name</td><td>@c.Country</td><td>@c.Ovr.ToString("0.0")</td><td>@c.Players</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    </div>
+}
+
+@code {
+    List<Competition>? all;
+    Dictionary<Guid, int> editions = [];
+    string? msg;
+    List<Season> seasons = [];
+    Guid seasonId;
+    SeasonAllocation? plan;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        all = await db.Competitions.AsNoTracking().ToListAsync();
+        editions = await db.Editions.GroupBy(e => e.CompetitionId).ToDictionaryAsync(g => g.Key, g => g.Count());
+        seasons = await db.Seasons.AsNoTracking().Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).ToListAsync();
+        if (!seasons.Any(s => s.Id == seasonId)) seasonId = seasons.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    async Task Seed()
+    {
+        try
+        {
+            await using (var db = await Dbs.CreateDbContextAsync())
+                msg = $"Đã tạo {await new CompetitionAdminService(db, Clock).SeedDefaultsAsync(AdminText.Actor)} giải.";
+            await LoadAsync();
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    async Task SeedCups()
+    {
+        try
+        {
+            await using (var db = await Dbs.CreateDbContextAsync())
+                msg = $"Đã thêm {await new CompetitionAdminService(db, Clock).SeedDomesticCupsAsync(AdminText.Actor)} cúp quốc gia.";
+            await LoadAsync();
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    async Task Preview()
+    {
+        (msg, plan) = (null, null);
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            plan = await new DivisionService(db, Clock).PreviewAsync(seasonId);
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    async Task Apply()
+    {
+        var name = seasons.Single(s => s.Id == seasonId).Name;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Ghi chia đội vào {plan!.Editions.Count} mùa giải của {name}? CLB đang có trong các mùa giải này sẽ bị thay.")) return;
+        try
+        {
+            await using (var db = await Dbs.CreateDbContextAsync())
+                msg = $"Đã ghi {await new DivisionService(db, Clock).ApplyAsync(seasonId, AdminText.Actor)} mùa giải của {name}.";
+            plan = null;
+            await LoadAsync();
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+}

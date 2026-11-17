@@ -1,0 +1,285 @@
+@page "/tran/{FixtureId:guid}"
+@inject LeagueQueries Q
+@inject NewsStore News
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@* Trang 1 trận (B3, PO duyệt 07/11): tỷ số + highlight, thống kê 2 đội như màn "Thông số trận đấu" của game, diễn biến theo phút, bảng cầu thủ.
+   Phạm lỗi gồm cả việt vị — ghi "1 (1)" như game. Thẻ chưa giải mã → "—". Trận đá trước 07/11: "Chưa có thống kê".
+   Match Centre (PO ok 11/11): người ghi bàn theo từng đội, sơ đồ ra sân + xuất sắc nhất trận; trận chưa đá → nhận định trước trận (phong độ, hạng, đối đầu). *@
+@if (!loaded) { return; }
+@if (m is null) { <p>Không có trận này. <a href="lich">Lịch thi đấu →</a></p> return; }
+@{ var f = m.Fixture; var s = m.Season; var played = f.Status == FixtureStatus.Played; }
+<p class="crumbs"><a href="@s.Url($"lich?khung={f.Matchday}")">← @s.Label · vòng @f.Matchday</a></p>
+<section class="scoreboard mc @Insight.Tone(m.Edition)">
+    <p class="match-meta">
+        @if (m.Edition is { } ed) { <a href="@s.Url($"giai/{ed.CompetitionId}")">@ed.Name</a><text> · </text> }
+        @m.Round · vòng @f.Matchday@(m.PlayedAt is { } at ? $" · {at.ToLocalTime():dd/MM/yyyy HH:mm}" : "")
+    </p>
+    @foreach (var club in new[] { f.Home, f.Away })
+    {
+        if (club == f.Away)
+        {
+            <div class="big @(f.Status == FixtureStatus.Playing ? "live" : "")">@(played ? $"{f.HomeGoals} – {f.AwayGoals}" : f.Status == FixtureStatus.Playing ? "LIVE" : "vs")
+                @if (f.HomePenalties is { } ph) { <small>pen @ph–@f.AwayPenalties</small> }
+            </div>
+        }
+        <div class="side">
+            <a href="clb/@club"><Crest Name="@s.Clubs[club]" Logo="@s.Logo(club)" Large="true" /></a><b>@s.Clubs[club]</b>
+            @if (f.Goals.Any(g => g.ClubId == club))
+            {
+                <ul class="sc">
+                    @foreach (var g in f.Goals.Where(g => g.ClubId == club))
+                    {
+                        <li>⚽ @if (g.ScorerId is { } sid) { <a href="@s.Url($"cau-thu/{sid}")">@g.Scorer</a> } else { <span>Không rõ / phản lưới</span> } <small>@(g.Minute)'</small></li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+    @if (articleId is { } aid) { <p class="match-meta"><a class="btn" href="tin/@aid">📰 Bài tường thuật</a></p> }
+</section>
+
+@if (played && lines.Any(l => l.Starter))
+{
+    var motm = lines.Where(l => l.Rating is not null).ByBest().FirstOrDefault();
+    <section class="panel mc-lineups">
+        <div class="panel-head">
+            <h2>Đội hình ra sân</h2>
+            @if (motm is not null)
+            {
+                <a class="motm" href="@s.Url($"cau-thu/{motm.PlayerId}")">⭐ Xuất sắc nhất trận: <b>@motm.Name</b> <span class="rating hi">@motm.Rating?.ToString("0.0")</span></a>
+            }
+        </div>
+        <div class="mc-pitches">
+            @foreach (var club in new[] { f.Home, f.Away })
+            {
+                <div>
+                    <h3 class="club"><Crest Name="@s.Clubs[club]" Logo="@s.Logo(club)" />@s.Clubs[club]</h3>
+                    <PitchXI Season="s" Players="@(lines.Where(l => l.ClubId == club && l.Starter).ToList())" Star="motm?.PlayerId" />
+                </div>
+            }
+        </div>
+        <p class="muted">Xếp theo vị trí đăng ký của cầu thủ, không phải sơ đồ chiến thuật trong trận.</p>
+    </section>
+}
+
+@if (!played && preview is { } pv)
+{
+    <section class="panel preview">
+        <div class="panel-head"><h2>Nhận định trước trận</h2></div>
+        <div class="pv">
+            @foreach (var (label, home, away) in PreviewRows(pv))
+            {
+                <div class="pv-row"><span class="h">@home</span><span class="l">@label</span><span class="a">@away</span></div>
+            }
+        </div>
+        <h3>Đối đầu</h3>
+        @if (pv.H2H.Count == 0) { <p class="muted">Hai đội chưa gặp nhau.</p> }
+        else
+        {
+            <ul class="facts">
+                @foreach (var x in pv.H2H)
+                {
+                    <li><span>@x.Season</span><a href="tran/@x.FixtureId">@Club(x.Home) @x.HomeGoals–@x.AwayGoals @Club(x.Away)</a></li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@if (f.Status != FixtureStatus.Scheduled)
+{
+<div class="grid match-grid">
+<section class="panel">
+    <div class="panel-head"><h2>Diễn biến</h2></div>
+    @if (m.Events.Count == 0)
+    {
+        <p class="muted">@(played ? "Chưa có diễn biến (trận đá trước bản thống kê 07/11, hoặc không đọc được)." : "Trận chưa đá.")</p>
+    }
+    else
+    {
+        <ol class="timeline">
+            @{ int? half = null; int hg = 0, ag = 0; }
+            @foreach (var e in m.Events.Where(x => x.Type != MatchEventType.Kickoff))
+            {
+                var home = e.ClubId == f.Home;
+                if (e.Type == MatchEventType.Goal) { if (home) hg++; else ag++; }
+                if (e.Half != half)
+                {
+                    half = e.Half;
+                    <li class="half">@(e.Half <= 2 ? $"Hiệp {e.Half}" : $"Hiệp phụ {e.Half - 2}")</li>
+                }
+                var extra = e.Type == MatchEventType.Goal ? $" · {hg}–{ag}" : null;
+                <li class="@Css(e)">
+                    @if (home) { @What(e, extra) } else { <span></span> }
+                    <span class="min">@(e.AddedTime ? $"{e.Minute}'+" : $"{e.Minute}'")</span>
+                    @if (!home) { @What(e, extra) } else { <span></span> }
+                </li>
+            }
+        </ol>
+    }
+</section>
+
+<aside class="panel">
+    <div class="panel-head"><h2>Thống kê</h2></div>
+    @if (m.Home is not { } h || m.Away is not { } a)
+    {
+        <p class="muted">@(played ? "Chưa có thống kê (trận đá trước bản thống kê 07/11, hoặc không đọc được)." : "Trận chưa đá.")</p>
+    }
+    else
+    {
+        <div class="cmp">
+            @foreach (var r in Rows(h, a))
+            {
+                var total = r.H + r.A;
+                var pct = total > 0 ? r.H * 100.0 / total : 50;
+                <div class="cmp-row">
+                    <b>@r.HText</b><span>@r.Label</span><b>@r.AText</b>
+                    <div class="bar @(total > 0 ? "" : "none")"><i style="flex: @Pct(pct)"></i><i style="flex: @Pct(100 - pct)"></i></div>
+                </div>
+            }
+        </div>
+        <details class="cmp-more">
+            <summary>Chi tiết (như màn "Thông số trận đấu")</summary>
+            <table class="table static">
+                <tbody>
+                    @foreach (var (label, hv, av) in Details(h, a))
+                    {
+                        <tr><td>@hv</td><td class="label">@label</td><td>@av</td></tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+</aside>
+</div>
+
+<div class="teams2">
+    @foreach (var club in new[] { f.Home, f.Away })
+    {
+        var rows = m.Players.Where(p => p.Stats.ClubId == club).ToList();
+        <section class="panel">
+            <div class="panel-head"><h2 class="club"><Crest Name="@s.Clubs[club]" Logo="@s.Logo(club)" />@s.Clubs[club]</h2></div>
+            @if (rows.Count == 0)
+            {
+                <p class="muted">Chưa có số liệu cầu thủ.</p>
+            }
+            else
+            {
+                <table class="table static">
+                    <thead><tr><th class="left">Cầu thủ</th><th>Điểm</th><th>Bàn</th><th title="Sút (trúng đích)">Sút</th><th title="Phạm lỗi (việt vị)">Lỗi</th><th title="Phạt góc đã đá">Góc</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in rows)
+                        {
+                            var r = p.Stats;
+                            <tr>
+                                <td class="left"><a href="@s.Url($"cau-thu/{r.PlayerId}")">@p.Name</a>
+                                    @if (r.InMinute is { } i) { <small class="io in" title="Vào sân">↑@(i)'</small> }
+                                    @if (r.OutMinute is { } o) { <small class="io out" title="Bị thay ra">↓@(o)'</small> }
+                                </td>
+                                <td><span class="rating @(r.Rating >= 7.5m ? "hi" : r.Rating <= 5.0m ? "lo" : "")">@(r.Rating?.ToString("0.0") ?? "–")</span></td>
+                                <td>@(r.Goals?.ToString() ?? "—")</td>
+                                <td>@(r.Shots is { } sh ? $"{sh} ({r.ShotsOnTarget})" : "—")</td>
+                                <td>@(r.Fouls is { } fo ? $"{fo} ({r.Offsides})" : "—")</td>
+                                <td>@(r.Corners?.ToString() ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+</div>
+}
+
+@code {
+    [Parameter] public Guid FixtureId { get; set; }
+    MatchPage? m;
+    Guid? articleId;
+    bool loaded;
+    List<PlayerLine> lines = [];
+    MatchPreview? preview;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        m = await Q.MatchAsync(FixtureId);
+        articleId = m is null ? null : await Q.ArticleIdAsync(FixtureId);
+        lines = m is null ? [] : Insight.Lines(m);
+        preview = m is { Fixture.Status: not FixtureStatus.Played } ? await Q.PreviewAsync(m, Store, Clock) : null;
+        loaded = true;
+    }
+
+    string Club(Guid id) => m!.Season.Clubs.GetValueOrDefault(id, "?");
+
+    // Nhận định: hàng so sánh 2 đội (nhà | nhãn | khách).
+    IEnumerable<(string, RenderFragment, RenderFragment)> PreviewRows(MatchPreview pv)
+    {
+        RenderFragment T(string text) => @<text>@text</text>;
+        RenderFragment Form(TeamForm t) => @<FormStrip Season="m!.Season" Items="t.Last" />;
+        RenderFragment Who(Leader? l) => l is null ? T("–") : @<a href="@m!.Season.Url($"cau-thu/{l.Id}")">@l.Name <small>@l.Value @l.Note</small></a>;
+        var (h, a) = (pv.Home, pv.Away);
+        if (h.Rank is not null || a.Rank is not null)
+            yield return ("Hạng · điểm", T(h.Rank is { } hr ? $"#{hr} · {h.Points} đ" : "–"), T(a.Rank is { } ar ? $"#{ar} · {a.Points} đ" : "–"));
+        yield return ("Phong độ", Form(h), Form(a));
+        yield return ("Thắng–hoà–thua (mùa)", T($"{h.Won}–{h.Drawn}–{h.Lost}"), T($"{a.Won}–{a.Drawn}–{a.Lost}"));
+        yield return ("Bàn thắng–thua", T($"{h.GoalsFor}–{h.GoalsAgainst}"), T($"{a.GoalsFor}–{a.GoalsAgainst}"));
+        yield return ("OVR TB đá chính", T(h.StarterOvr.ToString("0.0")), T(a.StarterOvr.ToString("0.0")));
+        yield return ("Giá trị đội hình", T(Fmt.Money(h.SquadValue)), T(Fmt.Money(a.SquadValue)));
+        yield return ("Ghi bàn nhiều nhất", Who(h.TopScorer), Who(a.TopScorer));
+        yield return ("Điểm TB cao nhất", Who(h.BestRated), Who(a.BestRated));
+    }
+
+    // Thanh so sánh: số đội nhà / khách quyết định độ dài thanh, chữ hiện kèm phần trong ngoặc như màn game.
+    sealed record Row(string Label, int H, int A, string HText, string AText);
+
+    static IEnumerable<Row> Rows(MatchTeamStats h, MatchTeamStats a) =>
+    [
+        new("Giữ bóng", h.PossessionPct, a.PossessionPct, $"{h.PossessionPct}%", $"{a.PossessionPct}%"),
+        new("Sút (trúng đích)", h.Shots, a.Shots, $"{h.Shots} ({h.ShotsOnTarget})", $"{a.Shots} ({a.ShotsOnTarget})"),
+        new("Phạt góc", h.Corners, a.Corners, $"{h.Corners}", $"{a.Corners}"),
+        new("Phạm lỗi (việt vị)", h.Fouls, a.Fouls, $"{h.Fouls} ({h.Offsides})", $"{a.Fouls} ({a.Offsides})"),
+        new("Thẻ vàng / đỏ", (h.YellowCards ?? 0) + (h.RedCards ?? 0), (a.YellowCards ?? 0) + (a.RedCards ?? 0), Cards(h), Cards(a)),
+        new("Chuyền (thành công)", h.Passes, a.Passes, Passes(h), Passes(a)),
+        new("Căng ngang", h.Crosses, a.Crosses, $"{h.Crosses}", $"{a.Crosses}"),
+        new("Cắt bóng", h.Interceptions, a.Interceptions, $"{h.Interceptions}", $"{a.Interceptions}"),
+        new("Đá phạt", h.FreeKicks, a.FreeKicks, $"{h.FreeKicks}", $"{a.FreeKicks}"),
+        new("Rê bóng (mét)", h.Dribbles, a.Dribbles, $"{h.Dribbles} ({h.DribbleMeters} m)", $"{a.Dribbles} ({a.DribbleMeters} m)"),
+    ];
+
+    static string Cards(MatchTeamStats t) => t.YellowCards is { } y ? $"{y} / {t.RedCards ?? 0}" : "—";
+    static string Passes(MatchTeamStats t) => t.Passes > 0 ? $"{t.Passes} ({t.PassesCompleted * 100 / t.Passes}%)" : "0";
+
+    static IEnumerable<(string, int, int)> Details(MatchTeamStats h, MatchTeamStats a) =>
+    [
+        ("Sút: thủ môn bắt", h.ShotsSaved, a.ShotsSaved), ("Sút: trong vòng cấm", h.ShotsInBox, a.ShotsInBox), ("Sút: đánh đầu", h.Headers, a.Headers),
+        ("Sút: chân phải", h.RightFoot, a.RightFoot), ("Sút: chân trái", h.LeftFoot, a.LeftFoot), ("Chuyền thành công", h.PassesCompleted, a.PassesCompleted),
+        ("Phạm lỗi: trực tiếp", h.FoulsDirect, a.FoulsDirect), ("Phạm lỗi: gián tiếp", h.FoulsIndirect, a.FoulsIndirect), ("Việt vị", h.Offsides, a.Offsides),
+        ("Phạt góc: cánh phải", h.CornersRight, a.CornersRight), ("Phạt góc: cánh trái", h.CornersLeft, a.CornersLeft),
+        ("Đá phạt: trực tiếp", h.FreeKicksDirect, a.FreeKicksDirect), ("Rê bóng: số mét", h.DribbleMeters, a.DribbleMeters),
+    ];
+
+    static string Pct(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    static string Css(MatchEventView e) => e.Type switch
+    {
+        MatchEventType.Goal => "goal", MatchEventType.Foul or MatchEventType.FreeKick or MatchEventType.Offside or MatchEventType.Other => "minor", _ => "",
+    };
+
+    static string Icon(MatchEventView e) => e.Type switch
+    {
+        MatchEventType.Goal => "⚽", MatchEventType.Shot => e.OnTarget == true ? "🎯" : "↗", MatchEventType.Corner => "🚩", MatchEventType.Foul => "⚠",
+        MatchEventType.FreeKick => "🦶", MatchEventType.Offside => "⚑", MatchEventType.Substitution => "🔁", MatchEventType.YellowCard => "🟨",
+        MatchEventType.RedCard => "🟥", _ => "•",
+    };
+
+    static string Label(MatchEventView e) => e.Type switch
+    {
+        MatchEventType.Goal => "Bàn thắng", MatchEventType.Shot => e.OnTarget switch { true => "Sút trúng đích", false => "Sút không trúng đích", null => "Sút" },
+        MatchEventType.Corner => "Phạt góc", MatchEventType.Foul => "Phạm lỗi", MatchEventType.FreeKick => "Đá phạt", MatchEventType.Offside => "Việt vị",
+        MatchEventType.Substitution => $"vào thay {e.Other ?? "?"}", MatchEventType.YellowCard => "Thẻ vàng", MatchEventType.RedCard => "Thẻ đỏ", _ => "Pha khác",
+    };
+
+    static RenderFragment What(MatchEventView e, string? extra) =>
+        @<span class="what"><i>@Icon(e)</i> <b>@e.Player</b> <small>@Label(e)@extra</small></span>;
+}

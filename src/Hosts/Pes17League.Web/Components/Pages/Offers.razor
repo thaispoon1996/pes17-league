@@ -1,0 +1,267 @@
+@page "/de-nghi"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+
+@* FM đợt 3 (PO 12/11 duyệt mặc định): đề nghị chuyển nhượng giữa CLB có HLV — mua đứt/trao đổi/mượn, trả giá, % bán lại, trả góp,
+   phí giải phóng. ?cau-thu={id} mở form gửi đề nghị. Luật ở TransferOfferService/OfferRules. *@
+@if (season is null) { return; }
+@{ var me = season.HumanClubId; }
+<div class="fm">
+    <ManagerNav />
+    <header class="fm-head">
+        @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
+        <div class="fm-title">
+            <h1>Đề nghị chuyển nhượng</h1>
+            <p>@season.Name · số dư @Fmt.Money(balance) · <a href="chuyen-nhuong">← Thị trường</a></p>
+        </div>
+        <span class="fm-badge @(window is null ? "" : "open")"><b>@(window is null ? "Đóng" : "Mở")</b>Kỳ CN</span>
+    </header>
+    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (message is not null) { <p class="msg">@message</p> }
+
+    @if (target is not null)
+    {
+        <section class="offer-form">
+            <h2>Gửi đề nghị: @target.Name <small>(@season.Clubs.GetValueOrDefault(target.ClubId ?? Guid.Empty, "?") · giá @Fmt.Money(target.Price))</small></h2>
+            @if (window is null) { <p class="fm-note">Kỳ chuyển nhượng đang đóng.</p> }
+            else
+            {
+                <div class="offer-grid">
+                    <label>Loại
+                        <select @bind="draftKind">
+                            <option value="@OfferKind.Permanent">Mua đứt</option>
+                            <option value="@OfferKind.Loan">Mượn</option>
+                        </select>
+                    </label>
+                    <label>@(draftKind == OfferKind.Loan ? "Phí mượn" : "Tiền mặt") <input type="number" min="0" step="1000" @bind="draftFee" /></label>
+                    <label>@(draftKind == OfferKind.Loan ? "Số trận mượn" : "Hợp đồng (trận)") <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="draftMatches" /></label>
+                    <label>Lương/vòng <input type="number" min="0" @bind="draftWage" /></label>
+                    @if (draftKind == OfferKind.Permanent)
+                    {
+                        <label>Cầu thủ trao đổi
+                            <select @bind="draftSwap">
+                                <option value="">— không —</option>
+                                @foreach (var p in squad.Where(p => !p.OnLoan).OrderByDescending(p => p.Price)) { <option value="@p.PlayerId">@p.Name (@Fmt.Money(p.Price))</option> }
+                            </select>
+                        </label>
+                        <label>% bán lại <input type="number" min="0" max="@OfferRules.MaxSellOnPercent" @bind="draftSellOn" /></label>
+                        <label>Trả góp (kỳ) <input type="number" min="1" max="@OfferRules.MaxInstalments" @bind="draftInstalments" /></label>
+                    }
+                    <label class="wide">Lời nhắn <input maxlength="300" @bind="draftNote" /></label>
+                </div>
+                <p class="fm-note">
+                    @if (draftKind == OfferKind.Loan) { <text>Phí mượn tối đa @OfferRules.MaxLoanFeePercent% giá. Hết hạn mượn cầu thủ về CLB cũ.</text> }
+                    else { <text>Tiền + giá cầu thủ trao đổi phải @FeeRules.MinNegotiatedPercent–@FeeRules.MaxNegotiatedPercent% giá. Trả góp: kỳ 1 trả ngay, các kỳ sau trừ khi chốt vòng.</text> }
+                    @if (targetClause is { } tc) { <br /><b>Phí giải phóng @Fmt.Money(tc)</b><text>: mua đứt bằng tiền ≥ mức này thì hoàn tất ngay.</text> }
+                    @if (targetWage is { } tw) { <br /><text>Lương hiện tại @Fmt.Money(tw) — trả dưới @OfferRules.MinWagePercent% thì cầu thủ từ chối.</text> }
+                </p>
+                <button class="primary" disabled="@busy" @onclick="Send">Gửi đề nghị</button>
+                <button disabled="@busy" @onclick="@(() => Nav.NavigateTo("de-nghi"))">Huỷ</button>
+            }
+        </section>
+    }
+
+    <section>
+        <h2>Đề nghị đến (@offers.Count(o => o.SellerClubId == me && o.Status == OfferStatus.Pending) chờ trả lời)</h2>
+        @Table(offers.Where(o => o.SellerClubId == me).ToList(), incoming: true)
+    </section>
+    <section>
+        <h2>Đề nghị đã gửi</h2>
+        @Table(offers.Where(o => o.BuyerClubId == me).ToList(), incoming: false)
+    </section>
+    <section>
+        <h2>Phí giải phóng cầu thủ của tôi</h2>
+        <p class="fm-note">@OfferRules.MinClausePercent–@OfferRules.MaxClausePercent% giá. Để trống = không có.</p>
+        <table class="table offer-clauses">
+            <thead><tr><th>Cầu thủ</th><th>Giá</th><th>Phí giải phóng</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in squad.OrderByDescending(p => p.Price))
+                {
+                    <tr>
+                        <td>@p.Name @(p.OnLoan ? "(mượn)" : "")</td>
+                        <td>@Fmt.Money(p.Price)</td>
+                        <td>@if (!p.OnLoan) { <input type="number" min="0" step="1000" value="@p.Clause" @onchange="e => clauseEdit[p.PlayerId] = e.Value?.ToString()" /> }</td>
+                        <td>@if (clauseEdit.ContainsKey(p.PlayerId)) { <button disabled="@busy" @onclick="() => SaveClause(p)">Lưu</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "cau-thu")] public Guid? PlayerParam { get; set; }
+
+    sealed record MyPlayer(Guid PlayerId, string Name, long Price, long? Clause, bool OnLoan);
+
+    SeasonInfo? season;
+    TransferWindow? window;
+    long balance;
+    List<OfferRow> offers = [];
+    List<MyPlayer> squad = [];
+    MarketRow? target;
+    long? targetClause, targetWage;
+    OfferKind draftKind;
+    long draftFee;
+    int draftMatches, draftSellOn, draftInstalments = 1;
+    long draftWage;
+    string? draftSwap, draftNote, message;
+    Dictionary<Guid, long> counter = [];
+    Dictionary<Guid, string?> clauseEdit = [];
+    bool busy;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    async Task LoadAsync()
+    {
+        season = await Q.SeasonAsync();
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        var me = season.HumanClubId;
+        window = await Q.OpenWindowAsync(season.Id);
+        (balance, _, _) = await Q.FinanceAsync(me);
+        await using var db = await Dbs.CreateDbContextAsync();
+        offers = await new TransferOfferService(db, Clock).ListAsync(me);
+        var sid = season.Id;
+        squad = await (from m in db.SquadMemberships
+                       where m.ClubId == me && m.LeftAt == null
+                       join p in db.Players on m.PlayerId equals p.Id
+                       join c in db.Contracts.Where(c => c.Status == ContractStatus.Active) on m.PlayerId equals c.PlayerId into cs
+                       from c in cs.DefaultIfEmpty()
+                       select new MyPlayer(p.Id, p.Name,
+                           db.PlayerPrices.Where(x => x.PlayerId == p.Id && x.SeasonId == sid).Select(x => x.Price).FirstOrDefault(),
+                           c == null ? null : c.ReleaseClause, c != null && c.LoanFromClubId != null)).ToListAsync();
+        target = null;
+        if (PlayerParam is { } pid)
+        {
+            target = (await Q.MarketAsync(season.Id, me)).FirstOrDefault(p => p.PlayerId == pid);
+            var tc = await db.Contracts.AsNoTracking().FirstOrDefaultAsync(c => c.PlayerId == pid && c.Status == ContractStatus.Active);
+            (targetClause, targetWage) = (tc?.ReleaseClause, tc?.Wage);
+            if (target is not null && draftFee == 0)
+            {
+                draftFee = target.Price;
+                draftMatches = season.Economy.DefaultContractMatches;
+                draftWage = Math.Max(ContractRules.Wage(target.Price, season.Economy.WagePermille), targetWage ?? 0);
+            }
+        }
+    }
+
+    RenderFragment Table(List<OfferRow> rows, bool incoming) => __builder =>
+    {
+        if (rows.Count == 0) { <p class="fm-note">Chưa có.</p> return; }
+        <table class="table offers">
+            <thead><tr><th>Cầu thủ</th><th>@(incoming ? "CLB hỏi mua" : "CLB bán")</th><th>Điều khoản</th><th>Trạng thái</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var o in rows)
+                {
+                    <tr class="@(o.Status is OfferStatus.Pending or OfferStatus.Countered ? "open" : "")">
+                        <td><a href="@season!.Url($"cau-thu/{o.PlayerId}")">@o.Player</a>@if (o.Price is { } pr) { <small> · giá @Fmt.Money(pr)</small> }</td>
+                        <td>@(incoming ? o.Buyer : o.Seller)</td>
+                        <td>@Terms(o)@if (o.Note is not null) { <br /><em>“@o.Note”</em> }</td>
+                        <td>@Status(o)@if (o.FailReason is not null) { <br /><small class="neg">@o.FailReason</small> }</td>
+                        <td class="offer-actions">
+                            @if (incoming && o.Status == OfferStatus.Pending)
+                            {
+                                <button class="primary" disabled="@busy" @onclick="() => Reply(o, OfferReply.Accept)">Đồng ý</button>
+                                <button disabled="@busy" @onclick="() => Reply(o, OfferReply.Reject)">Từ chối</button>
+                                <span class="offer-counter">
+                                    <input type="number" min="0" step="1000" placeholder="giá trả" value="@(counter.TryGetValue(o.Id, out var cv) ? cv : null)"
+                                           @onchange="e => { if (long.TryParse(e.Value?.ToString(), out var v)) counter[o.Id] = v; }" />
+                                    <button disabled="@busy" @onclick="() => Reply(o, OfferReply.Counter)">Trả giá</button>
+                                </span>
+                            }
+                            @if (!incoming && o.Status == OfferStatus.Countered)
+                            {
+                                <button class="primary" disabled="@busy" @onclick="() => Buyer(o, true)">Đồng ý @Fmt.Money(o.CounterFee ?? 0)</button>
+                            }
+                            @if (!incoming && o.Status is OfferStatus.Pending or OfferStatus.Countered)
+                            {
+                                <button disabled="@busy" @onclick="() => Buyer(o, false)">Rút</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    static string Terms(OfferRow o)
+    {
+        var parts = new List<string>();
+        if (o.Kind == OfferKind.Loan) parts.Add($"Mượn {o.ContractMatches} trận, phí {Fmt.Money(o.Fee)}");
+        else parts.Add($"{Fmt.Money(o.Fee)}" + (o.CounterFee is { } c ? $" → trả giá {Fmt.Money(c)}" : "") + $", HĐ {o.ContractMatches} trận");
+        if (o.SwapPlayer is not null) parts.Add($"+ {o.SwapPlayer}");
+        if (o.Instalments > 1) parts.Add($"góp {o.Instalments} kỳ");
+        if (o.SellOnPercent > 0) parts.Add($"bán lại {o.SellOnPercent}%");
+        parts.Add($"lương {Fmt.Money(o.Wage)}/vòng");
+        return string.Join(" · ", parts);
+    }
+
+    static string Status(OfferRow o) => o.Status switch
+    {
+        OfferStatus.Pending => "Chờ CLB bán",
+        OfferStatus.Countered => "CLB bán trả giá",
+        OfferStatus.Completed => "✓ Hoàn tất",
+        OfferStatus.Rejected => "Bị từ chối",
+        OfferStatus.Withdrawn => "Đã rút",
+        OfferStatus.Expired => "Hết hạn (kỳ CN đóng)",
+        OfferStatus.Failed => "Không thành",
+        _ => o.Status.ToString(),
+    };
+
+    async Task Send()
+    {
+        if (target is null || window is null) return;
+        await Run(async svc =>
+        {
+            Guid? swap = Guid.TryParse(draftSwap, out var s) ? s : null;
+            var loan = draftKind == OfferKind.Loan;
+            var r = await svc.MakeAsync(window.Id, new(target.PlayerId, season!.HumanClubId, draftKind, draftFee, draftMatches, draftWage,
+                loan ? null : swap, loan ? 0 : draftSellOn, loan ? 1 : draftInstalments, draftNote));
+            message = r.Status switch
+            {
+                OfferStatus.Completed => $"Hoàn tất: {target.Name} về CLB.",
+                OfferStatus.Pending => $"Đã gửi đề nghị cho {target.Name}.",
+                _ => r.Error,
+            };
+            if (r.Ok || r.Status is not null) { draftFee = 0; Nav.NavigateTo("de-nghi"); }
+        });
+    }
+
+    Task Reply(OfferRow o, OfferReply reply) => Run(async svc =>
+    {
+        var r = await svc.RespondAsync(o.Id, season!.HumanClubId, reply, counter.TryGetValue(o.Id, out var c) ? c : null);
+        message = r.Error ?? reply switch { OfferReply.Accept => $"Đã bán {o.Player}.", OfferReply.Reject => "Đã từ chối.", _ => "Đã trả giá." };
+    });
+
+    Task Buyer(OfferRow o, bool accept) => Run(async svc =>
+    {
+        var r = await svc.BuyerReplyAsync(o.Id, season!.HumanClubId, accept);
+        message = r.Error ?? (accept ? $"Hoàn tất: {o.Player} về CLB." : "Đã rút đề nghị.");
+    });
+
+    Task SaveClause(MyPlayer p) => Run(async svc =>
+    {
+        var raw = clauseEdit[p.PlayerId];
+        long? v = long.TryParse(raw, out var x) && x > 0 ? x : null;
+        var err = await svc.SetReleaseClauseAsync(season!.HumanClubId, p.PlayerId, v);
+        message = err ?? $"{p.Name}: " + (v is null ? "bỏ phí giải phóng." : $"phí giải phóng {Fmt.Money(v.Value)}.");
+        if (err is null) clauseEdit.Remove(p.PlayerId);
+    });
+
+    async Task Run(Func<TransferOfferService, Task> action)
+    {
+        busy = true;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await action(new TransferOfferService(db, Clock));
+        }
+        catch (DbUpdateConcurrencyException) { message = "CLB vừa có giao dịch khác — thử lại."; }
+        finally { busy = false; }
+        await LoadAsync();
+    }
+}

@@ -1,0 +1,320 @@
+@page "/clb"
+@page "/clb/{ClubId:guid}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@using Pes17League.OptionFile
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject MatchJobService Jobs
+
+@* Trang CLB kiểu Football Manager (PO 11/11): đầu trang tối + dải thông tin + tab Tổng quan / Đội hình / Chiến thuật (chỉ CLB của tôi) / Tài chính.
+   ?tab=doi-hinh|chien-thuat|tai-chinh mở thẳng tab. *@
+@if (season is null) { return; }
+@if (clubId == Guid.Empty) { <p>Chưa chọn CLB của tôi. <a href="admin/lich">Chọn ở Quản trị → Lịch mùa →</a></p> return; }
+@{ var name = season.Clubs.GetValueOrDefault(clubId, "?"); }
+<div class="fm">
+    <header class="fm-head">
+        <Crest Name="@name" Logo="@season.Logo(clubId)" Large="true" />
+        <div class="fm-title">
+            <h1>@name</h1>
+            <p>@season.Name · @(mine ? "CLB của tôi" : "BOT điều khiển") · @squad.Count cầu thủ</p>
+        </div>
+        @if (glance?.Rank is { } rank) { <span class="fm-badge"><b>#@rank</b>@glance.Points điểm</span> }
+    </header>
+    <nav class="fm-tabs" role="tablist">
+        @foreach (var (key, label) in Tabs())
+        {
+            <button role="tab" aria-selected="@(tab == key ? "true" : "false")" class="@(tab == key ? "on" : "")" @onclick="() => tab = key">@label</button>
+        }
+    </nav>
+    <div class="fm-info">
+        <div>
+            <small>Phong độ</small>
+            @if (glance is { } g && g.Last.Count > 0)
+            {
+                <FormStrip Season="season" Items="g.Last" />
+                <span>@g.Won thắng · @g.Drawn hoà · @g.Lost thua · @g.GoalsFor–@g.GoalsAgainst</span>
+            }
+            else { <b>—</b> }
+        </div>
+        <div>
+            <small>Trận tới</small>
+            @if (next is { } n)
+            {
+                var home = n.Home == clubId; var opp = home ? n.Away : n.Home;
+                <a class="fm-next" href="tran/@n.Id"><Crest Name="@season.Clubs.GetValueOrDefault(opp, "?")" Logo="@season.Logo(opp)" />@(home ? "vs" : "@") @season.Clubs.GetValueOrDefault(opp, "?")</a>
+                <span>Vòng @n.Matchday · @(home ? "sân nhà" : "sân khách")</span>
+            }
+            else { <b>—</b> }
+        </div>
+        <div><small>Số dư</small><b class="big @(balance < 0 ? "neg" : "")">@Fmt.Money(balance)</b><span>Lương @Fmt.Money(payroll)/vòng</span></div>
+        <div><small>Giá trị đội hình</small><b class="big">@Fmt.Money(squad.Sum(p => p.Price))</b><span>OVR TB đá chính @Avg(squad.Where(p => p.Slot <= 10).Select(p => p.Overall))</span></div>
+    </div>
+    @if (message is not null) { <p class="msg">@message</p> }
+
+    <div class="fm-body">
+    @switch (tab)
+    {
+        case "doi-hinh":
+            <section class="fm-panel">
+                <div class="fm-h"><h2>Đội hình</h2><small>@(mine ? "Chạm 1 dòng để đổi số áo, gia hạn, thanh lý · bấm tên xem hồ sơ" : "Bấm tên xem hồ sơ cầu thủ")</small></div>
+                <div class="fm-scroll">
+                <table class="table fm-squad">
+                    <thead><tr><th>VT</th><th>Số</th><th class="left">Cầu thủ</th><th class="opt">Tuổi</th><th>OVR</th><th title="Số trận ra sân cho CLB mùa này">Trận</th><th>Bàn</th><th title="Điểm trung bình">Điểm</th><th class="opt" title="Xuất sắc nhất trận">⭐</th><th class="opt">Giá</th><th title="Hợp đồng: đã đá/tổng trận">HĐ</th><th class="opt">Lương</th></tr></thead>
+                    <tbody>
+                        @foreach (var (title, rows) in new[] { ("Đá chính", squad.Where(p => p.Slot <= 10)), ("Dự bị", squad.Where(p => p.Slot > 10)) })
+                        {
+                            <tr class="sep"><td colspan="12">@title</td></tr>
+                            @foreach (var p in rows)
+                            {
+                                var s = stats.GetValueOrDefault(p.PlayerId);
+                                <tr class="@(open == p.PlayerId ? "open" : "") @(mine ? "" : "ro")" @onclick="() => Tap(p)">
+                                    <td><span class="pos-b @Fmt.Group(p.Position)" title="@Fmt.PositionName(p.Position)">@p.Position</span></td>
+                                    <td class="num">@p.Shirt</td>
+                                    <td class="left"><Face Id="@p.PlayerId" /><a class="nm" href="@season.Url($"cau-thu/{p.PlayerId}")" @onclick:stopPropagation="true">@p.Name</a></td>
+                                    <td class="opt">@(s?.Age?.ToString() ?? "–")</td>
+                                    <td><span class="ovr @Fmt.Tier(p.Overall)">@(hidden.Contains(p.PlayerId) ? ScoutRules.Mask(p.Overall) : p.Overall.ToString())</span></td>
+                                    <td>@(s?.Apps ?? 0)</td>
+                                    <td>@(s is { Goals: > 0 } ? s.Goals.ToString() : "")</td>
+                                    <td>@if (s?.Rating is { } r) { <span class="rating @(r >= 7.5m ? "hi" : r <= 5.0m ? "lo" : "")">@r.ToString("0.00")</span> } else { <span class="muted">–</span> }</td>
+                                    <td class="opt">@(s is { Motm: > 0 } ? s.Motm.ToString() : "")</td>
+                                    <td class="opt">@Fmt.Money(p.Price)</td>
+                                    <td class="@(p.MatchesTotal - p.MatchesPlayed <= ContractRules.RenewalReminderMatches ? "warn" : "")">@p.MatchesPlayed/@(p.MatchesTotal?.ToString() ?? "∞")</td>
+                                    <td class="opt">@(p.Wage is { } w ? Fmt.Money(w) : "—")</td>
+                                </tr>
+                                @if (mine && open == p.PlayerId)
+                                {
+                                    <tr class="detail"><td colspan="12">
+                                        <div class="row">
+                                            <label>Số áo <input type="number" min="1" max="99" @bind="shirt" /></label>
+                                            <button @onclick="() => ChangeShirt(p)">Đổi số</button>
+                                        </div>
+                                        <div class="row">
+                                            <label>Gia hạn <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="renewMatches" /> trận</label>
+                                            <label>Phí <input type="number" min="0" @bind="renewFeeM" step="0.1" /> tr</label>
+                                            <button @onclick="() => Renew(p)">Gia hạn</button>
+                                            @if (p.Renewal is { } rs) { <small>(lần gần nhất: @rs)</small> }
+                                        </div>
+                                        <div class="row">
+                                            <button class="danger" disabled="@(window is null)" @onclick="() => Release(p)">Thanh lý (thành tự do)</button>
+                                            @if (window is null) { <small>chỉ khi đang mở kỳ CN</small> }
+                                        </div>
+                                    </td></tr>
+                                }
+                            }
+                        }
+                    </tbody>
+                </table>
+                </div>
+            </section>
+            break;
+
+        case "chien-thuat" when mine:
+            <section class="fm-panel">
+                <div class="fm-h"><h2>Chiến thuật & đội hình ra sân</h2></div>
+                @* Sân đội hình chung với trang Chuẩn bị trận (PO 05/11). *@
+                <LineupBoard Season="season" ClubId="clubId" Locked="Jobs.LineupLocked" LockedMessage="@Locked" Changed="LoadAsync" />
+                <p class="muted">Trận của bạn: đội hình + chiến thuật chốt lúc bấm Sẵn sàng; trận BOT: lúc khoá vòng.</p>
+            </section>
+            break;
+
+        case "tai-chinh":
+            <div class="fm-cols fin">
+                <section class="fm-panel">
+                    <div class="fm-h"><h2>Tài chính</h2></div>
+                    <ul class="facts">
+                        <li><span>Số dư</span><b class="@(balance < 0 ? "neg" : "")">@Fmt.Money(balance)</b></li>
+                        <li><span>Quỹ lương/vòng</span><b>@Fmt.Money(payroll)</b></li>
+                        <li><span>Trần mềm quỹ lương</span><b>@(season.Economy.SoftWageCap > 0 ? Fmt.Money(season.Economy.SoftWageCap) : "—")</b></li>
+                        <li><span>Giá trị đội hình</span><b>@Fmt.Money(squad.Sum(p => p.Price))</b></li>
+                        <li><span>Hợp đồng sắp hết</span><b class="@(expiring > 0 ? "warn" : "")">@expiring cầu thủ</b></li>
+                    </ul>
+                </section>
+                <section class="fm-panel">
+                    <div class="fm-h"><h2>Sổ tiền</h2><small>@ledger.Count giao dịch gần nhất</small></div>
+                    <table class="table static ledger">
+                        <tbody>
+                            @foreach (var e in ledger)
+                            {
+                                <tr><td class="left"><small class="muted">@e.At.ToLocalTime().ToString("dd/MM HH:mm")</small><br />@Fmt.Ledger(e)</td>
+                                    <td class="@(e.Amount < 0 ? "neg" : "gain")">@Fmt.Money(e.Amount)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+            break;
+
+        default:
+            <div class="fm-cols">
+                <section class="fm-panel">
+                    <div class="fm-h"><h2>Đội hình chính</h2><button class="fm-link" @onclick='() => tab = mine ? "chien-thuat" : "doi-hinh"'>@(mine ? "Sửa →" : "Cả đội →")</button></div>
+                    <PitchXI Season="season" Players="Xi()" />
+                    <p class="fm-note">Xếp theo vị trí đăng ký · số trên áo = điểm TB mùa này</p>
+                </section>
+                <section class="fm-panel">
+                    <div class="fm-h"><h2>Nhân sự nổi bật</h2></div>
+                    <ul class="fm-people">
+                        @Person("Ghi bàn nhiều nhất", glance?.TopScorer?.Id, glance?.TopScorer is { } ts ? $"{ts.Value} bàn" : null)
+                        @Person("Điểm TB cao nhất", glance?.BestRated?.Id, glance?.BestRated?.Value)
+                        @Person("Xuất sắc trận nhiều nhất", TopMotm()?.Key, TopMotm() is { } tm ? $"{tm.Value.Motm} lần ⭐" : null)
+                        @Person("OVR cao nhất", squad.MaxBy(p => p.Overall)?.PlayerId, squad.Count > 0 ? $"OVR {squad.Max(p => p.Overall)}" : null)
+                        @Person("Đắt giá nhất", squad.MaxBy(p => p.Price)?.PlayerId, squad.Count > 0 ? Fmt.Money(squad.Max(p => p.Price)) : null)
+                    </ul>
+                    <div class="fm-h"><h2>Cơ cấu đội hình</h2></div>
+                    <div class="fm-mix">
+                        @foreach (var (grp, label) in new[] { (PositionGroup.Goalkeeper, "Thủ môn"), (PositionGroup.Defender, "Hậu vệ"), (PositionGroup.Midfielder, "Tiền vệ"), (PositionGroup.Forward, "Tiền đạo") })
+                        {
+                            <div><span class="pos-b @Fmt.Group(grp)">@squad.Count(p => p.Position.Group() == grp)</span>@label</div>
+                        }
+                    </div>
+                    <ul class="facts">
+                        <li><span>Tuổi trung bình</span><b>@Avg(stats.Values.Where(x => x.Age is not null).Select(x => x.Age!.Value))</b></li>
+                        <li><span>OVR trung bình cả đội</span><b>@Avg(squad.Select(p => p.Overall))</b></li>
+                        <li><span>Hợp đồng sắp hết</span><b class="@(expiring > 0 ? "warn" : "")">@expiring cầu thủ</b></li>
+                    </ul>
+                </section>
+                <section class="fm-panel">
+                    <div class="fm-h"><h2>Kết quả gần đây</h2></div>
+                    @if (glance is null || glance.Last.Count == 0) { <p class="muted">Chưa đá trận nào mùa này.</p> }
+                    else
+                    {
+                        <ul class="fm-results">
+                            @foreach (var x in glance.Last.Reverse())
+                            {
+                                <li><span class="res @x.Result">@x.Score</span><Crest Name="@season.Clubs.GetValueOrDefault(x.OpponentId, "?")" Logo="@season.Logo(x.OpponentId)" /><a href="tran/@x.FixtureId">@season.Clubs.GetValueOrDefault(x.OpponentId, "?")</a></li>
+                            }
+                        </ul>
+                    }
+                    <div class="fm-h"><h2>Mùa này</h2></div>
+                    @if (glance is { } t)
+                    {
+                        <div class="fm-season">
+                            <div><b>@t.Played</b>trận</div><div><b>@t.Won</b>thắng</div><div><b>@t.Drawn</b>hoà</div><div><b>@t.Lost</b>thua</div>
+                            <div><b>@t.GoalsFor</b>ghi</div><div><b>@t.GoalsAgainst</b>thủng</div>
+                        </div>
+                    }
+                </section>
+            </div>
+            break;
+    }
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid? ClubId { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    SeasonInfo? season;
+    Guid clubId;
+    bool mine;
+    HashSet<Guid> hidden = [];   // FM đợt 8: cầu thủ CLB khác chưa trinh sát
+    string tab = "tong-quan";
+    TransferWindow? window;
+    List<SquadRow> squad = [];
+    Dictionary<Guid, SquadStat> stats = [];
+    long balance, payroll;
+    TeamForm? glance;
+    FixtureView? next;
+    List<ClubLedgerEntry> ledger = [];
+    Guid? open;
+    string? message;
+    int shirt, renewMatches;
+    double renewFeeM;
+
+    int expiring => squad.Count(p => p.MatchesTotal - p.MatchesPlayed <= ContractRules.RenewalReminderMatches);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        tab = Tab ?? "tong-quan";
+        await LoadAsync();
+        if (tab == "chien-thuat" && !mine) tab = "tong-quan";
+    }
+
+    async Task LoadAsync()
+    {
+        season = await Q.SeasonAsync();
+        if (season is null) return;
+        clubId = ClubId ?? season.HumanClubId;
+        mine = clubId == season.HumanClubId;
+        if (mine) hidden = [];
+        else { await using var hdb = await Dbs.CreateDbContextAsync(); hidden = await new YouthService(hdb, Clock).HiddenAsync(season.HumanClubId); }
+        if (clubId == Guid.Empty) return;   // chưa chọn CLB của tôi
+        window = await Q.OpenWindowAsync(season.Id);
+        squad = await Q.SquadAsync(season.Id, clubId);
+        stats = await Q.SquadStatsAsync(season, clubId, [.. squad.Select(p => p.PlayerId)]);
+        (balance, payroll, ledger) = await Q.FinanceAsync(clubId);
+        (glance, next) = await Q.ClubGlanceAsync(season, clubId);
+    }
+
+    IEnumerable<(string Key, string Label)> Tabs()
+    {
+        yield return ("tong-quan", "Tổng quan");
+        yield return ("doi-hinh", "Đội hình");
+        if (mine) yield return ("chien-thuat", "Chiến thuật");
+        yield return ("tai-chinh", "Tài chính");
+    }
+
+    // Sân 11 người ở tab Tổng quan: dựng dòng giả từ đội hình đá chính, điểm = điểm TB mùa.
+    List<PlayerLine> Xi() => [.. squad.Where(p => p.Slot <= 10).Select(p => new PlayerLine(Guid.Empty, 0, null, clubId, Guid.Empty, p.PlayerId, p.Name, p.Position,
+        p.Slot, stats.GetValueOrDefault(p.PlayerId)?.Rating, 0, 0, 0, null, null))];
+
+    KeyValuePair<Guid, SquadStat>? TopMotm() => stats.Where(x => x.Value.Motm > 0).OrderByDescending(x => x.Value.Motm).Cast<KeyValuePair<Guid, SquadStat>?>().FirstOrDefault();
+
+    static string Avg(IEnumerable<int> xs) => xs.Any() ? xs.Average().ToString("0.#") : "–";
+
+    RenderFragment Person(string label, Guid? id, string? value) => __builder =>
+    {
+        var p = id is { } x ? squad.FirstOrDefault(r => r.PlayerId == x) : null;
+        <li>
+            <small>@label</small>
+            @if (p is null || value is null) { <b class="muted">—</b> }
+            else
+            {
+                <a href="@season!.Url($"cau-thu/{p.PlayerId}")"><span class="pos-b @Fmt.Group(p.Position)">@p.Position</span>@p.Name</a>
+                <b>@value</b>
+            }
+        </li>
+    };
+
+    // Trận của PO đang chuẩn bị/đang đá: OF đã dựng → khoá đội hình, chiến thuật, số áo (PO 05/11).
+    const string Locked = "Trận của bạn đang vào/đang đá — đội hình đã chốt. Huỷ trận ở trang Vòng đấu để đổi.";
+    bool Blocked() { if (Jobs.LineupLocked) message = Locked; return Jobs.LineupLocked; }
+
+    // Chạm 1 dòng: mở/đóng chi tiết (đổi chỗ làm trên sân đội hình).
+    void Tap(SquadRow p)
+    {
+        if (!mine) return;
+        message = null;
+        if (open == p.PlayerId) { open = null; return; }
+        open = p.PlayerId; shirt = p.Shirt; renewMatches = season!.Economy.DefaultContractMatches; renewFeeM = 0;
+    }
+
+    async Task ChangeShirt(SquadRow p)
+    {
+        if (Blocked()) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var err = await new TransferService(db, Clock).ChangeShirtNumberAsync(clubId, p.PlayerId, shirt);
+        message = err is null ? $"{p.Name}: số áo {shirt}." : $"Không đổi được số: {err}";
+        await Done();
+    }
+
+    async Task Renew(SquadRow p)
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var r = await new ContractService(db, Clock).RequestRenewalAsync(season!.Id, p.PlayerId, renewMatches, (long)Math.Round(renewFeeM * 1_000_000));
+        message = r.Ok ? $"{p.Name}: gia hạn {renewMatches} trận — {r.Status}." : $"Không gia hạn được: {r.Error}" +
+            (r.Error == RenewalRejectReason.FeeOutOfRange ? " (cầu thủ gốc của CLB/tự do → phí phải 0; còn lại 0–100% giá)" : "");
+        await Done();
+    }
+
+    async Task Release(SquadRow p)
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var r = await new TransferService(db, Clock).ReleaseAsync(window!.Id, p.PlayerId);
+        message = r.Ok ? $"Đã thanh lý {p.Name}." + (r.NeedsLineupReview ? " Kiểm tra lại đội hình." : "") : $"Không thanh lý được: {r.Error}";
+        await Done();
+    }
+
+    async Task Done() { open = null; await LoadAsync(); }
+}

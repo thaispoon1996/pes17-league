@@ -1,0 +1,81 @@
+@inherits LayoutComponentBase
+@inject IConfiguration Config
+@inject CurrentUser Me
+<header class="site-header">
+    <div class="top-nav">
+        <div class="in">
+            <nav>
+                <a href="">PES League</a>
+                <a href="mua">Các mùa</a>
+                <a href="ban-thang">Bàn thắng</a>
+                <a href="thong-ke">Thống kê</a>
+                <a href="vinh-danh">Vinh danh</a>
+                <a href="tim-kiem">🔍 Tìm kiếm</a>
+            </nav>
+            @if (Config["PES17_WEB_AUTH"] != "off" || who is not null)
+            {
+                <form method="post" action="/logout" data-enhance="false">@if (who is not null) { <small class="who">@who</small> }<button class="link">Thoát</button></form>
+            }
+            @* PO 12/11: tắt đăng nhập (PES17_WEB_AUTH=off) → ẩn link đăng nhập HLV; /login vẫn vào được bằng tay. *@
+        </div>
+    </div>
+    <div class="main-nav">
+        <div class="in">
+            <a class="brand" href="" aria-label="PES League">
+                <svg class="shield" viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--accent)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="var(--brand)"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--accent)"/></svg>
+                <span>PES<b>League</b></span></a>
+            <nav>
+                <NavLink href="" Match="NavLinkMatch.All">Vòng đấu</NavLink>
+                <NavLink href="truc-tiep">Trực tiếp</NavLink>
+                <NavLink href="tin">Tin tức</NavLink>
+                <NavLink href="lich">Lịch thi đấu</NavLink>
+                <NavLink href="giai">Giải đấu</NavLink>
+                <NavLink href="bxh">BXH</NavLink>
+                <NavLink href="thong-ke">Thống kê</NavLink>
+                <NavLink href="clb">CLB của tôi</NavLink>
+                <NavLink href="hop-thu">Quản lý</NavLink>
+                <NavLink href="chuyen-nhuong">Chuyển nhượng</NavLink>
+                <details class="nav-more">
+                    <summary>Thêm</summary>
+                    <div class="nav-more__menu">
+                        <NavLink href="tong-ket">Tổng kết vòng</NavLink>
+                        <NavLink href="thi-truong">Thị trường</NavLink>
+                        <NavLink href="vinh-danh">Vinh danh</NavLink>
+                        <NavLink href="ban-thang">Bàn thắng</NavLink>
+                        <NavLink href="tim-kiem">Tìm kiếm</NavLink>
+                        <NavLink href="so-sanh">So sánh cầu thủ</NavLink>
+                        @if (admin)
+                        {
+                            <NavLink href="an-hien">Ẩn/hiện</NavLink>
+                            <NavLink href="dieu-khien">Điều khiển</NavLink>
+                            <NavLink href="admin">Quản trị</NavLink>
+                        }
+                    </div>
+                </details>
+            </nav>
+        </div>
+    </div>
+    <ScoreTicker />
+    <ContinueBar />
+</header>
+<main>@Body</main>
+<nav class="bottom-nav" aria-label="Điều hướng nhanh">
+    <NavLink href="" Match="NavLinkMatch.All"><i>🏠</i>Trang chủ</NavLink>
+    <NavLink href="truc-tiep"><i>🔴</i>Trực tiếp</NavLink>
+    <NavLink href="lich"><i>📅</i>Lịch</NavLink>
+    <NavLink href="bxh"><i>🏆</i>BXH</NavLink>
+    <NavLink href="hop-thu"><i>📋</i>Quản lý</NavLink>
+    <NavLink href="clb"><i>🛡️</i>CLB</NavLink>
+</nav>
+<div id="blazor-error-ui">Có lỗi xảy ra. <a href="" class="reload">Tải lại</a></div>
+
+@code {
+    bool admin = true;
+    string? who;
+
+    protected override async Task OnInitializedAsync()
+    {
+        admin = await Me.IsAdminAsync();
+        who = admin ? null : await Me.NameAsync();   // HLV (đợt 2): tên hiển thị cạnh nút Thoát
+    }
+}

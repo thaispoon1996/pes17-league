@@ -1,0 +1,15 @@
+@* Phong độ 5 trận gần nhất (cũ → mới), mỗi ô link tới trang trận. *@
+<span class="form">
+    @foreach (var x in Items)
+    {
+        <a class="@x.Result" href="tran/@x.FixtureId" title="@Title(x.Result) @x.Score – @Season.Clubs.GetValueOrDefault(x.OpponentId, "?")">@Short(x.Result)</a>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<FormItem> Items { get; set; } = [];
+
+    static string Short(char x) => x switch { 'W' => "T", 'D' => "H", _ => "B" };
+    static string Title(char x) => x switch { 'W' => "Thắng", 'D' => "Hoà", _ => "Thua" };
+}

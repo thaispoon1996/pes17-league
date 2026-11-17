@@ -1,0 +1,99 @@
+@page "/lich"
+@inject LeagueQueries Q
+
+@* Lịch & kết quả từng vòng (bước 7, PO chọn 06/11): mặc định vòng đang diễn ra, ‹ trước / sau ›; mùa liên đoàn nhóm trận theo giải.
+   Chữ hiển thị "Vòng"; query vẫn ?khung=N. Cột phải: trận của tôi cả mùa. ?mua=N xem lại mùa cũ. *@
+@if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
+@if (season is not null)
+{
+    <section class="hero"><a class="pill" href="mua" title="Các mùa">@season.Label</a><h1>Lịch thi đấu &amp; kết quả</h1></section>
+    <div class="grid">
+        <div>
+            @if (md is not null)
+            {
+                <div class="pager">
+                    @if (Has(md.Number - 1)) { <a class="btn" href="@season.Url($"lich?khung={md.Number - 1}")">‹ @Word trước</a> } else { <span class="btn disabled">‹ @Word trước</span> }
+                    <div class="pager-title">
+                        <b>@Word @md.Number<small> / @matchdays.Count</small></b>
+                        <small>@(editions.Count > 0 ? $"{AdminText.SlotKind(md.Stage, md.Leg)} · " : "")@Fmt.Status(md.Status, md.TransferWindowId is not null)</small>
+                    </div>
+                    @if (Has(md.Number + 1)) { <a class="btn" href="@season.Url($"lich?khung={md.Number + 1}")">@Word sau ›</a> } else { <span class="btn disabled">@Word sau ›</span> }
+                </div>
+                @if (shown.Count == 0 && md.Stage is FixtureStage ko and not (FixtureStage.League or FixtureStage.LeaguePhase))
+                {
+                    @* Khung loại trực tiếp: cặp đấu được tạo khi vòng trước đá xong (bước 6). *@
+                    <p class="muted">Cặp đấu @AdminText.Stage(ko).ToLowerInvariant() có sau khi vòng trước đá xong.</p>
+                    <div class="actions">
+                        @foreach (var e in editions.Where(x => x.Type is CompetitionType.ContinentalCup or CompetitionType.DomesticCup)) { <a class="btn" href="@season.Url($"giai/{e.CompetitionId}?tab=nhanh")">Nhánh đấu @e.Name →</a> }
+                    </div>
+                }
+                else if (shown.Count == 0) { <p class="muted">@Word này không có trận.</p> }
+                @foreach (var g in shown.GroupBy(f => f.EditionId).OrderBy(g => editions.FindIndex(e => e.Id == g.Key)))
+                {
+                    @if (editions.FirstOrDefault(x => x.Id == g.Key) is { } e)
+                    {
+                        <div class="round-title">
+                            <a class="comp" href="@season.Url($"giai/{e.CompetitionId}")"><Crest Name="@e.Name" Logo="@e.Logo" /><b>@e.Name</b></a>
+                            <small class="muted">@Fmt.Round(byEdition[e.Id], md.Number)</small>
+                        </div>
+                    }
+                    <ul class="fixtures">
+                        @foreach (var f in g) { <FixtureCard Season="season" F="f" /> }
+                    </ul>
+                }
+            }
+        </div>
+        <aside class="panel">
+            <div class="panel-head"><h2>Trận của tôi</h2></div>
+            <ul class="fixtures compact">
+                @foreach (var f in mine)
+                {
+                    <FixtureCard Season="season" F="f">
+                        <small class="goals muted"><a href="@season.Url($"lich?khung={f.Matchday}")">@Word @f.Matchday</a>@(editions.FirstOrDefault(x => x.Id == f.EditionId) is { } e ? $" · {e.Name}" : "")</small>
+                    </FixtureCard>
+                }
+            </ul>
+            @if (mine.Count == 0) { <p class="muted">@(season.HumanClubId == Guid.Empty ? "Chưa có CLB do bạn điều khiển." : "Chưa có trận.")</p> }
+        </aside>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "khung")] public int? Khung { get; set; }
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    bool loaded;
+    int? loadedFor;
+    SeasonInfo? season;
+    List<FixtureView> fixtures = [];
+    List<FixtureView> mine = [];
+    List<Matchday> matchdays = [];
+    List<EditionView> editions = [];
+    ILookup<Guid?, FixtureView> byEdition = Array.Empty<FixtureView>().ToLookup(f => f.EditionId);
+    Matchday? md;
+    List<FixtureView> shown = [];
+    const string Word = "Vòng";
+
+    // Vòng chọn qua ?khung=N (bấm trước/sau chỉ đổi query, không đọc lại); mặc định vòng chưa chốt nhỏ nhất, hết mùa → vòng cuối. Đổi mùa → đọc lại.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!loaded || loadedFor != Mua)
+        {
+            loadedFor = Mua;
+            season = await Q.ViewSeasonAsync(Mua);
+            if (season is not null)
+            {
+                fixtures = await Q.FixturesAsync(season.Id);
+                mine = [.. fixtures.Where(f => f.Home == season.HumanClubId || f.Away == season.HumanClubId)];
+                matchdays = await Q.MatchdaysAsync(season.Id);
+                editions = await Q.EditionsAsync(season.Id);
+                byEdition = fixtures.ToLookup(f => f.EditionId);
+            }
+            loaded = true;
+        }
+        md = matchdays.FirstOrDefault(m => m.Number == Khung) ?? matchdays.FirstOrDefault(m => m.Status != MatchdayStatus.Settled) ?? matchdays.LastOrDefault();
+        shown = md is null ? [] : [.. fixtures.Where(f => f.Matchday == md.Number)];
+    }
+
+    bool Has(int number) => matchdays.Any(m => m.Number == number);
+}

@@ -1,0 +1,80 @@
+@page "/admin/clb"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject NavigationManager Nav
+
+<h1>Quản trị</h1>
+<AdminNav />
+@if (rows is null) { return; }
+@{ var shown = Shown().ToList(); }
+<div class="panel">
+    <div class="panel-head"><h2>CLB</h2><a href="admin/clb/moi">+ Thêm CLB</a></div>
+    <div class="filters">
+        <input @bind="q" @bind:event="oninput" placeholder="Tìm tên CLB" />
+        <select @bind="country">
+            <option value="">Mọi nước</option>
+            @foreach (var c in rows.Where(r => r.Country is not null).GroupBy(r => r.Country!).OrderByDescending(g => g.Count()).ThenBy(g => g.Key))
+            {
+                <option value="@c.Key">@c.Key (@c.Count())</option>
+            }
+        </select>
+        <label><input type="checkbox" @bind="archived" /> Cả CLB lưu trữ (@rows.Count(r => r.Status != ClubStatus.Active))</label>
+    </div>
+    <p class="muted">@shown.Count CLB. Ô PES theo patch @(patchName ?? "—") của mùa đang mở.</p>
+    <table class="table">
+        <thead><tr><th></th><th class="left">CLB</th><th>Nước</th><th>Ô PES</th><th>Cầu thủ</th><th class="left">Giải mùa này</th></tr></thead>
+        <tbody>
+            @foreach (var r in shown)
+            {
+                <tr @onclick='() => Nav.NavigateTo($"admin/clb/{r.Id}")'>
+                    <td>@if (r.LogoPath is { } logo) { <img class="logo" src="@logo" alt="" /> } else { <Crest Name="@r.Name" /> }</td>
+                    <td class="left">
+                        <b>@r.Name</b>@if (r.ShortName is not null) { <small> · @r.ShortName</small> }
+                        @if (r.Status != ClubStatus.Active) { <small class="warn"> · lưu trữ</small> }
+                    </td>
+                    <td>@r.Country</td>
+                    <td>@r.Slot</td>
+                    <td>@r.Players</td>
+                    <td class="left"><small>@string.Join(" · ", leagues.GetValueOrDefault(r.Id) ?? [])</small></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    List<Row>? rows;
+    Dictionary<Guid, List<string>> leagues = [];
+    string? patchName;
+    string q = "", country = "";
+    bool archived;
+
+    sealed record Row(Guid Id, string Name, string? ShortName, string? Country, string? LogoPath, ClubStatus Status, int? Slot, int Players);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        // Mùa đang mở (chưa kết thúc) đầu tiên: patch của nó cho ô PES, mùa giải của nó cho cột "Giải mùa này".
+        var season = await db.Seasons.AsNoTracking().Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).FirstOrDefaultAsync();
+        var patch = season?.PatchVersionId;
+        patchName = await db.PatchVersions.Where(p => p.Id == patch).Select(p => p.Name).FirstOrDefaultAsync();
+        rows = await db.Clubs.AsNoTracking()
+            .Select(c => new Row(c.Id, c.Name, c.ShortName, c.Country, c.LogoPath, c.Status,
+                db.ClubPesMappings.Where(m => m.ClubId == c.Id && m.PatchVersionId == patch).Select(m => (int?)m.PesClubIndex).FirstOrDefault(),
+                db.SquadMemberships.Count(m => m.ClubId == c.Id && m.LeftAt == null)))
+            .ToListAsync();
+        leagues = (await (from ec in db.EditionClubs
+                          join e in db.Editions on ec.EditionId equals e.Id
+                          join c in db.Competitions on e.CompetitionId equals c.Id
+                          where e.SeasonId == (season == null ? Guid.Empty : season.Id)
+                          orderby c.Type
+                          select new { ec.ClubId, c.Name }).ToListAsync())
+            .GroupBy(x => x.ClubId).ToDictionary(g => g.Key, g => g.Select(x => x.Name).ToList());
+    }
+
+    IEnumerable<Row> Shown() => rows!
+        .Where(r => (archived || r.Status == ClubStatus.Active) && (country == "" || r.Country == country)
+            && (q.Trim() == "" || r.Name.Contains(q.Trim(), StringComparison.OrdinalIgnoreCase) || r.ShortName?.Contains(q.Trim(), StringComparison.OrdinalIgnoreCase) == true))
+        .OrderBy(r => r.Status).ThenBy(r => r.Slot ?? int.MaxValue).ThenBy(r => r.Name);
+}

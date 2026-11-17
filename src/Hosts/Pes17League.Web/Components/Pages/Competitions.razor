@@ -1,0 +1,43 @@
+@page "/giai"
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@* Các giải của mùa (bước 7, PO chọn 06/11): nhóm theo nước, cúp châu Âu sau cùng; bấm 1 giải → trang giải. ?mua=N xem lại mùa cũ. *@
+@if (!loaded) { return; }
+@if (season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> return; }
+<section class="hero"><a class="pill" href="mua" title="Các mùa">@season.Label</a><h1>Các giải đấu</h1><p><a href="mua">Các mùa →</a></p></section>
+@if (summaries.Count == 0)
+{
+    <section class="panel"><p>Mùa này chỉ có 1 giải. <a href="@season.Url("bxh")">Xem bảng xếp hạng →</a></p></section>
+}
+else
+{
+    <div class="comp-groups">
+        @foreach (var g in summaries.GroupBy(s => Fmt.Country(s.Edition.Country)))
+        {
+            <section class="panel">
+                <div class="panel-head"><h2>@g.Key</h2></div>
+                <CompetitionList Season="season" Items="g.ToList()" />
+            </section>
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+
+    bool loaded;
+    int? loadedFor;
+    SeasonInfo? season;
+    List<CompetitionSummary> summaries = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loaded && loadedFor == Mua) return;
+        loadedFor = Mua;
+        season = await Q.ViewSeasonAsync(Mua);
+        summaries = season is null ? [] : await Q.SummariesAsync(season.Id, await Q.EditionsAsync(season.Id), Store, Clock);
+        loaded = true;
+    }
+}

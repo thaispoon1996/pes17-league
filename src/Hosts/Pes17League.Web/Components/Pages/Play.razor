@@ -1,0 +1,174 @@
+@page "/vao-tran"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject MatchJobService Jobs
+@inject NavigationManager Nav
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IJSRuntime JS
+
+@* Màn chờ trận của PO (PO duyệt 03/11): game khởi động + tự đi menu; tới lúc tải trận thì tự mở stream để vào đá luôn.
+   Hết giờ (PO 04/11): stream tự quay về đây → "đang đọc kết quả" rồi tỷ số, bàn thắng, điểm cầu thủ đội mình. *@
+<section class="hero">
+    <span class="pill">Trận của tôi</span>
+    <h1>@(Jobs.Title != "Trận của tôi" ? "Chưa vào trận" : Jobs.Stage == "fulltime" || result is not null ? "Kết quả trận" : "Đang vào trận")</h1>
+</section>
+@if (Jobs.Title != "Trận của tôi")
+{
+    <section class="panel">
+        <p class="muted">Chưa có trận nào đang vào.</p>
+        <a class="btn" href="">← Vòng đấu</a>
+    </section>
+    return;
+}
+@if (Jobs.Stage == "fulltime" || result is not null)
+{
+    @if (result is null)
+    {
+        <section class="panel"><p>@(Jobs.Running ? "Hết trận — đang đọc kết quả và điểm cầu thủ…" : "Chưa ghi được kết quả trận.")</p></section>
+    }
+    else
+    {
+        <section class="scoreboard">
+            <div class="side"><Crest Name="@result.Home" Logo="@result.HomeLogo" Large="true" /><b>@result.Home</b></div>
+            <div class="big">@result.HomeGoals – @result.AwayGoals
+                @if (result.HomePenalties is { } ph) { <small>pen @ph–@result.AwayPenalties</small> }
+            </div>
+            <div class="side"><Crest Name="@result.Away" Logo="@result.AwayLogo" Large="true" /><b>@result.Away</b></div>
+            @if (result.Goals.Count > 0)
+            {
+                <p class="goals">⚽ @string.Join(" · ", result.Goals)</p>
+            }
+        </section>
+        <div class="grid">
+            <section class="panel">
+                <div class="panel-head"><h2>Điểm cầu thủ đội tôi</h2></div>
+                @if (result.Ratings.Count > 0)
+                {
+                    <table class="table">
+                        <thead><tr><th class="left">Cầu thủ</th><th>Điểm</th><th>Chỉ số</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in result.Ratings)
+                            {
+                                <tr>
+                                    <td class="left">@r.Name</td>
+                                    <td><span class="rating @(r.Rating >= 7.5m ? "hi" : r.Rating <= 5.0m ? "lo" : "")">@(r.Rating?.ToString("0.0") ?? "–")</span></td>
+                                    <td class="@(r.Change > 0 ? "gain" : r.Change < 0 ? "neg" : "")">@(r.Change switch { > 0 => $"+1 ({r.Change} chỉ số)", < 0 => $"−1 ({-r.Change} chỉ số)", _ => "" })</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="muted">Không đọc được điểm cầu thủ trận này.</p>
+                }
+            </section>
+            <aside class="panel">
+                <div class="panel-head"><h2>Tiếp theo</h2></div>
+                <p class="muted">Điểm ≥ 7,5: +1, ≤ 5,0: −1 các chỉ số theo vai trò. Giá và chỉ số cập nhật khi chốt vòng (đủ các trận).</p>
+                <div class="actions"><a class="btn" href="lich">Lịch thi đấu</a> <a class="btn" href="bxh">Bảng xếp hạng</a> <a class="btn" href="">Vòng đấu</a></div>
+            </aside>
+        </div>
+    }
+}
+else
+{
+    <div class="grid">
+        <section class="panel">
+            <div class="panel-head"><h2>Tiến trình</h2></div>
+            @if (Jobs.SecondsToKickoff is { } left)
+            {
+                @* Đếm ngược tới giao bóng (PO 05/11): ước lượng theo bước hiện tại, tự chỉnh khi game qua bước mới. *@
+                <p class="muted">Vào trận sau khoảng</p>
+                <div class="countdown">@(left > 0 ? left : "…")<small>@(left > 0 ? " giây" : " sắp vào")</small></div>
+            }
+            <ol class="stages">
+                @foreach (var (key, text) in Steps)
+                {
+                    var state = Index(key) < Index(Jobs.Stage) ? "done" : key == Jobs.Stage && Jobs.Running ? "now" : "";
+                    <li class="@state">@text</li>
+                }
+            </ol>
+            @if (Jobs.Running)
+            {
+                <p class="muted">Tải xong sẽ tự chuyển sang màn hình game (xoay ngang điện thoại).</p>
+                <a class="btn wide" href="@Jobs.Options.StreamUrl" data-stream>📺 Mở màn hình game ngay</a>
+            }
+            else
+            {
+                <p>Không vào được trận.</p>
+                <a class="btn" href="">← Vòng đấu</a>
+            }
+        </section>
+        <aside class="panel">
+            <div class="panel-head"><h2>Nhật ký</h2></div>
+            <pre class="muted log">@string.Join("\n", Jobs.Log.Reverse().Take(6))</pre>
+        </aside>
+    </div>
+}
+
+@code {
+    static readonly (string Key, string Text)[] Steps =
+        [("boot", "Khởi động game"), ("menu", "Vào menu"), ("teams", "Chọn đội"), ("ready", "Sẵn sàng"), ("loading", "Tải trận")];
+    static int Index(string? stage) => stage is "kickoff" or "fulltime" ? Steps.Length : Array.FindIndex(Steps, s => s.Key == stage);
+    bool left;
+    Timer? tick;
+    Result? result;
+
+    sealed record RatingRow(string Name, decimal? Rating, int Change);
+    sealed record Result(Guid FixtureId, string Home, string Away, int HomeGoals, int AwayGoals, List<string> Goals, List<RatingRow> Ratings,
+        int? HomePenalties, int? AwayPenalties, string? HomeLogo, string? AwayLogo);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Jobs.Changed += OnJob;
+        tick = new Timer(_ => { if (Jobs.SecondsToKickoff is not null) InvokeAsync(StateHasChanged); }, null, 1000, 1000);
+        await LoadResultAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!left && Jobs.Running && Jobs.Title == "Trận của tôi" && Jobs.Stage is "loading" or "kickoff")
+        {
+            left = true;
+            Nav.NavigateTo(await JS.InvokeAsync<string>("pesCtl.streamUrl", Jobs.Options.StreamUrl), forceLoad: true);
+        }
+    }
+
+    /// <summary>Kết quả trận PO khi đã ghi (Played); trước đó null.</summary>
+    async Task LoadResultAsync()
+    {
+        if (Jobs.HumanFixture is not { } hf || Jobs.Stage != "fulltime") return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var f = await db.Fixtures.SingleAsync(x => x.Id == hf.FixtureId);
+        if (f.Status != FixtureStatus.Played) return;
+        var clubs = await db.Clubs.Where(c => c.Id == f.HomeClubId || c.Id == f.AwayClubId).Select(c => new { c.Id, c.Name, c.LogoPath }).ToListAsync();
+        var names = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var goals = await (from g in db.Goals.Where(g => g.FixtureId == f.Id)
+                           join p in db.Players on g.ScorerPlayerId equals p.Id into ps
+                           from p in ps.DefaultIfEmpty()
+                           orderby g.Half, g.Minute
+                           select new { g.ClubId, g.Minute, Scorer = p == null ? null : p.Name }).ToListAsync();
+        var myClub = hf.Side == MatchSide.Home ? f.HomeClubId : f.AwayClubId;
+        var changes = await db.AttributeChanges.Where(c => c.FixtureId == f.Id).GroupBy(c => c.PlayerId)
+            .ToDictionaryAsync(g => g.Key, g => g.Sum(c => c.Delta));
+        var ratings = await (from r in db.MatchRatings
+                             join p in db.Players on r.PlayerId equals p.Id
+                             where r.FixtureId == f.Id && r.ClubId == myClub
+                             orderby r.Slot
+                             select new { r.PlayerId, p.Name, r.Rating }).ToListAsync();
+        result = new(f.Id, names[f.HomeClubId], names[f.AwayClubId], f.HomeGoals ?? 0, f.AwayGoals ?? 0,
+            goals.Select(g => $"{g.Scorer ?? names[g.ClubId]} {g.Minute}'").ToList(),
+            ratings.Select(r => new RatingRow(r.Name, r.Rating, changes.GetValueOrDefault(r.PlayerId))).ToList(), f.HomePenalties, f.AwayPenalties,
+            clubs.Single(c => c.Id == f.HomeClubId).LogoPath, clubs.Single(c => c.Id == f.AwayClubId).LogoPath);
+    }
+
+    void OnJob() => InvokeAsync(async () => { await LoadResultAsync(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        Jobs.Changed -= OnJob;
+        tick?.Dispose();
+    }
+}

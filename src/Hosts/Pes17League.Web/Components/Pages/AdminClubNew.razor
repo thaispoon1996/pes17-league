@@ -1,0 +1,121 @@
+@page "/admin/clb/moi"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@using Pes17League.OptionFile
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+
+@* Thêm CLB vào ô PES dư của patch mùa đang mở (PO chọn 05/11): đội hình = cầu thủ của ô trong OF gốc, thiếu thủ môn thì bổ sung GK tự do. *@
+<h1>Thêm CLB</h1>
+<AdminNav />
+<p><a href="admin/clb">← Danh sách CLB</a></p>
+@if (msg is not null) { <p class="msg">@msg</p> }
+@if (done is { } d)
+{
+    <div class="panel">
+        <h2>Đã thêm @d.Name</h2>
+        <p>Đội hình @d.Result.Players cầu thủ.</p>
+        @if (d.Result.AddedGoalkeepers.Count > 0) { <p>Bổ sung thủ môn tự do: @string.Join(", ", d.Result.AddedGoalkeepers).</p> }
+        @if (d.Result.Skipped.Count > 0) { <p class="muted">Bỏ qua (đang thuộc CLB khác): @string.Join(", ", d.Result.Skipped).</p> }
+        <p><a href="admin/clb/@d.Result.ClubId">Mở trang CLB →</a></p>
+    </div>
+}
+@if (slots is null) { return; }
+@{ var shown = Shown().ToList(); }
+
+<div class="panel">
+    <h2>CLB mới</h2>
+    @if (picked is null) { <p class="muted">Chọn 1 ô PES dư ở bảng dưới.</p> }
+    else
+    {
+        <p>Ô PES <b>@picked.Slot</b>: @picked.GameName (@picked.GameAbbr), @picked.Players cầu thủ, @picked.Goalkeepers thủ môn.</p>
+        @if (picked.Goalkeepers < 2) { <p class="warn">Thiếu thủ môn: bổ sung GK tự do (GOAL KEEPING ≥ 70) cho đủ 2, không đủ thì không thêm được.</p> }
+    }
+    <div class="fields">
+        <label>Tên CLB (web) <input @bind="form.Name" maxlength="100" /></label>
+        <label>Tên ngắn <input @bind="form.ShortName" maxlength="10" placeholder="MUN, RMA…" /></label>
+        <label>Mã nước (FIFA) <input @bind="form.Country" maxlength="3" list="club-countries" placeholder="ENG" /></label>
+    </div>
+    <datalist id="club-countries">@foreach (var c in countries) { <option value="@c"></option> }</datalist>
+    <LogoUpload @bind-Value="form.LogoPath" Prefix="club-moi" Name="@(form.Name ?? "")" Default="@(picked is null ? null : FederationSetupService.LogoPath(picked.Slot))" />
+    <p class="muted">Đội hình = cầu thủ của ô trong OF gốc (người đang thuộc CLB khác thì bỏ qua), hợp đồng theo số trận mặc định của mùa. Không tự chia ngân sách.</p>
+    <div class="actions"><button class="primary" disabled="@(picked is null)" @onclick="Create">Thêm CLB</button></div>
+</div>
+
+<div class="panel">
+    <h2>Ô PES dư</h2>
+    <div class="filters"><input @bind="q" @bind:event="oninput" placeholder="Tìm tên trong game hoặc số ô" /></div>
+    <p class="muted">@shown.Count / @slots.Count ô chưa gán CLB trong patch của mùa đang mở (ô 125 không có trong menu game nên bỏ).</p>
+    <table class="table">
+        <thead><tr><th>Ô</th><th class="left">Tên trong game</th><th>Viết tắt</th><th>Cầu thủ</th><th>Thủ môn</th></tr></thead>
+        <tbody>
+            @foreach (var s in shown)
+            {
+                <tr class="@(s == picked ? "picked" : null)" @onclick="() => Pick(s)">
+                    <td>@s.Slot</td>
+                    <td class="left">@s.GameName</td>
+                    <td>@s.GameAbbr</td>
+                    <td>@s.Players</td>
+                    <td>@s.Goalkeepers@if (s.Goalkeepers < 2) { <small class="warn"> · bổ sung GK</small> }</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    List<SpareSlot>? slots;
+    SpareSlot? picked;
+    Form form = new();
+    List<string> countries = [];
+    (string Name, CreateClubResult Result)? done;
+    string q = "";
+    string? msg;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        try { slots = [.. await new ClubAdminService(db, Clock, Store).SpareSlotsAsync()]; }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        countries = await db.Clubs.Where(c => c.Country != null).Select(c => c.Country!).Distinct().OrderBy(c => c).ToListAsync();
+    }
+
+    IEnumerable<SpareSlot> Shown() => slots!.Where(s => q.Trim() is var t && (t == "" || s.Slot.ToString() == t
+        || s.GameName.Contains(t, StringComparison.OrdinalIgnoreCase) || s.GameAbbr.Contains(t, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Chọn ô: tên/viết tắt lấy theo game nếu admin chưa sửa (còn trống hoặc đúng như ô chọn trước).</summary>
+    void Pick(SpareSlot s)
+    {
+        if (string.IsNullOrWhiteSpace(form.Name) || form.Name == picked?.GameName) form.Name = s.GameName;
+        if (string.IsNullOrWhiteSpace(form.ShortName) || form.ShortName == picked?.GameAbbr) form.ShortName = s.GameAbbr;
+        picked = s;
+        msg = null;
+    }
+
+    async Task Create()
+    {
+        msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var r = await new ClubAdminService(db, Clock, Store).CreateAsync(picked!.Slot, form.Input(), AdminText.Actor);
+            done = (form.Name!.Trim(), r);
+        }
+        catch (AdminRuleException e) { msg = e.Message; return; }
+        (form, picked) = (new(), null);
+        await LoadAsync();
+    }
+
+    sealed class Form
+    {
+        public string? Name { get; set; }
+        public string? ShortName { get; set; }
+        public string? Country { get; set; }
+        public string? LogoPath { get; set; }
+
+        public ClubInput Input() => new(Name ?? "", ShortName, Country, LogoPath);
+    }
+}

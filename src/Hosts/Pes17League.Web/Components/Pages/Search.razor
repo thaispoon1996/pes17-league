@@ -1,0 +1,64 @@
+@page "/tim-kiem"
+@using System.Globalization
+@using System.Text
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+
+@* FM đợt 10: tìm kiếm toàn cục (cầu thủ + CLB), không phân biệt dấu. ?so-sanh={id} → bấm cầu thủ để so sánh với cầu thủ đó. *@
+<div class="fm">
+    <header class="fm-head"><div class="fm-title"><h1>Tìm kiếm</h1><p>@(Pick is null ? "Cầu thủ và CLB" : "Chọn cầu thủ để so sánh")</p></div></header>
+    <input class="search-box" @bind="q" @bind:event="oninput" placeholder="Gõ tên cầu thủ hoặc CLB (không cần dấu)…" autofocus />
+    @if (Norm(q) is { Length: >= 2 } t && players is not null)
+    {
+        var clubHits = Pick is null ? clubs!.Where(c => c.Key.Contains(t)).Take(10).ToList() : [];
+        var hits = players.Where(p => p.Key.Contains(t)).Take(40).ToList();
+        @if (clubHits.Count > 0)
+        {
+            <h2 class="search-h">CLB</h2>
+            <ul class="search-list">@foreach (var c in clubHits) { <li><a href="clb/@c.Id">@c.Name</a></li> }</ul>
+        }
+        <h2 class="search-h">Cầu thủ (@hits.Count@(hits.Count == 40 ? "+" : ""))</h2>
+        @if (hits.Count == 0) { <p class="muted">Không thấy.</p> }
+        <ul class="search-list">
+            @foreach (var p in hits)
+            {
+                <li><a href="@(Pick is { } a ? $"so-sanh?a={a}&b={p.Id}" : $"cau-thu/{p.Id}")">@p.Name</a>
+                    <small>@p.Position · @(p.ClubId is { } cid && clubNames.TryGetValue(cid, out var cn) ? cn : "Tự do")</small></li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q0 { get; set; }
+    [SupplyParameterFromQuery(Name = "so-sanh")] public Guid? Pick { get; set; }
+
+    sealed record Hit(Guid Id, string Name, string Key, Position Position, Guid? ClubId);
+    string q = "";
+    List<Hit>? players;
+    List<(Guid Id, string Name, string Key)>? clubs;
+    Dictionary<Guid, string> clubNames = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        q = Q0 ?? "";
+        await using var db = await Dbs.CreateDbContextAsync();
+        var club = await db.SquadMemberships.Where(m => m.LeftAt == null).ToDictionaryAsync(m => m.PlayerId, m => m.ClubId);
+        clubNames = await db.Clubs.ToDictionaryAsync(c => c.Id, c => c.Name);
+        clubs = clubNames.Select(c => (c.Key, c.Value, Norm(c.Value))).OrderBy(c => c.Value).ToList();
+        players = (await db.Players.AsNoTracking().Select(p => new { p.Id, p.Name, p.Position }).ToListAsync())
+            .Select(p => new Hit(p.Id, p.Name, Norm(p.Name), p.Position, club.TryGetValue(p.Id, out var c) ? c : null))
+            .OrderBy(p => p.ClubId is null).ThenBy(p => p.Name).ToList();
+    }
+
+    /// <summary>Bỏ dấu tiếng Việt + chữ thường để tìm "nguyen" ra "Nguyễn".</summary>
+    internal static string Norm(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return "";
+        var d = s.Trim().ToLowerInvariant().Replace('đ', 'd').Normalize(NormalizationForm.FormD);
+        var b = new StringBuilder(d.Length);
+        foreach (var ch in d) if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark) b.Append(ch);
+        return b.ToString();
+    }
+}

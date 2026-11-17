@@ -1,0 +1,72 @@
+@page "/an-hien"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+
+<h1>Ẩn/hiện cầu thủ</h1>
+@if (season is null) { return; }
+<p class="msg">Mặc định: cầu thủ admin/giải nghệ đã ẩn, tự do, OVR ≥ 80 — bấm <b>Còn đá</b> để hiện lên chợ.</p>
+
+<div class="filters">
+    <input placeholder="Tên cầu thủ" @bind="name" @bind:event="oninput" />
+    <select @bind="state">
+        <option value="forced-hidden">Đang ẩn (admin/giải nghệ)</option><option value="hidden">Đang ẩn (mọi lý do)</option>
+        <option value="forced-shown">Admin ép hiện</option><option value="all">Tất cả</option>
+    </select>
+    <select @bind="source"><option value="free">Tự do</option><option value="all">Mọi nơi</option></select>
+    <label>OVR ≥ <input type="number" @bind="minOvr" style="width:4em" /></label>
+</div>
+<p>@View().Count() cầu thủ</p>
+
+<table class="table">
+    <thead><tr><th class="left">Cầu thủ</th><th>VT</th><th>OVR</th><th>Giá</th><th>Đang</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var p in View().Take(200))
+        {
+            <tr>
+                <td class="left">@p.Name<br /><small>@(p.ClubId is { } c ? season.Clubs.GetValueOrDefault(c, "CLB ngoài giải") : "Tự do") · PES @p.PesPlayerId</small></td>
+                <td>@p.Position</td><td>@p.Overall</td><td>@Fmt.Money(p.Price)</td>
+                <td>@(p.Visible ? "Hiện" : "Ẩn")@(p.Override is null ? " (luật)" : "")</td>
+                <td>
+                    @if (!p.Visible) { <button class="primary" @onclick="() => Set(p, true)">Còn đá</button> }
+                    else { <button @onclick="() => Set(p, false)">Ẩn</button> }
+                    @if (p.Override is not null) { <button class="link" @onclick="() => Set(p, null)">Theo luật</button> }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    SeasonInfo? season;
+    List<VisibilityRow> rows = [];
+    string name = "", state = "forced-hidden", source = "free";
+    int minOvr = 80;
+
+    protected override async Task OnInitializedAsync()
+    {
+        season = await Q.SeasonAsync();
+        if (season is not null) rows = await Q.VisibilityRowsAsync(season.Id);
+    }
+
+    IEnumerable<VisibilityRow> View() => rows
+        .Where(p => p.Overall >= minOvr && p.Name.Contains(name, StringComparison.OrdinalIgnoreCase) && (source == "all" || p.ClubId is null)
+            && state switch
+            {
+                "forced-hidden" => p.Override == false,
+                "hidden" => !p.Visible,
+                "forced-shown" => p.Override == true,
+                _ => true,
+            })
+        .OrderByDescending(p => p.Overall).ThenBy(p => p.Name);
+
+    async Task Set(VisibilityRow p, bool? visible)
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        await new MarketVisibilityService(db, Store).SetAsync(p.PlayerId, visible);
+        var i = rows.IndexOf(p);
+        rows[i] = p with { Override = visible, Visible = MarketVisibilityService.IsVisible(visible, p.PesPlayerId, p.ClubId is not null) };
+    }
+}

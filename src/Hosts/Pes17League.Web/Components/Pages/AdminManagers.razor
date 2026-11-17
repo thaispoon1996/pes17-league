@@ -1,0 +1,130 @@
+@page "/admin/hlv"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject MatchJobService Jobs
+@inject IJSRuntime JS
+
+@* Lộ trình FM đợt 2 (PO ok 12/11): admin tạo tài khoản HLV, giao CLB; HLV đăng nhập bằng tài khoản riêng, chỉ điều hành CLB của mình.
+   Vắng thì trợ lý (máy) đá thay; vắng lâu admin xem "Lần cuối vào" để thu hồi CLB. *@
+<h1>Quản trị</h1>
+<AdminNav />
+@if (msg is not null) { <p class="msg">@msg</p> }
+@if (newPassword is not null)
+{
+    <p class="warn">Mật khẩu của <b>@newPasswordFor</b>: <code>@newPassword</code> — chỉ hiện 1 lần, gửi riêng cho HLV.</p>
+}
+
+<div class="panel">
+    <div class="panel-head"><h2>HLV người thật</h2></div>
+    <table class="table">
+        <thead><tr><th class="left">Tài khoản</th><th class="left">Tên</th><th class="left">CLB</th><th>Lần cuối vào</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var m in rows)
+            {
+                <tr class="@(m.Disabled ? "muted" : "")">
+                    <td class="left"><a href="hlv/@m.Id"><b>@m.Username</b></a>@if (m.Disabled) { <small> · đã khoá</small> }</td>
+                    <td class="left">@m.DisplayName</td>
+                    <td class="left">
+                        @if (!m.Disabled)
+                        {
+                            <select value="@(m.ClubId?.ToString() ?? "")" disabled="@(busy || Jobs.Running)" @onchange="e => Assign(m, e.Value as string)">
+                                <option value="">— Chưa giao —</option>
+                                @foreach (var c in clubs)
+                                {
+                                    var taken = holders.TryGetValue(c.Id, out var h) && h != m.Id;
+                                    <option value="@c.Id" disabled="@taken">@c.Name@(taken ? " (đã có HLV)" : "")</option>
+                                }
+                            </select>
+                        }
+                    </td>
+                    <td>@(m.LastSeenAt?.ToLocalTime().ToString("dd/MM HH:mm") ?? "chưa vào")</td>
+                    <td>
+                        <button disabled="@busy" @onclick="() => Reset(m)">Đặt lại mật khẩu</button>
+                        <button disabled="@busy" class="@(m.Disabled ? "" : "danger")" @onclick="() => Toggle(m)">@(m.Disabled ? "Mở khoá" : "Khoá")</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (rows.Count == 0) { <p class="muted">Chưa có HLV nào.</p> }
+</div>
+
+<div class="panel">
+    <div class="panel-head"><h2>Thêm HLV</h2></div>
+    <p class="muted">Tên đăng nhập a-z, 0-9, dấu . _ -. Mật khẩu sinh tự động.</p>
+    <input placeholder="tên đăng nhập" @bind="username" autocapitalize="none" />
+    <input placeholder="Tên hiển thị" @bind="displayName" />
+    <button class="primary" disabled="@busy" @onclick="Create">+ Tạo tài khoản</button>
+</div>
+
+@code {
+    List<ManagerRow> rows = [];
+    List<(Guid Id, string Name)> clubs = [];
+    Dictionary<Guid, Guid?> holders = [];   // CLB → HLV đang cầm (null = admin)
+    string username = "", displayName = "";
+    string? msg, newPassword, newPasswordFor;
+    bool busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        rows = await new ManagerService(db, Clock).ListAsync();
+        holders = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human)
+            .ToDictionaryAsync(a => a.ClubId, a => a.ParticipantId);
+        var season = await db.Seasons.Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).FirstOrDefaultAsync();
+        if (season is null) { clubs = []; return; }
+        var list = await (from ec in db.EditionClubs join e in db.Editions on ec.EditionId equals e.Id join c in db.Clubs on ec.ClubId equals c.Id
+                          where e.SeasonId == season.Id && c.Status == ClubStatus.Active select new { c.Id, c.Name }).Distinct().ToListAsync();
+        if (list.Count == 0)
+            list = await (from sc in db.SeasonClubs join c in db.Clubs on sc.ClubId equals c.Id where sc.SeasonId == season.Id select new { c.Id, c.Name }).ToListAsync();
+        clubs = [.. list.OrderBy(c => c.Name).Select(c => (c.Id, c.Name))];
+    }
+
+    async Task Run(Func<ClubsDbContext, Task> action)
+    {
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await action(db);
+            await LoadAsync();
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
+
+    Task Create() => Run(async db =>
+    {
+        var pw = await new ManagerService(db, Clock).CreateAsync(username, displayName, AdminText.Actor);
+        (newPassword, newPasswordFor) = (pw, username.Trim().ToLowerInvariant());
+        msg = $"Đã tạo tài khoản {newPasswordFor}. Giao CLB ở bảng trên.";
+        username = displayName = "";
+    });
+
+    async Task Reset(ManagerRow m)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Đặt lại mật khẩu cho {m.Username}? Mật khẩu cũ hết dùng được.")) return;
+        await Run(async db => { newPassword = await new ManagerService(db, Clock).ResetPasswordAsync(m.Id, AdminText.Actor); newPasswordFor = m.Username; });
+    }
+
+    async Task Toggle(ManagerRow m)
+    {
+        if (!m.Disabled && !await JS.InvokeAsync<bool>("confirm", $"Khoá {m.Username}? CLB đang cầm về BOT (trợ lý đá).")) return;
+        await Run(db => new ManagerService(db, Clock).SetDisabledAsync(m.Id, !m.Disabled, AdminText.Actor));
+    }
+
+    async Task Assign(ManagerRow m, string? value)
+    {
+        Guid? club = Guid.TryParse(value, out var id) ? id : null;
+        if (Jobs.Running) { msg = $"Máy trận đang bận ({Jobs.Title}): giao CLB sau khi xong."; return; }
+        await Run(async db =>
+        {
+            await new ClubAdminService(db, Clock).SetHumanClubAsync(club, AdminText.Actor, m.Id);
+            msg = club is null ? $"{m.Username}: thu hồi CLB (về BOT)." : $"{m.Username} nhận {clubs.First(c => c.Id == club).Name}.";
+        });
+    }
+}

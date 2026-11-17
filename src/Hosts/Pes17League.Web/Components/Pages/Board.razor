@@ -1,0 +1,90 @@
+@page "/ban-lanh-dao"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* FM đợt 7 (PO 12/11 duyệt mặc định): mục tiêu mùa + độ tin cậy ban lãnh đạo (thấp → admin xem xét), nhân sự cấp 1–5. Luật BoardRules, StaffRules. *@
+@if (season is null) { return; }
+@{ var me = season.HumanClubId; }
+<div class="fm">
+    <ManagerNav />
+    <header class="fm-head">
+        @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
+        <div class="fm-title">
+            <h1>Ban lãnh đạo &amp; nhân sự</h1>
+            <p>@season.Name · độ tin cậy cập nhật mỗi khi khoá vòng</p>
+        </div>
+    </header>
+    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (message is not null) { <p class="msg">@message</p> }
+
+    @if (board is { } b)
+    {
+        <div class="fm-cards">
+            <div><small>Mục tiêu mùa</small><b>@b.Objective</b><small>@b.League · kỳ vọng hạng @b.ExpectedPosition/@b.Teams</small></div>
+            <div><small>Hạng hiện tại</small><b class="@(b.Position <= b.ExpectedPosition ? "up" : b.Position >= b.ExpectedPosition + 3 ? "down" : "")">@(b.Position?.ToString() ?? "—")</b></div>
+            <div><small>Độ tin cậy</small><b>@b.Confidence/100</b>
+                <span class="cond-bar @(b.Confidence < 20 ? "low" : b.Confidence < 40 ? "tired" : "")" style="width:100%"><i style="width:@(b.Confidence)%"></i></span></div>
+            <div><small>Đánh giá</small><b class="@(b.Confidence < BoardRules.ReviewBelow ? "down" : "")">@b.Verdict</b></div>
+        </div>
+        <p class="fm-note">Mỗi vòng: hạng ≥ kỳ vọng +2, kém kỳ vọng 3 bậc trở lên −2; thắng +1, thua −1. Dưới @BoardRules.ReviewBelow: admin xem xét vị trí HLV.</p>
+    }
+    else { <p class="fm-note">CLB không đá giải quốc nội mùa này.</p> }
+
+    <section>
+        <h2>Nhân sự</h2>
+        <table class="table">
+            <thead><tr><th>Vị trí</th><th>Cấp</th><th>Lương/vòng</th><th>Tác dụng</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var s in staff)
+                {
+                    <tr>
+                        <td>@StaffRules.Label(s.Role)</td>
+                        <td class="stars">@(new string('★', s.Level))@(new string('☆', StaffRules.MaxLevel - s.Level))</td>
+                        <td class="num">@Fmt.Money(s.Wage)</td>
+                        <td>@StaffRules.Effect(s.Role)</td>
+                        <td>
+                            @if (s.Level < StaffRules.MaxLevel) { <button disabled="@busy" @onclick="() => Set(s.Role, s.Level + 1)">Thuê cấp @(s.Level + 1) (@Fmt.Money(s.NextFee))</button> }
+                            @if (s.Level > 1) { <button disabled="@busy" @onclick="() => Set(s.Role, s.Level - 1)">Hạ cấp</button> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="fm-note">Phí ký trả ngay; lương trừ mỗi vòng khi khoá vòng (= (cấp−1)² × 25k). Hạ cấp không hoàn phí.</p>
+    </section>
+</div>
+
+@code {
+    SeasonInfo? season;
+    BoardStatus? board;
+    List<StaffRow> staff = [];
+    string? message;
+    bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        season = await Q.SeasonAsync();
+        await Load();
+    }
+
+    async Task Load()
+    {
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new BoardService(db, Clock);
+        board = await svc.StatusAsync(season.Id, season.HumanClubId);
+        staff = await svc.StaffAsync(season.HumanClubId);
+    }
+
+    async Task Set(StaffRole role, int level)
+    {
+        busy = true;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            message = await new BoardService(db, Clock).SetLevelAsync(season!.HumanClubId, role, level) ?? $"{StaffRules.Label(role)}: cấp {level}.";
+        await Load();
+        busy = false;
+    }
+}

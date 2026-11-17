@@ -1,0 +1,247 @@
+@page "/admin/kinh-te"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+
+<h1>Quản trị</h1>
+<AdminNav />
+@if (msg is not null) { <p class="msg">@msg</p> }
+
+<div class="panel">
+    <h2>Kinh tế mùa</h2>
+    <p class="muted">Chung cho mọi CLB. Lương hợp đồng nhập = ‰ × giá mỗi khung ngày, đặt lúc <b>Bắt đầu mùa</b> (gia hạn trong mùa cũng theo ‰ này). Ngân sách đầu mùa: quỹ chia cho mọi CLB
+        theo (1 / giá trị squad)<sup>k</sup> — k = 0 chia đều, k = 1 tỷ lệ nghịch. Mỗi lần chốt khung ngày trừ lương + thuế xa xỉ trên phần vượt trần mềm
+        (vượt 0–10% chịu 50%, 10–25% chịu 100%, trên 25% chịu 150%); quá trần cứng (trần mềm +40%) không mua, không gia hạn được. Chưa có khoản thu.</p>
+    <p class="muted">Mùa chưa bắt đầu: đổi mọi tham số, quỹ chia lúc Bắt đầu mùa. Mùa đang đá: chỉ đổi trần mềm; đã bắt đầu với quỹ chưa đặt → bù 1 lần.
+        Đổi gì cũng xem trước bảng dưới (chưa ghi) rồi mới bấm lưu.</p>
+    @if (seasons.Count == 0) { <p>Chưa có mùa.</p> }
+    else
+    {
+        <div class="filters">
+            <select @bind="seasonId" @bind:after="LoadAsync" disabled="@busy">
+                @foreach (var s in seasons) { <option value="@s.Id">@(s.Name + Label(s.Status))</option> }
+            </select>
+        </div>
+    }
+    @if (view is { } v)
+    {
+        <div class="filters">
+            <label>Trần mềm <input type="number" min="0" step="0.01" style="width: 100px" @bind="softM" @bind:after="PreviewAsync" disabled="@(busy || v.Status == SeasonStatus.Finished)" /> tr/khung
+                <small class="muted">(trần cứng @Fmt.Money(LuxuryTax.HardCap(M(softM))))</small></label>
+            <label>Lương <input type="number" min="0" step="1" style="width: 80px" @bind="permille" @bind:after="PreviewAsync" disabled="@(busy || v.Status != SeasonStatus.Planned)" /> ‰ giá/khung
+                @if (v.Status == SeasonStatus.Planned) { <small class="muted">(Bắt đầu mùa đặt lương cho @v.Unwaged/@v.Contracts hợp đồng chưa có lương)</small> }</label>
+        </div>
+        <div class="filters">
+            <label>Quỹ ngân sách <input type="number" min="0" step="1" style="width: 110px" @bind="fundM" @bind:after="FundChanged" disabled="@(busy || !FundEditable)" /> tr</label>
+            @if (v.Status != SeasonStatus.Finished)
+            {
+                <label>= <input type="number" min="0" step="1" style="width: 80px" @bind="fundPct" @bind:after="PctChanged" disabled="@(busy || !FundEditable)" /> % tổng giá trị squad</label>
+            }
+            <label>k <input type="number" min="0" step="0.1" style="width: 80px" @bind="exponent" @bind:after="PreviewAsync" disabled="@(busy || !FundEditable)" /></label>
+        </div>
+        <p class="muted">Hợp đồng nhập / gia hạn mặc định @v.Economy.DefaultContractMatches trận.
+            @if (previous is { } p) { <span>@previousName: quỹ @Fmt.Money(p.InitialBudgetFund) · trần mềm @Fmt.Money(p.SoftWageCap)/khung · @(p.WagePermille)‰ · k @p.BudgetExponent.ToString("0.##").</span> }</p>
+        <div class="filters">
+            @if (v.Status == SeasonStatus.Planned) { <button class="primary" disabled="@busy" @onclick="Save">Lưu tham số</button> }
+            @if (v.CanTopUp) { <button class="primary" disabled="@busy" @onclick="TopUp">Bù ngân sách đầu mùa (1 lần)</button> }
+            @if (v.Status == SeasonStatus.Active) { <button disabled="@(busy || M(softM) == stored?.SoftWageCap)" @onclick="SaveSoftCap">Lưu trần mềm</button> }
+        </div>
+        @foreach (var w in Warnings(v)) { <p class="warn">@w</p> }
+        @* Mùa đã xong: đội hình, lương, số dư là của hiện tại, giá là của mùa đó → bảng không có nghĩa. *@
+        @if (v.Status == SeasonStatus.Finished) { <p class="muted">Mùa đã xong: chỉ xem tham số đã dùng.</p> }
+    }
+</div>
+
+@if (view is { Status: not SeasonStatus.Finished } pv)
+{
+    var budgets = pv.Clubs.Select(c => Budget(pv, c)).Order().ToList();
+    var payrolls = pv.Clubs.Select(c => c.Payroll).Order().ToList();
+    var khung = pv.Clubs.Where(c => c.Khung is not null).Select(c => c.Khung!.Value).Order().ToList();
+    var soft = pv.Economy.SoftWageCap;
+    <div class="panel">
+        <div class="panel-head"><h2>@Title(pv)</h2><small class="muted">@pv.Clubs.Count CLB · @KhungText(pv)</small></div>
+        <div class="cards">
+            <div><small>Tổng giá trị squad</small><b>@Fmt.Money(Total)</b></div>
+            <div><small>Ngân sách/CLB: thấp · giữa · cao</small><b>@(budgets.Count == 0 ? "—" : $"{Fmt.Money(budgets[0])} · {Fmt.Money(Mid(budgets))} · {Fmt.Money(budgets[^1])}")</b></div>
+            <div><small>Lương/khung: giữa · cao nhất</small><b>@(payrolls.Count == 0 ? "—" : $"{Fmt.Money(Mid(payrolls))} · {Fmt.Money(payrolls[^1])}")</b></div>
+            <div><small>Vượt trần mềm · trần cứng</small><b>@(soft > 0 ? $"{payrolls.Count(x => x > soft)} · {payrolls.Count(x => x > LuxuryTax.HardCap(soft))} CLB" : "không có trần")</b></div>
+            <div><small>Đủ trả lương + thuế: thấp · giữa</small><b>@(khung.Count == 0 ? "—" : $"{khung[0]:0.#} · {Mid(khung):0.#} khung")</b></div>
+        </div>
+        <p class="muted">Xếp theo giá trị squad. "Đủ" = số khung ngày số dư sau khi ghi trả được lương + thuế (chưa tính mua bán)@(pv.Matchdays > 0 ? $"; tô vàng: không đủ tới hết mùa ({pv.Matchdays - pv.Settled} khung còn lại)" : "").</p>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th class="left">CLB</th><th>Giá trị squad</th><th>Lương/khung</th><th>Ngân sách đầu mùa</th>
+                    @if (pv.CanTopUp) { <th>Ghi thêm</th> }
+                    <th>Số dư sau</th><th>Đủ (khung)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{ var i = 0; }
+                @foreach (var c in pv.Clubs)
+                {
+                    if (!all && pv.Clubs.Count > 2 * Edge && i++ is >= Edge and var n && n < pv.Clubs.Count - Edge)
+                    {
+                        if (n == Edge) { <tr @onclick="() => all = true"><td colspan="7"><b>… @(pv.Clubs.Count - 2 * Edge) CLB ở giữa — chạm để hiện hết</b></td></tr> }
+                        continue;
+                    }
+                    <tr>
+                        <td class="left">@c.Name</td>
+                        <td>@Fmt.Money(c.SquadValue)</td>
+                        <td>@Fmt.Money(c.Payroll)@if (c.LuxuryTax > 0) { <small class="neg"> +thuế @Fmt.Money(c.LuxuryTax)</small> }</td>
+                        <td>@Fmt.Money(Budget(pv, c))</td>
+                        @if (pv.CanTopUp) { <td class="@(c.Change < 0 ? "neg" : "")">@Fmt.Money(c.Change)</td> }
+                        <td class="@(c.After < 0 ? "neg" : "")">@Fmt.Money(c.After)</td>
+                        <td class="@(Short(pv, c) ? "warn" : "")">@(c.Khung is { } k ? k.ToString("0.#") : "∞")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    List<Season> seasons = [];
+    Guid seasonId;
+    BudgetPreview? view;
+    SeasonEconomy? stored, previous;
+    string? previousName, msg;
+    double softM, fundM, fundPct, exponent;
+    int permille;
+    bool busy, all;
+
+    /// <summary>Bảng rút gọn: 10 CLB mạnh nhất + 10 yếu nhất.</summary>
+    const int Edge = 10;
+
+    /// <summary>Quỹ và k đổi được: mùa chưa bắt đầu (chia lúc Bắt đầu mùa) hoặc đang đá chưa bù.</summary>
+    bool FundEditable => view is { } v && (v.AllocatesAtStart || v.CanTopUp);
+
+    long Total => view?.Clubs.Sum(c => c.SquadValue) ?? 0;
+
+    string SeasonName => seasons.FirstOrDefault(s => s.Id == seasonId)?.Name ?? "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using (var db = await Dbs.CreateDbContextAsync())
+            seasons = await db.Seasons.AsNoTracking().OrderBy(s => s.Number).ToListAsync();
+        seasonId = (seasons.FirstOrDefault(s => s.Status != SeasonStatus.Finished) ?? seasons.LastOrDefault())?.Id ?? Guid.Empty;
+        if (seasonId != Guid.Empty) await LoadAsync();
+    }
+
+    /// <summary>Tham số đã lưu của mùa → ô nhập, xem trước theo tham số đó; kèm tham số mùa trước để tham khảo.</summary>
+    async Task LoadAsync()
+    {
+        (msg, view, all) = (null, null, false);
+        var season = seasons.Single(s => s.Id == seasonId);
+        var prev = seasons.LastOrDefault(s => s.Number < season.Number);
+        await using (var db = await Dbs.CreateDbContextAsync())
+        {
+            stored = await db.SeasonEconomies.AsNoTracking().SingleOrDefaultAsync(e => e.SeasonId == seasonId) ?? new SeasonEconomy { SeasonId = seasonId };
+            previous = prev is null ? null : await db.SeasonEconomies.AsNoTracking().SingleOrDefaultAsync(e => e.SeasonId == prev.Id);
+        }
+        previousName = prev?.Name;
+        (softM, permille, fundM, exponent) = (stored.SoftWageCap / 1e6, stored.WagePermille, stored.InitialBudgetFund / 1e6, stored.BudgetExponent);
+        await PreviewAsync();
+        fundPct = PctOf(stored.InitialBudgetFund);
+    }
+
+    SeasonEconomyChange Change() => new(SoftWageCap: M(softM), WagePermille: permille, InitialBudgetFund: M(fundM), BudgetExponent: exponent);
+
+    static long M(double tr) => (long)Math.Round(tr * 1_000_000);
+
+    double PctOf(long fund) => Total > 0 ? Math.Round(fund * 100.0 / Total, 1) : 0;
+
+    async Task PreviewAsync()
+    {
+        msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            view = await new EconomyAdminService(db, Clock).PreviewAsync(seasonId, Change());
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+    }
+
+    async Task FundChanged()
+    {
+        await PreviewAsync();
+        fundPct = PctOf(M(fundM));
+    }
+
+    /// <summary>% tổng giá trị squad → quỹ làm tròn tới 1 tr.</summary>
+    async Task PctChanged()
+    {
+        fundM = Math.Round(fundPct * Total / 100 / 1e6);
+        await PreviewAsync();
+    }
+
+    async Task Save()
+    {
+        var c = Change();
+        if (!await JS.InvokeAsync<bool>("confirm", $"Lưu tham số kinh tế {SeasonName}?\nTrần mềm {Fmt.Money(c.SoftWageCap!.Value)}/khung · lương {c.WagePermille}‰ giá/khung\n"
+            + $"Quỹ ngân sách {Fmt.Money(c.InitialBudgetFund!.Value)} ({PctOf(c.InitialBudgetFund.Value):0.#}% tổng giá trị squad) · k {c.BudgetExponent:0.##}\n"
+            + $"Quỹ chia cho {view!.Clubs.Count} CLB lúc Bắt đầu mùa.")) return;
+        await RunAsync(async svc => msg = await svc.SetAsync(seasonId, c, AdminText.Actor) ? "Đã lưu tham số kinh tế." : "Không có gì thay đổi.");
+    }
+
+    async Task TopUp()
+    {
+        var (c, v) = (Change(), view!);
+        if (!await JS.InvokeAsync<bool>("confirm", $"Bù ngân sách đầu mùa {SeasonName}? Chỉ bù được 1 lần.\n"
+            + $"Quỹ {Fmt.Money(c.InitialBudgetFund!.Value)} ({PctOf(c.InitialBudgetFund.Value):0.#}% tổng giá trị squad) · k {c.BudgetExponent:0.##} · trần mềm {Fmt.Money(c.SoftWageCap!.Value)}/khung\n"
+            + $"Ghi thêm {Fmt.Money(v.Clubs.Sum(x => x.Change))} cho {v.Clubs.Count(x => x.Change != 0)} CLB (dòng Điều chỉnh trong sổ tiền, giữ dòng cũ).")) return;
+        await RunAsync(async svc =>
+        {
+            var diff = await svc.TopUpAsync(seasonId, new(SoftWageCap: c.SoftWageCap, InitialBudgetFund: c.InitialBudgetFund, BudgetExponent: c.BudgetExponent), AdminText.Actor);
+            msg = $"Đã bù {Fmt.Money(diff.Values.Sum())} cho {diff.Count(d => d.Value != 0)} CLB.";
+        });
+    }
+
+    async Task SaveSoftCap()
+    {
+        var soft = M(softM);
+        if (!await JS.InvokeAsync<bool>("confirm", $"Đổi trần mềm {SeasonName}: {Fmt.Money(stored!.SoftWageCap)} → {Fmt.Money(soft)}/khung?\n"
+            + $"Thuế xa xỉ tính theo trần mới từ lần chốt khung ngày kế tiếp; trần cứng {Fmt.Money(LuxuryTax.HardCap(soft))} áp ngay cho mua, gia hạn.")) return;
+        await RunAsync(async svc => msg = await svc.SetAsync(seasonId, new(SoftWageCap: soft), AdminText.Actor) ? "Đã lưu trần mềm." : "Không có gì thay đổi.");
+    }
+
+    async Task RunAsync(Func<EconomyAdminService, Task> action)
+    {
+        busy = true;
+        try
+        {
+            await using (var db = await Dbs.CreateDbContextAsync()) await action(new EconomyAdminService(db, Clock));
+            var done = msg;
+            await LoadAsync();
+            msg = done;
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
+
+    static string Label(SeasonStatus s) => s switch { SeasonStatus.Planned => " (chưa bắt đầu)", SeasonStatus.Active => " (đang đá)", _ => " (đã xong)" };
+
+    static string Title(BudgetPreview v) =>
+        v.AllocatesAtStart ? "Xem trước: chia lúc Bắt đầu mùa (chưa ghi)" : v.CanTopUp ? "Xem trước: bù ngân sách đầu mùa (chưa ghi)" : "Ngân sách đầu mùa đã ghi";
+
+    static string KhungText(BudgetPreview v) => v.Matchdays == 0 ? "chưa ghi lịch: chưa biết số khung ngày" : $"{v.Matchdays} khung ngày, đã chốt {v.Settled}";
+
+    /// <summary>Đang xem trước → ngân sách theo tham số đang nhập; còn lại → đã ghi sổ.</summary>
+    static long Budget(BudgetPreview v, BudgetPreviewClub c) => v.AllocatesAtStart || v.CanTopUp ? c.Budget : c.Granted;
+
+    static bool Short(BudgetPreview v, BudgetPreviewClub c) => v.Matchdays > 0 && c.Khung is { } k && k < v.Matchdays - v.Settled;
+
+    static T Mid<T>(List<T> sorted) => sorted[sorted.Count / 2];
+
+    static IEnumerable<string> Warnings(BudgetPreview v)
+    {
+        if (v.Status == SeasonStatus.Finished) yield break;
+        if (v.Economy.InitialBudgetFund == 0 && (v.AllocatesAtStart || v.CanTopUp))
+            yield return "Quỹ ngân sách = 0: mọi CLB 0 đồng, không mua được cầu thủ nào (mua cần số dư ≥ phí).";
+        if (v.Economy.SoftWageCap == 0) yield return "Trần mềm = 0: không thu thuế xa xỉ, không có trần cứng.";
+        if (v.Clubs.Count(c => Short(v, c)) is > 0 and var n) yield return $"{n} CLB không đủ trả lương + thuế tới hết mùa (chưa tính mua bán; chưa có khoản thu).";
+        if (v.CanTopUp && v.Clubs.Count(c => c.Change < 0) is > 0 and var m) yield return $"{m} CLB bị trừ bớt: ngân sách mới thấp hơn lần chia trước.";
+    }
+}
