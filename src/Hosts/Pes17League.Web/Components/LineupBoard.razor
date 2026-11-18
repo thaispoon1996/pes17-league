@@ -52,7 +52,7 @@
             if (p is null) { <div class="pl empty" style="left:@(left)%;top:@(top)%"><small>@role</small></div> continue; }
             <div class="pl @Fit(p.Position, role) @(picked == p.PlayerId ? "picked" : "")" style="left:@(left)%;top:@(top)%" data-pid="@p.PlayerId" data-slot="@slot" @onclick="() => Tap(p)">
                 @if (jobs.GetValueOrDefault(TeamJob.Captain)?.PlayerId == p.PlayerId) { <i class="cap">C</i> }
-                <b>@p.Shirt</b><span>@Short(p.Name)</span><small>@role · @p.Overall</small>
+                <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@role · @p.Overall</small>
             </div>
         }
     </div>
@@ -62,7 +62,7 @@
             @foreach (var p in squad.Where(x => x.Slot > 10))
             {
                 <div class="pl @(picked == p.PlayerId ? "picked" : "")" data-pid="@p.PlayerId" @onclick="() => Tap(p)">
-                    <b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall</small>
+                    <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall</small>
                 </div>
             }
         </div>
