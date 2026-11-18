@@ -9,7 +9,7 @@
 
 <h1>Quản trị</h1>
 @if (all is null) { return; }
-@foreach (var w in CompetitionAdminService.Warnings(all)) { <p class="warn">⚠ @w</p> }
+@foreach (var w in CompetitionAdminService.Warnings(all)) { <p class="warn"><span class="ms ic" aria-hidden="true">warning</span>@w</p> }
 @if (msg is not null) { <p class="msg">@msg</p> }
 
 <div class="panel">
@@ -61,7 +61,7 @@
         @if (plan is not null)
         {
             <p><b>@(plan.FromPreviousSeason ? "Lên/xuống hạng từ mùa trước" : "Chia theo OVR (mùa đầu)")</b></p>
-            @foreach (var e in plan.Errors) { <p class="warn">⚠ @e</p> }
+            @foreach (var e in plan.Errors) { <p class="warn"><span class="ms ic" aria-hidden="true">warning</span>@e</p> }
             @foreach (var n in plan.Notes) { <p class="msg">@n</p> }
             @if (plan.Unassigned.Count > 0) { <p class="muted">Không xếp (không có nước@(plan.FromPreviousSeason ? " hoặc mùa trước chưa dự giải quốc gia — thêm tay sau khi ghi" : "")): @string.Join(", ", plan.Unassigned.Select(c => c.Name))</p> }
             @foreach (var e in plan.Editions)

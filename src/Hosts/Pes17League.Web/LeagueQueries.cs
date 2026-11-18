@@ -265,7 +265,9 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
     {
         await using var db = await dbs.CreateDbContextAsync();
         var patchId = await db.Seasons.Where(s => s.Id == seasonId).Select(s => s.PatchVersionId).SingleAsync();
-        var path = await db.PatchVersions.Where(p => p.Id == patchId).Select(p => p.BaseOptionFilePath).SingleAsync();
+        var patch = await db.PatchVersions.Where(p => p.Id == patchId).Select(p => new { p.BaseOptionFilePath, p.Name }).SingleAsync();
+        if (Pes17RoundService.IsPes17(patch.Name)) return null;   // PES17 (18/11): file gốc không phải option file PES6 → chưa có sơ đồ gốc, dùng sơ đồ mặc định
+        var path = patch.BaseOptionFilePath;
         var index = await db.ClubPesMappings.Where(m => m.PatchVersionId == patchId && m.ClubId == clubId).Select(m => (int?)m.PesClubIndex).SingleOrDefaultAsync();
         if (index is not { } i) return null;
         if (PatchLayouts.TryGetValue((path, i), out var hit)) return hit;
@@ -390,6 +392,9 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
 
 public static class Fmt
 {
+    /// <summary>Tên mùa có thể đã gồm chữ "Mùa" ("Mùa 1") → không lặp "Mùa Mùa 1".</summary>
+    public static string Season(string name) => name.StartsWith("Mùa", StringComparison.OrdinalIgnoreCase) ? name : "Mùa " + name;
+
     public static string Country(string? code) => code switch
     {
         null => "Cúp châu Âu", "ENG" => "Anh", "ESP" => "Tây Ban Nha", "GER" => "Đức", "ITA" => "Ý", _ => code,

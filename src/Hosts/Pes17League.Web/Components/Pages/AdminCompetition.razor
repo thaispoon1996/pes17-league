@@ -10,7 +10,7 @@
 <h1>@(comp?.Name ?? (isNew ? "Thêm giải" : "Giải đấu"))</h1>
 @if (!found) { if (loaded) { <p>Không tìm thấy giải.</p> } return; }
 <p><a href="admin/giai">← Danh sách giải</a></p>
-@foreach (var w in CompetitionAdminService.Warnings(all).Where(w => comp is not null && w.Contains(comp.Name))) { <p class="warn">⚠ @w</p> }
+@foreach (var w in CompetitionAdminService.Warnings(all).Where(w => comp is not null && w.Contains(comp.Name))) { <p class="warn"><span class="ms ic" aria-hidden="true">warning</span>@w</p> }
 @if (comp?.Status == CompetitionStatus.Archived) { <p class="warn">Giải đã lưu trữ: không tạo được mùa giải mới.</p> }
 @if (msg is not null) { <p class="msg">@msg</p> }
 

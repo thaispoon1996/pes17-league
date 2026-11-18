@@ -18,9 +18,9 @@
         <Crest Name="@name" Logo="@season.Logo(clubId)" Large="true" />
         <div class="fm-title">
             <h1>@name</h1>
-            <p>@season.Name · @(mine ? "CLB của tôi" : "BOT điều khiển") · @squad.Count cầu thủ</p>
+            <p>@season.Name · @if (mine) { <text>CLB của tôi</text> } else if (coachId is { } cid) { <text>HLV </text><a href="/hlv/@cid">@coachName</a> } else if (coach) { <text>Ban tổ chức điều khiển</text> } else { <text>BOT điều khiển</text> } · @squad.Count cầu thủ</p>
         </div>
-        @if (!mine && coach) { <a class="btn" href="thu?soan=1&clb=@clubId">✉ Gửi thư HLV</a> }
+        @if (!mine && coach) { <a class="btn" href="thu?soan=1&clb=@clubId"><span class="ms ic" aria-hidden="true">mail</span>Gửi thư HLV</a> }
         @if (glance?.Rank is { } rank) { <span class="fm-badge"><b>#@rank</b>@glance.Points điểm</span> }
     </header>
     <nav class="fm-tabs" role="tablist">
@@ -62,7 +62,7 @@
                 <div class="fm-h"><h2>Đội hình</h2><small>@(mine ? "Chạm 1 dòng để đổi số áo, gia hạn, thanh lý · bấm tên xem hồ sơ" : "Bấm tên xem hồ sơ cầu thủ")</small></div>
                 <div class="fm-scroll">
                 <table class="table fm-squad">
-                    <thead><tr><th>VT</th><th>Số</th><th class="left">Cầu thủ</th><th class="opt">Tuổi</th><th>OVR</th><th title="Số trận ra sân cho CLB mùa này">Trận</th><th>Bàn</th><th title="Điểm trung bình">Điểm</th><th class="opt" title="Xuất sắc nhất trận">⭐</th><th class="opt">Giá</th><th title="Hợp đồng: đã đá/tổng trận">HĐ</th><th class="opt">Lương</th></tr></thead>
+                    <thead><tr><th>VT</th><th>Số</th><th class="left">Cầu thủ</th><th class="opt">Tuổi</th><th>OVR</th><th title="Số trận ra sân cho CLB mùa này">Trận</th><th>Bàn</th><th title="Điểm trung bình">Điểm</th><th class="opt" title="Xuất sắc nhất trận"><span class="ms ic" aria-hidden="true">star</span></th><th class="opt">Giá</th><th title="Hợp đồng: đã đá/tổng trận">HĐ</th><th class="opt">Lương</th></tr></thead>
                     <tbody>
                         @foreach (var (title, rows) in new[] { ("Đá chính", squad.Where(p => p.Slot <= 10)), ("Dự bị", squad.Where(p => p.Slot > 10)) })
                         {
@@ -226,6 +226,8 @@
     int expiring => squad.Count(p => p.MatchesTotal - p.MatchesPlayed <= ContractRules.RenewalReminderMatches);
 
     bool coach;   // CLB có HLV người (gửi thư được)
+    Guid? coachId;
+    string? coachName;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -244,7 +246,16 @@
         else { await using var hdb = await Dbs.CreateDbContextAsync(); hidden = await new YouthService(hdb, Clock).HiddenAsync(season.HumanClubId); }
         if (clubId == Guid.Empty) return;   // chưa chọn CLB của tôi
         await using (var cdb = await Dbs.CreateDbContextAsync())
-            coach = await cdb.TeamAssignments.AnyAsync(a => a.ClubId == clubId && a.To == null && a.ControllerType == ControllerType.Human);
+        {
+            var h = await (from a in cdb.TeamAssignments
+                           where a.ClubId == clubId && a.To == null && a.ControllerType == ControllerType.Human
+                           join m in cdb.Managers on a.ParticipantId equals (Guid?)m.Id into mm
+                           from m in mm.DefaultIfEmpty()
+                           select new { a.ParticipantId, Name = m == null ? null : m.DisplayName }).FirstOrDefaultAsync();
+            coach = h is not null;
+            coachId = h?.ParticipantId;
+            coachName = h?.Name;
+        }
         window = await Q.OpenWindowAsync(season.Id);
         squad = await Q.SquadAsync(season.Id, clubId);
         stats = await Q.SquadStatsAsync(season, clubId, [.. squad.Select(p => p.PlayerId)]);

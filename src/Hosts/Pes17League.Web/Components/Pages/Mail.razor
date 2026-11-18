@@ -22,10 +22,10 @@
 @if (notice is not null) { <p class="msg ok">@notice</p> }
 <div class="mail">
     <nav class="mail-folders">
-        <button class="primary wide" @onclick="() => Compose(null)">✏️ Soạn thư</button>
-        <button class="@(view == View.List && folder == MailFolder.Inbox ? "on" : "")" @onclick="() => Open(MailFolder.Inbox)">📥 Hộp đến @if (unread > 0) { <span class="badge">@unread</span> }</button>
-        <button class="@(view == View.List && folder == MailFolder.Sent ? "on" : "")" @onclick="() => Open(MailFolder.Sent)">📤 Đã gửi</button>
-        <button class="@(view == View.List && folder == MailFolder.Archived ? "on" : "")" @onclick="() => Open(MailFolder.Archived)">🗄 Lưu trữ</button>
+        <button class="primary wide" @onclick="() => Compose(null)"><span class="ms ic" aria-hidden="true">edit</span>Soạn thư</button>
+        <button class="@(view == View.List && folder == MailFolder.Inbox ? "on" : "")" @onclick="() => Open(MailFolder.Inbox)"><span class="ms ic" aria-hidden="true">inbox</span>Hộp đến @if (unread > 0) { <span class="badge">@unread</span> }</button>
+        <button class="@(view == View.List && folder == MailFolder.Sent ? "on" : "")" @onclick="() => Open(MailFolder.Sent)"><span class="ms ic" aria-hidden="true">send</span>Đã gửi</button>
+        <button class="@(view == View.List && folder == MailFolder.Archived ? "on" : "")" @onclick="() => Open(MailFolder.Archived)"><span class="ms ic" aria-hidden="true">archive</span>Lưu trữ</button>
     </nav>
     <section class="mail-main panel">
         @if (view == View.List)
@@ -48,9 +48,9 @@
             <div class="mail-tools">
                 <button class="link" @onclick="() => Open(folder)">← @FolderName(folder)</button>
                 <span class="grow"></span>
-                @if (folder == MailFolder.Archived) { <button @onclick="() => Archive(false)">📥 Đưa về hộp đến</button> }
-                else { <button @onclick="() => Archive(true)">🗄 Lưu trữ</button> }
-                @if (folder == MailFolder.Inbox) { <button @onclick="MarkUnread">✉ Đánh dấu chưa đọc</button> }
+                @if (folder == MailFolder.Archived) { <button @onclick="() => Archive(false)"><span class="ms ic" aria-hidden="true">inbox</span>Đưa về hộp đến</button> }
+                else { <button @onclick="() => Archive(true)"><span class="ms ic" aria-hidden="true">archive</span>Lưu trữ</button> }
+                @if (folder == MailFolder.Inbox) { <button @onclick="MarkUnread"><span class="ms ic" aria-hidden="true">mail</span>Đánh dấu chưa đọc</button> }
                 @if (me is { } my && Other() is { } other)
                 {
                     <button class="link" @onclick="() => Block(other, !blocked)">@(blocked ? "Bỏ chặn" : "🚫 Chặn người này")</button>
@@ -67,7 +67,7 @@
                     </header>
                     <div class="mail-body">@m.Body</div>
                     @if (m.PlayerId is { } pid) { <a class="btn" href="cau-thu/@pid">Xem cầu thủ</a> }
-                    @if (m.Template == "giao-huu") { <a class="btn" href="giao-huu">⚽ Sảnh giao hữu</a> }
+                    @if (m.Template == "giao-huu") { <a class="btn" href="giao-huu"><span class="ms ic" aria-hidden="true">sports_soccer</span>Sảnh giao hữu</a> }
                 </article>
             }
             @if (CanReply())
@@ -91,7 +91,7 @@
                 <label>Gửi tới
                     <select value="@toKey" @onchange="OnRecipient">
                         <option value="">— Chọn người nhận —</option>
-                        @if (me is not null) { <option value="btc">🏛 @MailService.AdminName</option> }
+                        @if (me is not null) { <option value="btc">@MailService.AdminName</option> }
                         <optgroup label="Câu lạc bộ (tới HLV đang dẫn)">
                             @foreach (var c in clubs) { <option value="clb:@c.Id">@c.Name — @c.Manager</option> }
                         </optgroup>
@@ -132,7 +132,7 @@
                 <label>Tiêu đề <input @bind="subject" maxlength="@MailTemplates.SubjectMax" /></label>
                 <label>Nội dung <textarea @bind="body" rows="12" maxlength="@MailTemplates.BodyMax"></textarea></label>
                 <div class="actions">
-                    <button class="primary" @onclick="Send">📨 Gửi thư</button>
+                    <button class="primary" @onclick="Send"><span class="ms ic" aria-hidden="true">send</span>Gửi thư</button>
                     <button class="link" @onclick="() => Open(folder)">Huỷ</button>
                 </div>
             </div>

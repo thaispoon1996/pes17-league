@@ -37,8 +37,8 @@
                             </select>
                         </td>
                         <td>
-                            <button class="primary" disabled="@(busy || Jobs.Running || pick.GetValueOrDefault(a.Id) is null)" @onclick="() => Approve(a.Id)">✅ Duyệt</button>
-                            <button disabled="@busy" @onclick="() => Reject(a)">✖ Từ chối</button>
+                            <button class="primary" disabled="@(busy || Jobs.Running || pick.GetValueOrDefault(a.Id) is null)" @onclick="() => Approve(a.Id)"><span class="ms ic" aria-hidden="true">check_circle</span>Duyệt</button>
+                            <button disabled="@busy" @onclick="() => Reject(a)"><span class="ms ic" aria-hidden="true">close</span>Từ chối</button>
                         </td>
                     </tr>
                 }

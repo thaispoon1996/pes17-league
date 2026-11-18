@@ -79,11 +79,17 @@ switch (args.FirstOrDefault())
     case "end-attempt":
         await EndStuckAttemptsAsync();
         break;
+    case "fix-club-names":
+        await FixClubNamesAsync(args.Contains("--dry"));
+        break;
     case "assign-club" when args.Length >= 3:
         await AssignClubAsync(args[1], int.Parse(args[2]));
         break;
+    case "set-password" when args.Length >= 3:
+        await SetPasswordAsync(args[1], args[2]);
+        break;
     default:
-        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI");
+        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry]");
         return 2;
 }
 return 0;
@@ -232,7 +238,33 @@ async Task MovePlayerAsync(int pesPlayer, int? pesClub)
     Console.WriteLine(r.Ok ? $"OK, giao dịch {r.TransferId}" : $"LỖI: {r.Error}");
 }
 
+/// <summary>PO 18/11 (sửa UI): chuẩn hoá tên CLB đã nhập ("Arsenal Fc" → "Arsenal FC"), xem <see cref="ClubNames"/>.</summary>
+async Task FixClubNamesAsync(bool dry)
+{
+    await using var db = Db();
+    var n = 0;
+    foreach (var c in await db.Clubs.ToListAsync())
+    {
+        var p = ClubNames.Pretty(c.Name);
+        if (p == c.Name) continue;
+        if (n++ < 15) Console.WriteLine($"  {c.Name} → {p}");
+        c.Name = p;
+    }
+    if (!dry) await db.SaveChangesAsync();
+    Console.WriteLine($"{n} tên CLB {(dry ? "sẽ đổi (chạy thử)" : "đã đổi")}");
+}
+
 /// <summary>PO 18/11: giao CLB cho tài khoản người chơi (admin không cầm CLB). CLB đang do admin cầm (ParticipantId null) → trả admin về không cầm trước.</summary>
+/// <summary>Đặt mật khẩu tài khoản HLV (PO 18/11: test1/test2 = 123). Không in mật khẩu.</summary>
+async Task SetPasswordAsync(string username, string password)
+{
+    await using var db = Db();
+    var m = await db.Managers.SingleAsync(x => x.Username == username);
+    m.PasswordHash = ManagerService.Hash(password);
+    await db.SaveChangesAsync();
+    Console.WriteLine($"Đã đặt mật khẩu cho {username}");
+}
+
 async Task AssignClubAsync(string username, int pesClub)
 {
     await using var db = Db();

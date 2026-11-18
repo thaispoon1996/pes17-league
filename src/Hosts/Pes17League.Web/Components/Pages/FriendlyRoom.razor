@@ -124,7 +124,7 @@ var myHome = m.HomeManagerId == me;
             @if (link is null) { <button class="h-cta ghost" disabled><span class="ms">hourglass_top</span> Máy đang chuẩn bị trận — nút Vào máy mở khi trận bắt đầu tải</button> }
             else { <a class="h-cta" data-stream href="@link" target="_blank" rel="noopener"><span class="ms">rocket_launch</span> Vào máy — @(myHome ? "P1 đội nhà" : "P2 đội khách")</a> }
             <p class="fr-hint"><span class="ms">lightbulb</span> Máy tự mở game và chọn đội, bạn không cần làm gì. Nút Vào máy hiện khi trận bắt đầu tải — bấm ngay; vào sân là đá — đội nhà <b>@(Team(true) ?? "")</b> giao bóng trước. Đội nhà vào máy trước thì hình mới chạy.</p>
-            <p class="fr-hint">⚠️ Đứng 5 phút không ai bấm (chưa giao bóng hoặc tạm dừng) thì bên không thao tác bị xử thua 0-3; giới hạn 45 phút tính từ giao bóng.</p>
+            <p class="fr-hint"><span class="ms ic" aria-hidden="true">warning</span>Đứng 5 phút không ai bấm (chưa giao bóng hoặc tạm dừng) thì bên không thao tác bị xử thua 0-3; giới hạn 45 phút tính từ giao bóng.</p>
             <section class="h-card">
                 <div class="h-sec"><h2><span class="ms">support</span> Gặp sự cố?</h2></div>
                 <p class="fr-hint">Màn đen, đứng hình hoặc không nhận tay cầm: bấm thử kết nối lại (mở lại link chơi), tay cầm thì bấm 1 nút bất kỳ.</p>

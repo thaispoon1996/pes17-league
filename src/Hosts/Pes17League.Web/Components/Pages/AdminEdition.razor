@@ -46,7 +46,7 @@
             @if (!cup) { <label><input type="checkbox" @bind="anyCountry" /> Mọi nước</label> }
             <button class="primary" disabled="@(pick == "")" @onclick="Add">Thêm</button>
         </div>
-        <p class="muted">CLB đang hoạt động của mùa @season.Name, chưa dự @(cup ? "cúp" : "giải quốc gia") nào khác mùa này@(cup ? "" : $"; mặc định chỉ CLB nước {comp.Country}").</p>
+        <p class="muted">CLB đang hoạt động của @Fmt.Season(season.Name).ToLowerInvariant(), chưa dự @(cup ? "cúp" : "giải quốc gia") nào khác mùa này@(cup ? "" : $"; mặc định chỉ CLB nước {comp.Country}").</p>
     </div>
 }
 

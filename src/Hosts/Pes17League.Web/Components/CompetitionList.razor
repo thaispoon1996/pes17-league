@@ -12,7 +12,7 @@
                 @if (top is { } c)
                 {
                     <span class="who" title="@(s.Champion is null ? "Đầu bảng" : "Vô địch")">
-                        @if (s.Champion is not null) { <span>🏆</span> }
+                        @if (s.Champion is not null) { <span><span class="ms ic" aria-hidden="true">trophy</span></span> }
                         <Crest Name="@Season.Clubs[c]" Logo="@Season.Logo(c)" /><span class="n">@Season.Clubs[c]</span>
                         @if (s.Champion is null && s.Leader is { } l) { <b>@(l.Won * 3 + l.Drawn)</b> }
                     </span>

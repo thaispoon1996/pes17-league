@@ -79,6 +79,7 @@
         await using var db = await Dbs.CreateDbContextAsync();
         try { slots = [.. await new ClubAdminService(db, Clock, Store).SpareSlotsAsync()]; }
         catch (AdminRuleException e) { msg = e.Message; return; }
+        catch (InvalidDataException) { msg = "Tạo CLB mới (lấy ô trống trong option file PES 6) chưa hỗ trợ dữ liệu PES 17."; return; }   // UI 18/11: trước đây lỗi 500
         countries = await db.Clubs.Where(c => c.Country != null).Select(c => c.Country!).Distinct().OrderBy(c => c).ToListAsync();
     }
 

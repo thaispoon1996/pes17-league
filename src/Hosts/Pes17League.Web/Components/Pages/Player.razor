@@ -42,9 +42,9 @@
                 <span>@ContractLine()</span>
             </div>
             <div>
-                <small>Mùa @season.Name</small>
+                <small>@Fmt.Season(season.Name)</small>
                 <b class="big">@p.Games.Count trận · @goals bàn</b>
-                <span>Điểm TB @(rated.Count == 0 ? "–" : rated.Average(g => g.Line.Rating!.Value).ToString("0.00")) · ⭐ @p.Games.Count(g => g.Motm)</span>
+                <span>Điểm TB @(rated.Count == 0 ? "–" : rated.Average(g => g.Line.Rating!.Value).ToString("0.00")) · <span class="ms ic" aria-hidden="true" title="Xuất sắc nhất trận">star</span>@p.Games.Count(g => g.Motm)</span>
             </div>
             <div>
                 <small>Vai trò</small>

@@ -214,8 +214,9 @@ public sealed class PlayerAdminService(ClubsDbContext db, TimeProvider clock)
     public async Task<int> FreeSlotsAsync(CancellationToken ct = default)
     {
         var season = await OpenSeasonAsync(ct);
-        return OptionFileImage.EditCount - await db.PlayerPesMappings
-            .CountAsync(m => m.PatchVersionId == season.PatchVersionId && m.PesPlayerId >= OptionFileImage.FirstEditId, ct);
+        // PES17 (UI 18/11): ID cầu thủ thật cũng ≥ FirstEditId → phép trừ ra số âm; không còn ô an toàn để tạo
+        return Math.Max(0, OptionFileImage.EditCount - await db.PlayerPesMappings
+            .CountAsync(m => m.PatchVersionId == season.PatchVersionId && m.PesPlayerId >= OptionFileImage.FirstEditId, ct));
     }
 
     /// <summary>
@@ -255,6 +256,7 @@ public sealed class PlayerAdminService(ClubsDbContext db, TimeProvider clock)
             else if (Range(f) is var (min, max) && (v < min || v > max)) e.Add($"{f.Name} {min}–{max}");
         e.AddRange(values.Keys.Where(k => PlayerField.Verified.All(f => f.Name != k)).Select(k => $"Không có chỉ số {k}"));
         if (e.Count > 0) throw new AdminRuleException(string.Join("; ", e));
+        if (await FreeSlotsAsync(ct) == 0) throw new AdminRuleException("Hết ô tạo cầu thủ (patch PES 17: ô PES trùng cầu thủ thật, chưa hỗ trợ tạo mới)");
         var used = (await db.PlayerPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && m.PesPlayerId >= OptionFileImage.FirstEditId)
             .Select(m => m.PesPlayerId).ToListAsync(ct)).ToHashSet();
         var slot = Enumerable.Range(OptionFileImage.FirstEditId, OptionFileImage.EditCount).FirstOrDefault(i => !used.Contains(i));

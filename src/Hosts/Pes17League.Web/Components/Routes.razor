@@ -3,4 +3,9 @@
         @* PO 16/11: trang quản trị (Admin*.razor, Ẩn/hiện) dùng khu riêng AdminLayout *@
         <RouteView RouteData="routeData" DefaultLayout="@(routeData.PageType.Name.StartsWith("Admin") || routeData.PageType == typeof(Pages.Visibility) ? typeof(AdminLayout) : typeof(MainLayout))" />
     </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(MainLayout)">
+            <section class="panel"><h1>Không tìm thấy trang</h1><p class="muted">Đường dẫn sai hoặc trang đã bị gỡ.</p><p><a class="btn primary" href="">Về trang chủ</a></p></section>
+        </LayoutView>
+    </NotFound>
 </Router>

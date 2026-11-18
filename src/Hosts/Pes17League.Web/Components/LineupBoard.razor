@@ -23,7 +23,7 @@
     <div class="tactics-bar">
         <label>Sơ đồ
             <select value="@(formation ?? "")" disabled="@Locked" @onchange="SetFormation">
-                <option value="">Theo patch@(patchName is null ? "" : $" ({patchName})")</option>
+                <option value="">@(patchLayout is null ? "Theo game (sơ đồ gốc CLB)" : "Theo patch" + (patchName is null ? "" : $" ({patchName})"))</option>
                 @foreach (var n in Formations.Names) { <option value="@n">@n</option> }
             </select>
         </label>

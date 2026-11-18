@@ -12,7 +12,7 @@
   --live: #ff4d5e; --error: #ffb4ab;
   /* map sang biến cũ của app.css */
   --bg: #0f131d; --card: var(--s); --card-2: var(--s-high); --line: #2c303b; --text: var(--on-s); --muted: #9ba7b5;
-  --brand: var(--s-lowest); --brand-2: var(--primary-dim); --accent: var(--primary); --accent-2: var(--secondary);
+  --brand: var(--s-lowest); --brand-2: var(--primary-dim); --accent: var(--primary); --on-accent: var(--on-primary); --accent-2: var(--secondary);
   --hot: var(--live); --win: var(--primary-dim); --warn: var(--secondary); --danger: #e5484d;
   --mine: rgba(0, 255, 135, .08); --gold-soft: rgba(255, 185, 95, .14);
   --radius: 12px; --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.28);
@@ -371,3 +371,22 @@ button.h-cta:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
 .fr-goals .away b { color: var(--secondary); }
 .fr-goals i { font: 800 15px/1 var(--f-display); font-style: normal; padding: 6px 8px; border-radius: 6px; background: var(--s-high); white-space: nowrap; }
 @media (max-width: 380px) { .fr-av.lg { width: 56px; height: 56px; font-size: 22px; } .fr-vs__p b { font-size: 17px; } .fr .score { font-size: 42px; } }
+
+/* Trang đăng nhập / đăng ký / 404 theo theme xanh (UI 18/11) */
+body.auth { background: radial-gradient(900px 520px at 15% -10%, rgba(0, 255, 135, .13) 0%, transparent 60%), radial-gradient(800px 480px at 110% 110%, rgba(0, 228, 120, .08) 0%, transparent 55%), var(--bg); }
+.auth-brand { font-family: var(--f-display); text-transform: uppercase; letter-spacing: .02em; }
+body.auth .login { background: var(--s); border: 1px solid var(--line); }
+body.auth .login label { color: var(--on-s-var); }
+body.auth .login .err { color: var(--error); background: rgba(255, 77, 94, .12); }
+body.auth .nf { text-align: center; align-items: center; }
+body.auth .nf .nf-code { font-family: var(--f-display); font-size: 72px; line-height: 1; color: var(--primary); }
+body.auth .nf .btn { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; padding: 0 22px; text-decoration: none; }
+
+/* Icon Material thay emoji (UI 18/11: emoji hiện ô vuông trên máy thiếu font, lệch phong cách) */
+.ms.ic { font-size: 1.2em; vertical-align: -.22em; margin-right: .32em; }
+.m-icon .ms.ic { font-size: 24px; margin: 0; vertical-align: middle; }
+td .ms.ic { color: var(--primary); }
+.warn .ms.ic { color: var(--warn); }
+.m-menu > summary span { background: var(--on-s); }   /* nút ☰ điện thoại: trước dùng --card trùng nền tối → vô hình */
+.m-menu__who .ms.ic { display: inline-block; padding: 0; font-weight: normal; }
+.ticker-head, .ticker-head small { color: var(--on-accent); } .ticker-head small { opacity: .8; }

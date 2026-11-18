@@ -14,7 +14,6 @@
 
 @* Trang chủ theo thiết kế Stitch (PO ok 17/11): 3 bản — khách (giới thiệu + đăng ký), HLV có CLB (trận của tôi + vị trí),
    chung (có tài khoản chưa có CLB / Ban tổ chức). Dữ liệu thật; tên/số trong ảnh thiết kế chỉ là mẫu. Nút vào trận giữ luồng cũ. *@
-<PageTitle>PES 17 League</PageTitle>
 <div class="bg-stadium" aria-hidden="true"><i></i><i></i><i></i></div>
 
 @if (season is null)
@@ -199,7 +198,7 @@
                                 <FixtureCard Season="season" F="x">
                                     @if (mine && CanPlay(x))
                                     {
-                                        <a class="btn primary wide" href="chuan-bi/@x.Id">🎮 Đá trận của tôi</a>
+                                        <a class="btn primary wide" href="chuan-bi/@x.Id"><span class="ms ic" aria-hidden="true">sports_esports</span>Đá trận của tôi</a>
                                     }
                                 </FixtureCard>
                             }
@@ -209,7 +208,7 @@
                         @if (!admin && myClub is not null) { <a class="btn" href="chuyen-nhuong">Chuyển nhượng</a> }
                         @if (admin && open && fixtures.Any(x => x.Status == FixtureStatus.Scheduled && !season.NeedsHuman(x)))
                         {
-                            <button disabled="@Jobs.Running" @onclick="() => Jobs.PlayBots(md.Id)">🤖 Đá các trận BOT</button>
+                            <button disabled="@Jobs.Running" @onclick="() => Jobs.PlayBots(md.Id)"><span class="ms ic" aria-hidden="true">smart_toy</span>Đá các trận BOT</button>
                         }
                         @if (admin && open && fixtures.Any(x => x.Status == FixtureStatus.Scheduled && season.NeedsHuman(x)))
                         {
@@ -232,10 +231,10 @@
                     {
                         <p>Còn @left.Matches trận BOT ≈ @Duration(left.Minutes), xong khoảng @Clock.GetLocalNow().AddMinutes(left.Minutes).ToString("HH:mm")</p>
                     }
-                    @if (Jobs.Running && Jobs.Title == "Trận của tôi") { <a class="btn primary wide" href="vao-tran">📺 Vào màn hình trận</a> }
-                    else if (Jobs.Running) { <a class="btn" href="truc-tiep">📺 Xem trực tiếp</a> }
+                    @if (Jobs.Running && Jobs.Title == "Trận của tôi") { <a class="btn primary wide" href="vao-tran"><span class="ms ic" aria-hidden="true">live_tv</span>Vào màn hình trận</a> }
+                    else if (Jobs.Running) { <a class="btn" href="truc-tiep"><span class="ms ic" aria-hidden="true">live_tv</span>Xem trực tiếp</a> }
                     <pre>@string.Join("\n", Jobs.Log.Reverse())</pre>
-                    @if (admin && Jobs.CanStopAfterCurrent) { <button title="Đá xong trận đang đá thì dừng, nhường máy cho trận của tôi" @onclick="Jobs.StopAfterCurrent">⏸ Dừng sau trận này</button> }
+                    @if (admin && Jobs.CanStopAfterCurrent) { <button title="Đá xong trận đang đá thì dừng, nhường máy cho trận của tôi" @onclick="Jobs.StopAfterCurrent"><span class="ms ic" aria-hidden="true">pause</span>Dừng sau trận này</button> }
                     @if (admin && Jobs.Running) { <button class="danger" title="Bỏ ngang ngay, kể cả trận đang đá" data-confirm="Bỏ ngang ngay, kể cả trận đang đá?" data-confirm-ok="Bỏ ngang" @onclick="Jobs.Cancel">Huỷ</button> }
                 </section>
             }

@@ -4,7 +4,10 @@
 @* Tổng kết 1 khung ngày (mọi giải): con số của vòng, cầu thủ xuất sắc, đội hình tiêu biểu 4-3-3 (điểm → bàn → sút trúng → sút → đá chính),
    kết quả bất ngờ (OVR trung bình đá chính của đội thắng thấp hơn đội thua ≥ 2), trận đậm nhất / nhiều bàn nhất, tin của vòng. *@
 @if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
-@if (season is not null && loaded && recap is null) { <p class="muted">Mùa này chưa có trận nào đá xong.</p> }
+@if (season is not null && loaded && recap is null)
+{
+    <section class="hero hero-recap"><a class="pill" href="mua" title="Các mùa">@season.Label</a><h1>Tổng kết vòng</h1><p>Mùa này chưa có trận nào đá xong. Tổng kết xuất hiện sau mỗi vòng.</p></section>
+}
 @if (season is not null && recap is { } r)
 {
     <section class="hero hero-recap">
@@ -50,7 +53,7 @@
                     }
                     @if (r.Upsets.Count == 0) { <li><span>Bất ngờ</span><em class="muted">Không có đội yếu hơn rõ (≥ 2 OVR) thắng.</em></li> }
                 </ul>
-                <p><a class="btn" href="@season.Url($"ban-thang?vong={r.Number}")">⚽ Bàn thắng của vòng</a></p>
+                <p><a class="btn" href="@season.Url($"ban-thang?vong={r.Number}")"><span class="ms ic" aria-hidden="true">sports_soccer</span>Bàn thắng của vòng</a></p>
             </section>
         </aside>
     </div>

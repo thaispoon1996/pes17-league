@@ -16,6 +16,11 @@ string Env(string name) => b.Configuration[name] ?? throw new InvalidOperationEx
 var cs = Env("PES17_DB");
 var storeDir = Env("PES17_STORE");
 var password = Env("PES17_WEB_PASSWORD");
+// Tài khoản quản trị phụ (PO 18/11): PES17_WEB_ADMINS="ten:matkhau;ten2:matkhau2" trong web.env — ngoài tài khoản admin chung
+var extraAdmins = (b.Configuration["PES17_WEB_ADMINS"] ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .Select(x => x.Split(':', 2)).Where(x => x.Length == 2 && x[0] != "")
+    .ToDictionary(x => x[0].ToLowerInvariant(), x => x[1]);
+static bool SameSecret(string a, string b) => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(a), System.Text.Encoding.UTF8.GetBytes(b));
 var authOff = b.Configuration["PES17_WEB_AUTH"] == "off";   // PO trải nghiệm thử: bỏ đăng nhập (chỉ nghe Tailscale + localhost)
 
 b.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -87,15 +92,15 @@ app.Use(async (ctx, next) =>
         ctx.Response.Redirect("/admin");   // PO 17/11: admin = Ban tổ chức, không quản lý CLB / đá / giao hữu
     else if (CurrentUser.PlayerOnly(ctx.Request.Path) && ctx.User.Identity?.IsAuthenticated != true)
         ctx.Response.Redirect("/login?ve=" + Uri.EscapeDataString(ctx.Request.Path + ctx.Request.QueryString));   // khách vào trang người chơi → đăng nhập
-    else if (authOff || ctx.User.Identity?.IsAuthenticated == true || ctx.Request.Path.StartsWithSegments("/login") || ctx.Request.Path.StartsWithSegments("/dang-ky") || ctx.Request.Path.Value is "/app.css" or "/manifest.webmanifest" || ctx.Request.Path.StartsWithSegments("/icon")) await next();
+    else if (authOff || ctx.User.Identity?.IsAuthenticated == true || ctx.Request.Path.StartsWithSegments("/login") || ctx.Request.Path.StartsWithSegments("/dang-ky") || ctx.Request.Path.Value is "/app.css" or "/theme.css" or "/manifest.webmanifest" || ctx.Request.Path.StartsWithSegments("/icon")) await next();
     else ctx.Response.Redirect("/login");
 });
 app.UseAntiforgery();
 
 const string LoginHtml = """
 <!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Đăng nhập · PES 17 League</title><link rel="stylesheet" href="/app.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet"><meta name="theme-color" content="#0b1f4b"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"></head>
-<body class="auth"><div class="bg-stadium" aria-hidden="true"><i></i><i></i><i></i></div><a class="auth-brand" href="/"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="#ffc531"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="#0b1f4b"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="#ffc531"/></svg><span>PES 17<b>League</b></span></a><form method="post" action="/login" class="login"><h1>Đăng nhập</h1><p class="auth-sub">Vào khu HLV để quản lý CLB và đá giải</p>{0}
+<title>Đăng nhập · PES 17 League</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/theme.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet"><meta name="theme-color" content="#0f131d"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/png" href="/icon-180.png"><link rel="apple-touch-icon" href="/icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"></head>
+<body class="auth"><div class="bg-stadium" aria-hidden="true"><i></i><i></i><i></i></div><a class="auth-brand" href="/"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--accent)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="var(--brand)"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--accent)"/></svg><span>PES 17<b>League</b></span></a><form method="post" action="/login" class="login"><h1>Đăng nhập</h1><p class="auth-sub">Vào khu HLV để quản lý CLB và đá giải</p>{0}
 <input type="hidden" name="ve" value="{1}"><label>Tài khoản<input name="username" placeholder="Tên đăng nhập (admin để trống)" autocomplete="username" autocapitalize="none"></label>
 <label>Mật khẩu<input type="password" name="password" placeholder="Mật khẩu" autocomplete="current-password" autofocus></label><button class="primary">Đăng nhập</button>
 <p class="login-alt">Chưa có tài khoản? <a href="/dang-ky">Đăng ký</a></p></form></body></html>
@@ -103,14 +108,20 @@ const string LoginHtml = """
 // Người chơi tự đăng ký bằng mã mời (PO 16/11). {0} = lỗi, {1}..{3} = giá trị đã nhập (mã, tên đăng nhập, tên hiển thị)
 const string SignupHtml = """
 <!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Đăng ký · PES 17 League</title><link rel="stylesheet" href="/app.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet"><meta name="theme-color" content="#0b1f4b"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png"></head>
-<body class="auth"><div class="bg-stadium" aria-hidden="true"><i></i><i></i><i></i></div><a class="auth-brand" href="/"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="#ffc531"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="#0b1f4b"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="#ffc531"/></svg><span>PES 17<b>League</b></span></a><form method="post" action="/dang-ky" class="login"><h1>Tạo tài khoản HLV</h1><p class="auth-sub">Đăng ký để nhận CLB và tham gia giải</p>{0}
+<title>Đăng ký · PES 17 League</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/theme.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet"><meta name="theme-color" content="#0f131d"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/png" href="/icon-180.png"><link rel="apple-touch-icon" href="/icon-180.png"></head>
+<body class="auth"><div class="bg-stadium" aria-hidden="true"><i></i><i></i><i></i></div><a class="auth-brand" href="/"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--accent)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="var(--brand)"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--accent)"/></svg><span>PES 17<b>League</b></span></a><form method="post" action="/dang-ky" class="login"><h1>Tạo tài khoản HLV</h1><p class="auth-sub">Đăng ký để nhận CLB và tham gia giải</p>{0}
 <label>Mã mời<input name="code" placeholder="Mã mời (không bắt buộc)" value="{1}" autocapitalize="characters"></label>
 <label>Tên đăng nhập<input name="username" placeholder="Tên đăng nhập (a-z, 0-9, . _ -)" value="{2}" autocomplete="username" autocapitalize="none" required></label>
 <label>Tên hiển thị<input name="displayName" placeholder="Tên hiển thị" value="{3}" required></label>
 <label>Mật khẩu<input type="password" name="password" placeholder="Mật khẩu (ít nhất 3 ký tự, vd 123)" autocomplete="new-password" required></label>
 <label>Nhập lại mật khẩu<input type="password" name="password2" placeholder="Nhập lại mật khẩu" autocomplete="new-password" required></label><button class="primary">Tạo tài khoản</button>
 <p class="login-alt">Đã có tài khoản? <a href="/login">Đăng nhập</a></p></form></body></html>
+""";
+const string NotFoundHtml = """
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Không tìm thấy trang · PES 17 League</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/theme.css"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet"><meta name="theme-color" content="#0f131d"></head>
+<body class="auth"><a class="auth-brand" href="/"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--accent)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="var(--brand)"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--accent)"/></svg><span>PES 17<b>League</b></span></a>
+<div class="login nf"><b class="nf-code">404</b><h1>Không tìm thấy trang</h1><p class="auth-sub">Đường dẫn sai hoặc trang đã bị gỡ.</p><a class="btn primary" href="/">Về trang chủ</a><p class="login-alt"><a href="/lich">Lịch thi đấu</a> · <a href="/bxh">Bảng xếp hạng</a> · <a href="/tim-kiem">Tìm kiếm</a></p></div></body></html>
 """;
 // Tắt đăng nhập (PO thử): khách chỉ xem (16/11: không còn là admin); admin/HLV đăng nhập ở /login
 app.MapGet("/login", (string? ve) => Results.Content(string.Format(LoginHtml, "", System.Net.WebUtility.HtmlEncode(ve ?? "")), "text/html; charset=utf-8"));
@@ -125,6 +136,12 @@ app.MapPost("/login", async (HttpContext ctx, IDbContextFactory<ClubsDbContext> 
                 System.Text.Encoding.UTF8.GetBytes(form["password"].ToString()), System.Text.Encoding.UTF8.GetBytes(password)))
             return Results.Content(string.Format(LoginHtml, "<p class=err>Sai mật khẩu</p>", System.Net.WebUtility.HtmlEncode(form["ve"].ToString())), "text/html; charset=utf-8");
         claims = [new(ClaimTypes.Name, "admin"), new(ClaimTypes.Role, CurrentUser.AdminRole)];
+    }
+    else if (extraAdmins.TryGetValue(user.ToLowerInvariant(), out var adminPass))
+    {
+        if (!SameSecret(form["password"].ToString(), adminPass))
+            return Results.Content(string.Format(LoginHtml, "<p class=err>Sai mật khẩu</p>", System.Net.WebUtility.HtmlEncode(form["ve"].ToString())), "text/html; charset=utf-8");
+        claims = [new(ClaimTypes.Name, user.ToLowerInvariant()), new(ClaimTypes.Role, CurrentUser.AdminRole)];
     }
     else
     {
@@ -153,6 +170,7 @@ app.MapPost("/dang-ky", async (HttpContext ctx, IDbContextFactory<ClubsDbContext
     var tries = signupTries.GetOrAdd(ip, _ => []);
     lock (tries) { tries.RemoveAll(t => t < now.AddHours(-1)); if (tries.Count >= 10) return Page("Thử quá nhiều lần, chờ 1 giờ rồi thử lại"); tries.Add(now); }
     if (F("password") != F("password2")) return Page("Hai mật khẩu không khớp");
+    if (F("username").Trim().ToLowerInvariant() is var un && (un == "admin" || extraAdmins.ContainsKey(un))) return Page("Tên đăng nhập này đã có người dùng");
     Pes17League.Clubs.Domain.Manager m;
     try
     {
@@ -186,4 +204,6 @@ app.MapGet(LiveStore.RequestPath + "/{file}", (string file, LiveStore l, HttpCon
     return Results.File(path, playlist ? "application/vnd.apple.mpegurl" : "video/mp2t");
 });
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+// Đường dẫn không tồn tại (UI 18/11): trang 404 tiếng Việt thay vì trang trắng của trình duyệt
+app.MapFallback(() => Results.Content(NotFoundHtml, "text/html; charset=utf-8", statusCode: 404));
 app.Run();

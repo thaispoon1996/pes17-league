@@ -7,7 +7,7 @@
 @* Xem trực tiếp (PO 07/11): hình + tiếng trận đang đá (HLS từ bản ghi hình, chậm ~10 s; tự phát tắt tiếng), nhiều người xem cùng lúc, chỉ xem — không gửi phím vào game.
    Không hiện tỷ số/diễn biến riêng: sự kiện tới trước hình ~10 s → lộ bàn thắng. Trận xong → link trang trận. *@
 <section class="hero">
-    <span class="pill">📺 Trực tiếp</span>
+    <span class="pill"><span class="ms ic" aria-hidden="true">live_tv</span>Trực tiếp</span>
     <h1>@(cur is null ? "Chưa có trận đang đá" : OnAir ? "Đang đá" : "Sắp đá")</h1>
 </section>
 @if (cur is { } m)
@@ -43,7 +43,7 @@ else
         <p>Trận vừa xong: <b>@s.Clubs[f.Home] @f.HomeGoals – @f.AwayGoals @s.Clubs[f.Away]</b>
             @if (f.HomePenalties is { } ph) { <small>(pen @ph–@f.AwayPenalties)</small> }
         </p>
-        <a class="btn" href="tran/@f.Id">📊 Thống kê</a>
+        <a class="btn" href="tran/@f.Id"><span class="ms ic" aria-hidden="true">bar_chart</span>Thống kê</a>
     </section>
 }
 

@@ -7,16 +7,16 @@
     <span class="team away"><Crest Name="@Season.Clubs[F.Away]" Logo="@Season.Logo(F.Away)" /><span>@Season.Clubs[F.Away]</span></span>
     @if (F.Goals.Count > 0)
     {
-        <small class="goals">⚽ @string.Join(" · ", F.Goals.Select(x => $"{x.Scorer ?? Season.Clubs[x.ClubId]} {x.Minute}'"))</small>
+        <small class="goals"><span class="ms ic" aria-hidden="true">sports_soccer</span>@string.Join(" · ", F.Goals.Select(x => $"{x.Scorer ?? Season.Clubs[x.ClubId]} {x.Minute}'"))</small>
     }
     @if (F.Status == FixtureStatus.Played)
     {
-        <span class="wide hl"><a href="/tran/@F.Id">📊 Thống kê</a>
+        <span class="wide hl"><a href="/tran/@F.Id"><span class="ms ic" aria-hidden="true">bar_chart</span>Thống kê</a>
         </span>
     }
     else if (F.Status == FixtureStatus.Scheduled)
     {
-        <span class="wide hl"><a href="/tran/@F.Id">🔎 Nhận định</a></span>
+        <span class="wide hl"><a href="/tran/@F.Id"><span class="ms ic" aria-hidden="true">search</span>Nhận định</a></span>
     }
     @ChildContent
 </li>

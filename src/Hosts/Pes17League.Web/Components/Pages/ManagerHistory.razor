@@ -10,7 +10,7 @@
 @if (m is null) { <p>@(loaded ? "Không có HLV này." : "")</p> return; }
 <div class="fm">
     <header class="fm-head"><div class="fm-title"><h1>@m.DisplayName</h1><p>@(rows.Any(r => r.To is null) ? "HLV" : "Người chơi") · @@@m.Username · tham gia @m.CreatedAt.ToString("dd/MM/yyyy")@(m.Disabled ? " · đã khoá" : "")</p></div>
-        @if (canMail) { <a class="btn" href="thu?soan=1&den=@m.Id">✉ Gửi thư</a> }</header>
+        @if (canMail) { <a class="btn" href="thu?soan=1&den=@m.Id"><span class="ms ic" aria-hidden="true">mail</span>Gửi thư</a> }</header>
     <div class="table-wrap">
     <table class="table">
         <thead><tr><th class="left">CLB</th><th>Từ</th><th>Đến</th></tr></thead>

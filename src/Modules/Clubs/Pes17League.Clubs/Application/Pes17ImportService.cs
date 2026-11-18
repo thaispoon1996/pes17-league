@@ -107,7 +107,7 @@ public sealed class Pes17ImportService(ClubsDbContext db, IOptionFileStore store
         int squadPlayers = 0, shirtChanges = 0, clubCount = 0;
         foreach (var (teamId, squad) in squads.OrderBy(s => s.Key))
         {
-            var club = new Club { Name = clubTeams[teamId].Name };
+            var club = new Club { Name = ClubNames.Pretty(clubTeams[teamId].Name) };
             db.Clubs.Add(club);
             db.ClubPesMappings.Add(new ClubPesMapping { ClubId = club.Id, PatchVersionId = patch.Id, PesClubIndex = teamId });
             db.TeamAssignments.Add(new TeamAssignment { ClubId = club.Id, ControllerType = ControllerType.Bot, From = now });

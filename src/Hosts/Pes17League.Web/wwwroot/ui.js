@@ -142,3 +142,20 @@
     for (var i = 0; i < els.length; i++) els[i].textContent = fmt(+els[i].getAttribute('data-countdown') - Date.now());
   }, 1000);
 })();
+
+// Tiêu đề tab theo trang (UI 18/11): "<h1 của trang> · PES 17 League"; trang chủ giữ tên gốc. Blazor đổi nội dung không tải lại trang → theo dõi DOM.
+(() => {
+  const BASE = 'PES 17 League';
+  let q = 0;
+  const set = () => {
+    q = 0;
+    const h = location.pathname === '/' ? null : document.querySelector('h1');
+    let t = h ? h.textContent.replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+    const tab = t === 'Quản trị' && document.querySelector('.admin-nav a.active');   // khu quản trị: h1 chung → lấy mục đang mở
+    if (tab) t = `${tab.textContent.trim()} · Quản trị`;
+    const want = t && t !== BASE ? `${t} · ${BASE}` : BASE;
+    if (document.title !== want) document.title = want;
+  };
+  const kick = () => { if (!q) q = requestAnimationFrame(set); };
+  document.addEventListener('DOMContentLoaded', () => { set(); new MutationObserver(kick).observe(document.body, { childList: true, subtree: true, characterData: true }); });
+})();

@@ -37,7 +37,7 @@
             <div class="side"><Crest Name="@result.Away" Logo="@result.AwayLogo" Large="true" /><b>@result.Away</b></div>
             @if (result.Goals.Count > 0)
             {
-                <p class="goals">⚽ @string.Join(" · ", result.Goals)</p>
+                <p class="goals"><span class="ms ic" aria-hidden="true">sports_soccer</span>@string.Join(" · ", result.Goals)</p>
             }
         </section>
         <div class="grid">
@@ -93,7 +93,7 @@ else
             @if (Jobs.Running)
             {
                 <p class="muted">Tải xong sẽ tự chuyển sang màn hình game (xoay ngang điện thoại).</p>
-                <a class="btn wide" href="@Jobs.PlayLink" data-stream>📺 Mở màn hình game ngay</a>
+                <a class="btn wide" href="@Jobs.PlayLink" data-stream><span class="ms ic" aria-hidden="true">live_tv</span>Mở màn hình game ngay</a>
             }
             else
             {

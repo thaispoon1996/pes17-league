@@ -25,7 +25,7 @@
         @if (Draft)
         {
             <label>Mã bốc thăm <input type="number" min="1" style="width: 110px" @bind="seed" @bind:after="Preview" disabled="@busy" /></label>
-            <button disabled="@busy" @onclick="Redraw">🎲 Bốc lại</button>
+            <button disabled="@busy" @onclick="Redraw"><span class="ms ic" aria-hidden="true">casino</span>Bốc lại</button>
             @if (plan is { Written: false })
             {
                 <button class="primary" disabled="@busy" @onclick="Apply">Ghi lịch mùa</button>

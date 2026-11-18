@@ -11,16 +11,16 @@
             <nav>
                 <a href="">PES 17 League</a>
                 <a href="mua">Các mùa</a>
-                <a href="tim-kiem">🔍 Tìm kiếm</a>
+                <a href="tim-kiem"><span class="ms ic" aria-hidden="true">search</span>Tìm kiếm</a>
             </nav>
-            @if (admin) { <a class="to-admin" href="admin">⚙ Quản trị</a> }
+            @if (admin) { <a class="to-admin" href="admin"><span class="ms ic" aria-hidden="true">settings</span>Quản trị</a> }
             @if (guest)
             {
                 <a class="to-login" href="login">Đăng nhập</a> <a class="to-login" href="dang-ky">Đăng ký</a>
             }
             else
             {
-                <a class="to-mail" href="thu" title="Hòm thư">✉ Thư @if (unread > 0) { <span class="badge">@unread</span> }</a>
+                <a class="to-mail" href="thu" title="Hòm thư"><span class="ms ic" aria-hidden="true">mail</span>Thư @if (unread > 0) { <span class="badge">@unread</span> }</a>
                 <form method="post" action="/logout" data-enhance="false">@if (profile is not null) { <a class="who" href="@profile">@who</a> } else { <small class="who">@who</small> }<button class="link">Thoát</button></form>
             }
             @* PO 16/11: khách chỉ xem (không còn là admin khi tắt đăng nhập) → hiện link Đăng nhập; admin có lối vào khu quản trị riêng. *@
@@ -63,39 +63,39 @@
             </nav>
             @* Điện thoại (PO 17/11): đầu trang 1 tầng — thư + menu ☰ gom mọi mục ngoài thanh đáy. *@
             <div class="m-actions">
-                <a class="m-icon" href="tim-kiem" aria-label="Tìm kiếm">🔍</a>
-                @if (!guest) { <a class="m-icon" href="thu" aria-label="Hòm thư">✉️ @if (unread > 0) { <span class="badge">@unread</span> }</a> }
+                <a class="m-icon" href="tim-kiem" aria-label="Tìm kiếm"><span class="ms ic" aria-hidden="true">search</span></a>
+                @if (!guest) { <a class="m-icon" href="thu" aria-label="Hòm thư"><span class="ms ic" aria-hidden="true">mail</span>@if (unread > 0) { <span class="badge">@unread</span> }</a> }
                 <details class="m-menu">
                     <summary aria-label="Mở menu"><span></span><span></span><span></span></summary>
                     <div class="m-menu__panel">
                         @if (guest) { <div class="m-menu__auth"><a class="btn primary" href="login">Đăng nhập</a><a class="btn" href="dang-ky">Đăng ký</a></div> }
-                        else { <div class="m-menu__who">@if (profile is not null) { <a href="@profile">👤 @who</a> } else { <span>👤 @who</span> }</div> }
+                        else { <div class="m-menu__who">@if (profile is not null) { <a href="@profile"><span class="ms ic" aria-hidden="true">person</span>@who</a> } else { <span><span class="ms ic" aria-hidden="true">person</span>@who</span> }</div> }
                         <p>Giải đấu</p>
-                        @if (!guest) { <NavLink href="truc-tiep">🔴 Trực tiếp</NavLink><NavLink href="bxh">🏆 Bảng xếp hạng</NavLink> }
-                        <NavLink href="tin">📰 Tin tức</NavLink>
-                        <NavLink href="giai">🏟️ Giải đấu</NavLink>
-                        <NavLink href="thong-ke">📊 Thống kê</NavLink>
-                        <NavLink href="tong-ket">📝 Tổng kết vòng</NavLink>
-                        <NavLink href="ban-thang">⚽ Bàn thắng</NavLink>
-                        <NavLink href="vinh-danh">🏅 Vinh danh</NavLink>
-                        <NavLink href="mua">🗂️ Các mùa</NavLink>
-                        <NavLink href="thi-truong">💹 Thị trường</NavLink>
-                        <NavLink href="so-sanh">⚖️ So sánh cầu thủ</NavLink>
-                        <NavLink href="giao-huu">⚽ Giao hữu</NavLink>
+                        @if (!guest) { <NavLink href="truc-tiep"><span class="ms ic" aria-hidden="true">radio_button_checked</span>Trực tiếp</NavLink><NavLink href="bxh"><span class="ms ic" aria-hidden="true">trophy</span>Bảng xếp hạng</NavLink> }
+                        <NavLink href="tin"><span class="ms ic" aria-hidden="true">newspaper</span>Tin tức</NavLink>
+                        <NavLink href="giai"><span class="ms ic" aria-hidden="true">stadium</span>Giải đấu</NavLink>
+                        <NavLink href="thong-ke"><span class="ms ic" aria-hidden="true">bar_chart</span>Thống kê</NavLink>
+                        <NavLink href="tong-ket"><span class="ms ic" aria-hidden="true">edit_note</span>Tổng kết vòng</NavLink>
+                        <NavLink href="ban-thang"><span class="ms ic" aria-hidden="true">sports_soccer</span>Bàn thắng</NavLink>
+                        <NavLink href="vinh-danh"><span class="ms ic" aria-hidden="true">military_tech</span>Vinh danh</NavLink>
+                        <NavLink href="mua"><span class="ms ic" aria-hidden="true">folder_open</span>Các mùa</NavLink>
+                        <NavLink href="thi-truong"><span class="ms ic" aria-hidden="true">monitoring</span>Thị trường</NavLink>
+                        <NavLink href="so-sanh"><span class="ms ic" aria-hidden="true">balance</span>So sánh cầu thủ</NavLink>
+                        <NavLink href="giao-huu"><span class="ms ic" aria-hidden="true">sports_soccer</span>Giao hữu</NavLink>
                         @if (!guest)
                         {
                             <p>Của tôi</p>
-                            <NavLink href="thu">✉️ Hòm thư @if (unread > 0) { <span class="badge">@unread</span> }</NavLink>
+                            <NavLink href="thu"><span class="ms ic" aria-hidden="true">mail</span>Hòm thư @if (unread > 0) { <span class="badge">@unread</span> }</NavLink>
                             @if (player)
                             {
-                                @if (coach) { <NavLink href="chuyen-nhuong">🔁 Chuyển nhượng</NavLink> }
-                                <NavLink href="dieu-khien">🎮 Điều khiển</NavLink>
-                                <NavLink href="dang-ky-giai">✍️ Đăng ký đá giải</NavLink>
+                                @if (coach) { <NavLink href="chuyen-nhuong"><span class="ms ic" aria-hidden="true">swap_horiz</span>Chuyển nhượng</NavLink> }
+                                <NavLink href="dieu-khien"><span class="ms ic" aria-hidden="true">sports_esports</span>Điều khiển</NavLink>
+                                <NavLink href="dang-ky-giai"><span class="ms ic" aria-hidden="true">how_to_reg</span>Đăng ký đá giải</NavLink>
                             }
                         }
-                        <NavLink href="ky-luat">🟥 Thưởng &amp; kỷ luật</NavLink>
+                        <NavLink href="ky-luat"><span class="ms ic" aria-hidden="true">style</span>Thưởng &amp; kỷ luật</NavLink>
                         <NavLink href="vai-tro">ℹ️ Vai trò &amp; quyền</NavLink>
-                        @if (admin) { <a class="m-menu__admin" href="admin">⚙ Quản trị</a> }
+                        @if (admin) { <a class="m-menu__admin" href="admin"><span class="ms ic" aria-hidden="true">settings</span>Quản trị</a> }
                         @if (!guest) { <form method="post" action="/logout" data-enhance="false"><button class="link">Đăng xuất</button></form> }
                     </div>
                 </details>

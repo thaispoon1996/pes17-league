@@ -6,7 +6,7 @@
 @* Trang 1 giải trong mùa đang chạy (bước 7, PO chọn 06/11): BXH tô vùng theo luật + vua phá lưới, lịch & kết quả theo vòng, nhánh đấu (cúp). ?mua=N xem lại mùa cũ. *@
 @if (!loaded) { return; }
 @if (season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> return; }
-@if (edition is null) { <p>Giải này không đá trong mùa @season.Name. <a href="@season.Url("giai")">Các giải →</a></p> return; }
+@if (edition is null) { <p>Giải này không đá trong @Fmt.Season(season.Name).ToLowerInvariant(). <a href="@season.Url("giai")">Các giải →</a></p> return; }
 <section class="hero">
     <a class="pill" href="mua" title="Các mùa">@season.Label · @Fmt.Kind(edition)</a>
     <div class="hero-club">

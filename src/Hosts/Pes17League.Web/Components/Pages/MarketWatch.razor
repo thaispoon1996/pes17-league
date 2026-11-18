@@ -80,7 +80,7 @@
         <table class="table">
             <thead><tr><th>#</th><th class="left">CLB</th><th>Giá trị đội hình</th><th class="hide-sm">Cầu thủ</th><th>Quỹ lương/vòng</th><th class="hide-sm">Số dư</th></tr></thead>
             <tbody>
-                @foreach (var (c, i) in m.Clubs.Select((c, i) => (c, i)))
+                @foreach (var (c, i) in m.Clubs.Select((c, i) => (c, i)).Where(x => allClubs || x.i < ClubRows || x.c.ClubId == season.HumanClubId))
                 {
                     <tr class="@(c.ClubId == season.HumanClubId ? "mine" : "")">
                         <td>@(i + 1)</td>
@@ -93,10 +93,13 @@
                 }
             </tbody>
         </table>
+        @if (!allClubs && m.Clubs.Count > ClubRows) { <p class="more-row"><button class="btn" @onclick="() => allClubs = true">Xem tất cả @m.Clubs.Count CLB</button></p> }
     </section>
 }
 
 @code {
+    const int ClubRows = 20;   // UI 18/11: ~480 CLB làm trang dài ~90 nghìn px trên điện thoại → hiện 20, bấm để xem hết
+    bool allClubs;
     [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
 
     bool loaded;

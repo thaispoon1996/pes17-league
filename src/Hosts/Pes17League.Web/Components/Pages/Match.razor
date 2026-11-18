@@ -10,11 +10,12 @@
 @if (!loaded) { return; }
 @if (m is null) { <p>Không có trận này. <a href="lich">Lịch thi đấu →</a></p> return; }
 @{ var f = m.Fixture; var s = m.Season; var played = f.Status == FixtureStatus.Played; }
-<p class="crumbs"><a href="@s.Url($"lich?khung={f.Matchday}")">← @s.Label · vòng @f.Matchday</a></p>
+<p class="crumbs"><a href="@s.Url($"lich?khung={f.Matchday}")">← Lịch @s.Label.ToLowerInvariant() · vòng @f.Matchday</a></p>
 <section class="scoreboard mc @Insight.Tone(m.Edition)">
+    <h1 class="sr-only">@s.Clubs[f.Home] – @s.Clubs[f.Away]</h1>
     <p class="match-meta">
         @if (m.Edition is { } ed) { <a href="@s.Url($"giai/{ed.CompetitionId}")">@ed.Name</a><text> · </text> }
-        @m.Round · vòng @f.Matchday@(m.PlayedAt is { } at ? $" · {at.ToLocalTime():dd/MM/yyyy HH:mm}" : "")
+        @m.Round@(m.PlayedAt is { } at ? $" · {at.ToLocalTime():dd/MM/yyyy HH:mm}" : "")
     </p>
     @foreach (var club in new[] { f.Home, f.Away })
     {
@@ -31,13 +32,13 @@
                 <ul class="sc">
                     @foreach (var g in f.Goals.Where(g => g.ClubId == club))
                     {
-                        <li>⚽ @if (g.ScorerId is { } sid) { <a href="@s.Url($"cau-thu/{sid}")">@g.Scorer</a> } else { <span>Không rõ / phản lưới</span> } <small>@(g.Minute)'</small></li>
+                        <li><span class="ms ic" aria-hidden="true">sports_soccer</span>@if (g.ScorerId is { } sid) { <a href="@s.Url($"cau-thu/{sid}")">@g.Scorer</a> } else { <span>Không rõ / phản lưới</span> } <small>@(g.Minute)'</small></li>
                     }
                 </ul>
             }
         </div>
     }
-    @if (articleId is { } aid) { <p class="match-meta"><a class="btn" href="tin/@aid">📰 Bài tường thuật</a></p> }
+    @if (articleId is { } aid) { <p class="match-meta"><a class="btn" href="tin/@aid"><span class="ms ic" aria-hidden="true">newspaper</span>Bài tường thuật</a></p> }
 </section>
 
 @if (played && lines.Any(l => l.Starter))
@@ -48,7 +49,7 @@
             <h2>Đội hình ra sân</h2>
             @if (motm is not null)
             {
-                <a class="motm" href="@s.Url($"cau-thu/{motm.PlayerId}")">⭐ Xuất sắc nhất trận: <b>@motm.Name</b> <span class="rating hi">@motm.Rating?.ToString("0.0")</span></a>
+                <a class="motm" href="@s.Url($"cau-thu/{motm.PlayerId}")"><span class="ms ic" aria-hidden="true">star</span>Xuất sắc nhất trận: <b>@motm.Name</b> <span class="rating hi">@motm.Rating?.ToString("0.0")</span></a>
             }
         </div>
         <div class="mc-pitches">
