@@ -9,8 +9,9 @@ services:
     container_name: pes17-bench
     shm_size: "1gb"
     devices: ["/dev/dri:/dev/dri"]
-    cpuset: "4-11"
-    mem_limit: 6g
+    cpuset: "2-11"
+    mem_limit: 8g
+    memswap_limit: 8g   # 18/11: không cho game dùng swap (giật hình)
     ulimits:
       nofile: { soft: 65536, hard: 65536 }
     environment:
