@@ -7,6 +7,9 @@
 
 @* FM đợt 6 (PO 12/11 duyệt mặc định): thu chi theo vòng — vé, tài trợ, bản quyền TV, thưởng, bảo trì sân. Luật FinanceRules. *@
 @if (season is null) { return; }
+@* PO 17/11: chưa có CLB → chỉ hiện lời nhắc (không còn return giữa thẻ mở → lỗi render) *@
+@if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }
+@if (report is null) { return; }
 @{ var me = season.HumanClubId; }
 <div class="fm">
     <ManagerNav />
@@ -14,10 +17,9 @@
         @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
         <div class="fm-title">
             <h1>Tài chính</h1>
-            <p>@season.Name · thu chi ghi khi khoá vòng</p>
+            <p>@season.Name · thu chi ghi khi vòng đá xong</p>
         </div>
     </header>
-    @if (me == Guid.Empty || report is null) { <p class="msg">Bạn chưa có CLB.</p> return; }
     @if (message is not null) { <p class="msg">@message</p> }
     @{ var f = report.Finance; }
     <div class="fm-cards">
@@ -119,6 +121,6 @@
         LedgerReason.InitialBudget => "Ngân sách đầu mùa", LedgerReason.TransferIn => "Mua cầu thủ", LedgerReason.TransferOut => "Bán cầu thủ",
         LedgerReason.Adjustment => "Điều chỉnh", LedgerReason.Wage => "Lương", LedgerReason.LuxuryTax => "Thuế xa xỉ", LedgerReason.RenewalFee => "Phí gia hạn",
         LedgerReason.SellOn => "% bán lại", LedgerReason.Ticket => "Vé", LedgerReason.Sponsor => "Tài trợ", LedgerReason.TvRights => "Bản quyền TV",
-        LedgerReason.Prize => "Thưởng trận", LedgerReason.Facility => "Bảo trì sân", LedgerReason.Staff => "Nhân sự", LedgerReason.Upgrade => "Nâng cấp", _ => r.ToString(),
+        LedgerReason.Prize => "Thưởng trận", LedgerReason.Facility => "Bảo trì sân", LedgerReason.Staff => "Nhân sự", LedgerReason.Upgrade => "Nâng cấp", LedgerReason.FriendlyPrize => "Thưởng giao hữu", LedgerReason.Sanction => "Kỷ luật (BTC)", _ => r.ToString(),
     };
 }

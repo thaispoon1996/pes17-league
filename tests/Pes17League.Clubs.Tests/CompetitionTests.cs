@@ -67,7 +67,7 @@ public class CompetitionTests
         Assert.Equal(MatchdayStatus.WindowOpen, md1.Status);
         Assert.Equal(TransferWindowStatus.Open, (await db.TransferWindows.FindAsync(md1.TransferWindowId))!.Status);
         var f1 = await db.Fixtures.SingleAsync(f => f.MatchdayId == md1.Id);
-        Assert.Equal(CompetitionError.WrongMatchdayStatus, (await svc.StartFixtureAsync(f1.Id, "m1")).Error);   // chưa đóng CN
+        // PO 17/11 bỏ khoá vòng: vòng mở là đá được (không còn chặn "chưa đóng CN")
 
         var close = await svc.CloseTransferWindowAsync(md1.Id);
         Assert.True(close.Ok, string.Join("; ", close.Issues?.Select(i => i.Message) ?? []));

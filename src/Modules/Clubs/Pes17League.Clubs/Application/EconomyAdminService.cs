@@ -53,7 +53,8 @@ public sealed class EconomyAdminService(ClubsDbContext db, TimeProvider clock, P
         var prices = planned ? await StartPricesAsync(seasonId, ct)
             : await db.PlayerPrices.AsNoTracking().Where(p => p.SeasonId == seasonId).ToDictionaryAsync(p => p.PlayerId, p => p.Price, ct);
         // Như EconomyService.ComputeBudgetsAsync: mọi CLB Active, thứ tự theo Id (trùng giá trị squad → CLB đứng trước nhận phần dư).
-        var clubs = await db.Clubs.Where(c => c.Status == ClubStatus.Active).OrderBy(c => c.Id).Select(c => new { c.Id, c.Name }).ToListAsync(ct);
+        var only = await EconomyService.BudgetClubsAsync(db, seasonId, ct);
+        var clubs = await db.Clubs.Where(c => c.Status == ClubStatus.Active && (only == null || only.Contains(c.Id))).OrderBy(c => c.Id).Select(c => new { c.Id, c.Name }).ToListAsync(ct);
         var squads = await (from m in db.SquadMemberships join c in db.Clubs on m.ClubId equals c.Id
                             where m.LeftAt == null && c.Status == ClubStatus.Active select new { m.ClubId, m.PlayerId }).ToListAsync(ct);
         var value = squads.GroupBy(m => m.ClubId).ToDictionary(g => g.Key, g => g.Sum(m => prices.GetValueOrDefault(m.PlayerId)));

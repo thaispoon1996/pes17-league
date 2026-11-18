@@ -7,6 +7,7 @@
 
 @* FM đợt 9 (PO 12/11 duyệt mặc định): hộp thư việc cần làm, họp báo sau trận, nói chuyện cầu thủ, tâm trạng CĐV. Luật MediaRules. *@
 @if (season is null) { return; }
+@if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }   @* PO 17/11: chưa có CLB → chỉ lời nhắc, ẩn tab Quản lý *@
 @{ var me = season.HumanClubId; }
 <div class="fm">
     <ManagerNav />
@@ -14,10 +15,12 @@
         @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
         <div class="fm-title">
             <h1>Hộp thư</h1>
-            <p>@season.Name · việc cần làm trước khi khoá vòng</p>
+            <p>@season.Name · việc cần làm trước trận</p>
         </div>
     </header>
-    @if (me == Guid.Empty || desk is null) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (me == Guid.Empty || desk is null) { <p class="msg">Bạn chưa có CLB.</p> }
+    else
+    {
     @if (message is not null) { <p class="msg">@message</p> }
 
     <div class="fm-cards">
@@ -79,6 +82,7 @@
         <p class="fm-note">Mỗi cầu thủ 1 lần/vòng. Khen khi đá tốt (điểm ≥ 7), phê bình khi đá kém và cầu thủ còn tự tin, động viên khi tinh thần thấp.</p>
         <button class="primary" disabled="@(busy || talkPlayer == Guid.Empty)" @onclick="Talk">Nói chuyện</button>
     </section>
+    }
 </div>
 
 @code {

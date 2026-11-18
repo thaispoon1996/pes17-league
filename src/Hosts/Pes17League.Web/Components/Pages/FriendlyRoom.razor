@@ -1,0 +1,355 @@
+@page "/giao-huu/{Id:guid}"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject FriendlyHub Hub
+@inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject NavigationManager Nav
+@inject TimeProvider Clock
+@inject FriendlyMachineOptions Machine
+@inject StreamPass Pass
+
+@* Phòng trận giao hữu (PO 16/11): chọn đội (Tự do) / đội hình CLB (Xếp hạng), chat phòng, Sẵn sàng. Không chờ cố định: 2 bên
+   Sẵn sàng là vào máy; hạn chót 90 s (hết hạn tự Sẵn sàng). Xong trận: kết quả + "Đá lại". *@
+@if (m is null) { <p>@(loaded ? "Không có trận giao hữu này." : "")</p> }
+else
+{
+var ended = !m.IsOpen && m.Status is not FriendlyStatus.Invited;
+var myHome = m.HomeManagerId == me;
+<div class="fr">
+    <header class="fr-head">
+        <a class="fr-back" href="giao-huu" title="Về sảnh"><span class="ms">arrow_back</span></a>
+        <div>
+            <small class="fr-kicker"><span class="dot @(m.Status == FriendlyStatus.Playing ? "live" : "")"></span> Giao hữu @(m.Mode == FriendlyMode.Free ? "cá nhân" : "bằng CLB") · @StatusText()</small>
+            <h1>@(m.Status switch { FriendlyStatus.Queued or FriendlyStatus.Playing => "Đang vào trận", _ when ended => "Kết quả giao hữu", _ => "Phòng trận" })</h1>
+        </div>
+        <span class="fr-code">#@m.Id.ToString()[..6].ToUpperInvariant()</span>
+    </header>
+    @if (error is not null) { <p class="msg">@error</p> }
+
+    @if (m.Status == FriendlyStatus.Invited)
+    {
+        <section class="h-card"><p>Đang chờ @Name(m.AwayManagerId) nhận lời. <a href="giao-huu">Về sảnh</a></p></section>
+    }
+    else if (m.Status == FriendlyStatus.Picking)
+    {
+        <section class="h-card fr-match">
+            <div class="fr-vs">
+                @Side(true)
+                <div class="fr-vs__mid">
+                    <span class="ring" style="--p:@(Left() * 100 / (int)FriendlyRules.PickTime.TotalSeconds)">VS</span>
+                    <small>Còn @Left()s</small>
+                </div>
+                @Side(false)
+            </div>
+        </section>
+
+        @if (Mine)
+        {
+            <section class="h-card">
+                <div class="h-sec"><h2><span class="ms">sports_soccer</span> @(m.Mode == FriendlyMode.Free ? "Chọn đội bạn điều hành" : "Đội hình bạn điều hành")</h2></div>
+                @if (m.Mode == FriendlyMode.Free)
+                {
+                    <label class="fr-pick">
+                        <i class="fr-av">@Ini(Team(myHome) ?? "?")</i>
+                        <select value="@((myHome ? m.HomePesTeam : m.AwayPesTeam)?.ToString() ?? "")" @onchange="Pick" disabled="@MyReady">
+                            <option value="">— Chọn đội —</option>
+                            @foreach (var g in teams.GroupBy(t => t.Group))
+                            {
+                                <optgroup label="@g.Key">
+                                    @foreach (var t in g) { <option value="@t.Index">@t.Name</option> }
+                                </optgroup>
+                            }
+                        </select>
+                    </label>
+                    <p class="fr-hint"><span class="ms">info</span> Giao hữu cá nhân dùng đội hình gốc của patch; đội tuyển quốc gia sẽ mở sau. 2 người chọn trùng đội được.</p>
+                }
+                else if (season is not null && MyClub is { } club)
+                {
+                    <LineupBoard Season="season" ClubId="club" />
+                }
+            </section>
+
+            <div class="fr-readies">
+                @foreach (var home in new[] { true, false })
+                {
+                    var ready = home ? m.HomeReady : m.AwayReady;
+                    <div class="fr-ready @(ready ? "on" : "")">
+                        <span class="dot"></span>
+                        <span><small>@Name(home ? m.HomeManagerId : m.AwayManagerId) (@(home ? "P1" : "P2"))</small><b>@(ready ? "Đã sẵn sàng" : "Đang chọn đội…")</b></span>
+                        <span class="ms">@(ready ? "check_circle" : "sync")</span>
+                    </div>
+                }
+            </div>
+            @if (MyReady) { <button class="h-cta done" @onclick="() => Ready(false)"><span class="ms fill">verified</span> Đã sẵn sàng</button> }
+            else { <button class="h-cta" @onclick="() => Ready(true)"><span class="ms">check_circle</span> Sẵn sàng</button> }
+            <p class="h-note">2 bên Sẵn sàng là vào máy ngay. Hết giờ sẽ tự Sẵn sàng với lựa chọn hiện tại.@(MyReady ? " Bấm lại để bỏ sẵn sàng." : "")</p>
+
+            <section class="h-card">
+                <div class="h-sec"><h2><span class="ms">sports_esports</span> Thiết bị điều khiển</h2><a href="dieu-khien">Đổi nút →</a></div>
+                <div class="fr-devs">
+                    <a href="dieu-khien"><span class="ms">keyboard</span>Bàn phím</a>
+                    <a href="dieu-khien"><span class="ms">touch_app</span>Cảm ứng</a>
+                    <a href="dieu-khien"><span class="ms">stadia_controller</span>Tay cầm</a>
+                </div>
+                <p class="fr-hint">Dùng cái nào cũng được — tay cầm USB/Bluetooth: bấm 1 nút sau khi mở máy để nhận.</p>
+            </section>
+        }
+        else
+        {
+            <section class="h-card">@foreach (var home in new[] { true, false }) { <p><b>@Name(home ? m.HomeManagerId : m.AwayManagerId)</b>: @(Team(home) ?? "đang chọn") @((home ? m.HomeReady : m.AwayReady) ? "· ✅ sẵn sàng" : "")</p> }</section>
+        }
+    }
+    else if (m.Status is FriendlyStatus.Queued or FriendlyStatus.Playing)
+    {
+        <section class="h-card fr-match">
+            <div class="fr-vs">@Side(true)<div class="fr-vs__mid"><span class="ring">VS</span></div>@Side(false)</div>
+        </section>
+        <section class="h-card">
+            <div class="h-sec"><h2><span class="ms">account_tree</span> Quy trình mở máy</h2><span class="h-chip ok">Tiến trình @Math.Min(Step() + 1, Steps.Length)/@Steps.Length</span></div>
+            <ol class="fr-steps">
+                @for (var i = 0; i < Steps.Length; i++)
+                {
+                    var st = i < Step() ? "done" : i == Step() ? "now" : "";
+                    <li class="@st"><span class="ms">@(st == "done" ? "check" : st == "now" ? "sync" : "radio_button_unchecked")</span><span>@Steps[i]</span><small>@(st == "done" ? "Xong" : st == "now" ? "Đang làm" : "")</small></li>
+                }
+            </ol>
+        </section>
+        @if (Mine && Machine.PlayUrl.Length > 0)
+        {
+            var link = Pass.Link(m.Id, myHome);
+            @if (link is null) { <button class="h-cta ghost" disabled><span class="ms">hourglass_top</span> Máy đang chuẩn bị trận — nút Vào máy mở khi trận bắt đầu tải</button> }
+            else { <a class="h-cta" data-stream href="@link" target="_blank" rel="noopener"><span class="ms">rocket_launch</span> Vào máy — @(myHome ? "P1 đội nhà" : "P2 đội khách")</a> }
+            <p class="fr-hint"><span class="ms">lightbulb</span> Máy tự mở game và chọn đội, bạn không cần làm gì. Nút Vào máy hiện khi trận bắt đầu tải — bấm ngay; vào sân là đá — đội nhà <b>@(Team(true) ?? "")</b> giao bóng trước. Đội nhà vào máy trước thì hình mới chạy.</p>
+            <p class="fr-hint">⚠️ Đứng 5 phút không ai bấm (chưa giao bóng hoặc tạm dừng) thì bên không thao tác bị xử thua 0-3; giới hạn 45 phút tính từ giao bóng.</p>
+            <section class="h-card">
+                <div class="h-sec"><h2><span class="ms">support</span> Gặp sự cố?</h2></div>
+                <p class="fr-hint">Màn đen, đứng hình hoặc không nhận tay cầm: bấm thử kết nối lại (mở lại link chơi), tay cầm thì bấm 1 nút bất kỳ.</p>
+                @if (link is not null) { <a class="btn" href="@link" target="_blank" rel="noopener"><span class="ms">refresh</span> Thử kết nối lại</a> }
+                <a class="btn" href="dieu-khien"><span class="ms">tune</span> Điều khiển</a>
+            </section>
+        }
+    }
+    else
+    {
+        var mine = Mine && m.HomeGoals is not null && m.Status != FriendlyStatus.Voided;
+        var (gf, ga) = myHome ? (m.HomeGoals, m.AwayGoals) : (m.AwayGoals, m.HomeGoals);
+        <div class="fr-banner @(mine ? gf > ga ? "W" : gf < ga ? "L" : "D" : "")">
+            <span class="h-chip @(m.Status == FriendlyStatus.Played ? "ok" : "dim")">@(m.Status == FriendlyStatus.Played ? "Kết thúc" : StatusText())</span>
+            @if (mine) { <b><span class="ms">@(gf > ga ? "emoji_events" : gf < ga ? "sentiment_dissatisfied" : "handshake")</span> @(gf > ga ? (gf - ga == 1 ? "Chiến thắng kịch tính" : "Chiến thắng") : gf < ga ? "Thất bại" : "Hoà")</b> }
+        </div>
+        <section class="h-card fr-match">
+            <div class="fr-vs">
+                @Side(true, true)
+                <div class="fr-vs__mid"><span class="score">@(m.HomeGoals?.ToString() ?? "–")<em>:</em>@(m.AwayGoals?.ToString() ?? "–")</span>@if (Duration() is { } dur) { <small>@dur</small> }</div>
+                @Side(false, true)
+            </div>
+            @if (m.LastError is not null) { <p class="fr-hint">@m.LastError</p> }
+        </section>
+        @if (m.EloHomeDelta is not null)
+        {
+            <div class="fr-elos">
+                @foreach (var home in new[] { true, false })
+                {
+                    var d = home ? m.EloHomeDelta : m.EloAwayDelta;
+                    <div class="fr-elo @(d >= 0 ? "up" : "down")">
+                        <small>@Name(home ? m.HomeManagerId : m.AwayManagerId)</small>
+                        <span class="delta">@Signed(d) Elo <span class="ms">@(d >= 0 ? "trending_up" : "trending_down")</span></span>
+                        <b>@elos.GetValueOrDefault(home ? m.HomeManagerId : m.AwayManagerId).ToString("N0")</b><small>Elo hiện tại</small>
+                    </div>
+                }
+            </div>
+        }
+        @if (goals.Count > 0)
+        {
+            <section class="h-card">
+                <div class="h-sec"><h2><span class="ms">sports_soccer</span> Diễn biến bàn thắng</h2><small>@goals.Count bàn</small></div>
+                <div class="fr-goals">
+                    @{ int h = 0, a = 0; }
+                    @foreach (var g in goals)
+                    {
+                        if (g.Home) h++; else a++;
+                        <div class="@(g.Home ? "home" : "away")">
+                            <span>@if (g.Home) { <b>@Minute(g)'</b> @g.ScorerName }</span>
+                            <i>@h - @a</i>
+                            <span>@if (!g.Home) { @g.ScorerName <b>@Minute(g)'</b> }</span>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+        @if (Mine)
+        {
+            <button class="h-cta" @onclick="Rematch"><span class="ms">replay</span> Đá lại</button>
+            <div class="fr-2btn">
+                <button onclick="(navigator.share ? navigator.share({ title: document.title, url: location.href }) : navigator.clipboard.writeText(location.href).then(() => alert('Đã chép link trận')))"><span class="ms">share</span> Chia sẻ</button>
+                <a class="btn" href="giao-huu"><span class="ms">home</span> Về sảnh</a>
+            </div>
+        }
+    }
+
+    @if (Mine && m.Status is FriendlyStatus.Picking or FriendlyStatus.Queued)
+    {
+        <section class="h-card">
+            <div class="h-sec"><h2><span class="ms">chat</span> Hội thoại trận đấu</h2></div>
+            <FriendlyChat MatchId="m.Id" Me="me!.Value" Names="names" Quick="QuickChat" />
+        </section>
+    }
+    @if (Mine && m.Status is FriendlyStatus.Picking or FriendlyStatus.Queued)
+    {
+        <div class="fr-2btn">
+            <button class="danger-text" data-confirm="Huỷ trận giao hữu này?" data-confirm-ok="Huỷ trận" @onclick="Cancel"><span class="ms">close</span> Huỷ trận đấu</button>
+            <a class="btn" href="giao-huu"><span class="ms">meeting_room</span> Về sảnh chính</a>
+        </div>
+    }
+</div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    Guid? me;
+    string myName = "";
+    bool loaded;
+    FriendlyMatch? m;
+    SeasonInfo? season;
+    List<(int Index, string Name, string Group)> teams = [];
+    List<FriendlyGoal> goals = [];
+    Dictionary<Guid, string> names = [];
+    Dictionary<Guid, int> elos = [], tops = [];
+    static readonly string[] QuickChat = ["Chào HLV! 👋", "Chiến thôi! 🔥", "Đá đẹp nhé!", "Chờ mình chút", "GG!"];
+    static readonly string[] Steps = ["Đang chờ máy giao hữu", "Máy đang mở game PES", "Máy đang chọn đội", "Đang tải trận & mặt sân", "Đang đá — vào máy!"];
+    string? error;
+    Timer? tick;
+    int busy;
+
+    bool Mine => me is { } x && m!.Involves(x);
+    bool MyReady => m!.HomeManagerId == me ? m.HomeReady : m.AwayReady;
+    Guid? MyClub => m!.HomeManagerId == me ? m.HomeClubId : m.AwayClubId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync();
+        myName = await Me.NameAsync();
+        Hub.Changed += OnChanged;
+        await LoadAsync();
+        if (m?.Mode == FriendlyMode.Ranked) season = await Q.SeasonAsync();
+        tick = new Timer(_ => InvokeAsync(LoadAsync), null, 1000, 1000);
+        loaded = true;
+    }
+
+    async Task LoadAsync()
+    {
+        if (Interlocked.Exchange(ref busy, 1) == 1) return;
+        try
+        {
+            if (me is { } id) Hub.Touch(id, myName);
+            await using var db = await Dbs.CreateDbContextAsync();
+            m = await db.FriendlyMatches.AsNoTracking().SingleOrDefaultAsync(x => x.Id == Id);
+            if (m is null) return;
+            if (m.Mode == FriendlyMode.Free && teams.Count == 0) teams = await new FriendlyService(db, Clock).FreeTeamsAsync(Store);
+            if (!m.IsOpen && goals.Count == 0) goals = await db.FriendlyGoals.AsNoTracking().Where(g => g.MatchId == m.Id).OrderBy(g => g.Half).ThenBy(g => g.Minute).ToListAsync();
+            if (names.Count == 0 || (!m.IsOpen && m.EloHomeDelta is not null && elos.Count == 0))
+            {
+                var two = await db.Managers.AsNoTracking().Where(x => x.Id == m.HomeManagerId || x.Id == m.AwayManagerId).Select(x => new { x.Id, x.DisplayName, x.Elo }).ToListAsync();
+                names = two.ToDictionary(x => x.Id, x => x.DisplayName);
+                elos = two.ToDictionary(x => x.Id, x => x.Elo);
+                var total = Math.Max(1, await db.Managers.CountAsync());
+                foreach (var x in two) tops[x.Id] = Math.Max(1, (int)Math.Ceiling(100.0 * (await db.Managers.CountAsync(y => y.Elo > x.Elo) + 1) / total));
+            }
+            // bên kia bấm "Đá lại" → sang phòng mới
+            if (!m.IsOpen && me is { } my && await db.FriendlyMatches.AsNoTracking().Where(x => x.RematchOf == m.Id && x.Status == FriendlyStatus.Picking).Select(x => (Guid?)x.Id).FirstOrDefaultAsync() is { } next
+                && m.Involves(my)) { Nav.NavigateTo($"giao-huu/{next}"); return; }
+            StateHasChanged();
+        }
+        finally { busy = 0; }
+    }
+
+    async Task Do(Func<FriendlyService, Task> act)
+    {
+        error = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await act(new FriendlyService(db, Clock));
+            Hub.Notify();
+        }
+        catch (AdminRuleException e) { error = e.Message; }
+        await LoadAsync();
+    }
+
+    Task Pick(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var i) && teams.FirstOrDefault(t => t.Index == i) is { Name: not null } t
+        ? Do(s => s.PickTeamAsync(Id, me!.Value, t.Index, t.Name)) : Task.CompletedTask;
+    Task Ready(bool v) => Do(s => s.ReadyAsync(Id, me!.Value, v));
+    Task Cancel() => Do(s => s.CancelAsync(Id, me!.Value));
+    Task Rematch() => Do(async s => Nav.NavigateTo($"giao-huu/{(await s.RematchAsync(Id, me!.Value)).Id}"));
+
+    string Name(Guid id) => names.GetValueOrDefault(id, "?");
+    static string Ini(string? n)
+    {
+        var w = (n ?? "?").Split(' ', '_', '-', '.').Where(x => x.Length > 0).ToArray();
+        return (w.Length >= 2 ? $"{w[0][0]}{w[^1][0]}" : (n ?? "?").Length >= 2 ? (n ?? "?")[..2] : n ?? "?").ToUpperInvariant();
+    }
+    /// <summary>Bước đang chạy trong Quy trình mở máy (theo stage pesmatch báo về FriendlyHub).</summary>
+    int Step() => m!.Status == FriendlyStatus.Queued ? 0 : Hub.Stage(m.Id) switch
+    {
+        null or "boot" or "menu" => 1,
+        "teams" => 2,
+        "ready" or "loading" => 3,
+        _ => 4,
+    };
+    string? Duration() => m!.StartedAt is { } s && m.EndedAt is { } e && e > s ? $"{(int)(e - s).TotalMinutes}'{(e - s).Seconds:00}\" trận" : null;
+    static string Minute(FriendlyGoal g) => $"{g.Minute}";
+
+    RenderFragment Side(bool home, bool result = false) => __builder =>
+    {
+        var who = home ? m!.HomeManagerId : m!.AwayManagerId;
+        var team = Team(home);
+        <div class="fr-vs__p @(home ? "home" : "away")">
+            <small class="tag">@(home ? "P1 · Nhà" : "P2 · Khách")</small>
+            <i class="fr-av lg">@Ini(result ? team ?? Name(who) : Name(who))@if (who == me) { <em class="me">Bạn</em> }</i>
+            <b>@(result ? team ?? "?" : Name(who))</b>
+            @if (result) { <small>@Name(who)</small> }
+            else
+            {
+                <small>Elo @elos.GetValueOrDefault(who, FriendlyRules.StartElo).ToString("N0")@(tops.TryGetValue(who, out var t) ? $" · Top {t}%" : "")</small>
+                <span class="fr-team"><small>@(m.Mode == FriendlyMode.Free ? "Đội chọn" : "CLB")</small>@(team ?? "đang chọn…")</span>
+            }
+        </div>
+    };
+    string StageText() => Hub.Stage(m!.Id) switch
+    {
+        "boot" or "menu" => "Máy đang mở game…",
+        "teams" => "Máy đang chọn đội…",
+        "ready" or "loading" => "Đang tải trận…",
+        "kickoff" => "Đang đá — vào máy đi!",
+        _ => "Đang đá",
+    };
+    string? Team(bool home) => home ? m!.HomeTeamName : m!.AwayTeamName;
+    string Score() => m!.HomeGoals is { } h ? $"{h} – {m.AwayGoals}" : "–";
+    int Left() => Math.Max(0, (int)((m!.PickDeadline ?? Clock.GetUtcNow()) - Clock.GetUtcNow()).TotalSeconds);
+    static string Signed(int? d) => d is > 0 ? $"+{d}" : $"{d}";
+    string StatusText() => m!.Status switch
+    {
+        FriendlyStatus.Invited => "chờ nhận lời",
+        FriendlyStatus.Picking => "chọn đội",
+        FriendlyStatus.Queued => "chờ máy",
+        FriendlyStatus.Playing => "đang đá",
+        FriendlyStatus.Played => "đã đá xong",
+        FriendlyStatus.Abandoned => $"bỏ dở ({Name(m.AbandonedBy ?? Guid.Empty)} {(m.LastError == FriendlyService.AfkNote ? "bỏ trận (AFK)" : "rời trận")})",
+        FriendlyStatus.Voided => "huỷ (không tính)",
+        FriendlyStatus.Declined => "bị từ chối",
+        FriendlyStatus.Expired => "lời mời hết hạn",
+        _ => "đã huỷ",
+    };
+
+    void OnChanged() => InvokeAsync(LoadAsync);
+
+    public void Dispose()
+    {
+        Hub.Changed -= OnChanged;
+        tick?.Dispose();
+    }
+}

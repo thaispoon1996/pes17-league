@@ -530,6 +530,9 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.Property<bool>("AssistantPlays")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AwayAbsent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid>("AwayClubId")
                         .HasColumnType("uuid");
 
@@ -539,8 +542,14 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.Property<int?>("AwayPenalties")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("AwayReadyAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("CompetitionEditionId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("HomeAbsent")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("HomeClubId")
                         .HasColumnType("uuid");
@@ -550,6 +559,9 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
 
                     b.Property<int?>("HomePenalties")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("HomeReadyAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("Leg")
                         .HasColumnType("integer");
@@ -635,6 +647,172 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.HasIndex("OriginClubId");
 
                     b.ToTable("Players", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.FriendlyChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManagerId");
+
+                    b.HasIndex("MatchId", "At");
+
+                    b.ToTable("FriendlyChat", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.FriendlyGoal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Half")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Home")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Minute")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ScorerName")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<int?>("Slot")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MatchId");
+
+                    b.ToTable("FriendlyGoals", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.FriendlyMatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AbandonedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AwayClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("AwayGoals")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("AwayManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("AwayPesTeam")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("AwayReady")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AwayTeamName")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<bool>("Counts")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("EloAwayDelta")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EloHomeDelta")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("HomeClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("HomeGoals")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("HomeManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("HomePesTeam")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("HomeReady")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("HomeTeamName")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTimeOffset?>("PickDeadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RematchOf")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SeasonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AwayClubId");
+
+                    b.HasIndex("HomeClubId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("AwayManagerId", "CreatedAt");
+
+                    b.HasIndex("HomeManagerId", "CreatedAt");
+
+                    b.HasIndex("SeasonId", "Mode");
+
+                    b.ToTable("FriendlyMatches", "clubs");
                 });
 
             modelBuilder.Entity("Pes17League.Clubs.Domain.Goal", b =>
@@ -752,6 +930,202 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.ToTable("GoalVotes", "clubs");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.InviteCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("Revoked")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UsedByManagerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("UsedByManagerId");
+
+                    b.ToTable("InviteCodes", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.LeagueApplication", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("PreferredClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("PreferredClubId");
+
+                    b.HasIndex("ManagerId", "Status");
+
+                    b.ToTable("LeagueApplications", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MailBlock", b =>
+                {
+                    b.Property<Guid>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BlockedManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ManagerId", "BlockedManagerId");
+
+                    b.HasIndex("BlockedManagerId");
+
+                    b.ToTable("MailBlocks", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MailMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid?>("FixtureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("FromClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("FromManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("FromSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("SenderArchived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("Template")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromClubId");
+
+                    b.HasIndex("ThreadId");
+
+                    b.HasIndex("FromManagerId", "At");
+
+                    b.ToTable("MailMessages", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MailRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("MessageId");
+
+                    b.HasIndex("ManagerId", "ReadAt");
+
+                    b.ToTable("MailRecipients", "clubs");
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.Manager", b =>
                 {
                     b.Property<Guid>("Id")
@@ -769,6 +1143,11 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
 
+                    b.Property<int>("Elo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1000);
+
                     b.Property<DateTimeOffset?>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -776,6 +1155,9 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("SelfRegistered")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Username")
                         .IsRequired()
@@ -1150,6 +1532,46 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MatchmakingTicket", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Cancelled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Elo")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManagerId");
+
+                    b.HasIndex("MatchId");
+
+                    b.HasIndex("Mode", "ExpiresAt");
+
+                    b.ToTable("MatchmakingTickets", "clubs");
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.OptionFileBuild", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1475,6 +1897,72 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.ToTable("RoundSettlements", "clubs");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.Sanction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BannedFixtureIds")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("EditionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("RefFixtureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RevokeReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.HasIndex("EditionId");
+
+                    b.HasIndex("ManagerId");
+
+                    b.HasIndex("SeasonId");
+
+                    b.ToTable("Sanctions", "clubs");
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.ScoutReport", b =>
                 {
                     b.Property<Guid>("ClubId")
@@ -1555,6 +2043,16 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
 
                     b.Property<int>("DefaultContractMatches")
                         .HasColumnType("integer");
+
+                    b.Property<long>("FriendlyDrawPrize")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(12500L);
+
+                    b.Property<long>("FriendlyWinPrize")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(37500L);
 
                     b.Property<long>("InitialBudgetFund")
                         .HasColumnType("bigint");
@@ -1643,6 +2141,12 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("From")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("MissWarnedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MissedInRow")
+                        .HasColumnType("integer");
 
                     b.Property<Guid?>("ParticipantId")
                         .HasColumnType("uuid");
@@ -2041,6 +2545,59 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         .HasForeignKey("OriginClubId");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.FriendlyChatMessage", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Pes17League.Clubs.Domain.FriendlyMatch", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.FriendlyGoal", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.FriendlyMatch", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.FriendlyMatch", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("AwayClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("AwayManagerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("HomeClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("HomeManagerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pes17League.Clubs.Domain.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.Goal", b =>
                 {
                     b.HasOne("Pes17League.Clubs.Domain.Club", null)
@@ -2089,6 +2646,79 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.HasOne("Pes17League.Clubs.Domain.GoalPoll", null)
                         .WithMany()
                         .HasForeignKey("PollId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.InviteCode", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("UsedByManagerId");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.LeagueApplication", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("PreferredClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MailBlock", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("BlockedManagerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MailMessage", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("FromClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("FromManagerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MailRecipient", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Pes17League.Clubs.Domain.MailMessage", null)
+                        .WithMany()
+                        .HasForeignKey("MessageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -2196,6 +2826,20 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         .HasForeignKey("TransferWindowId");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.MatchmakingTicket", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Pes17League.Clubs.Domain.FriendlyMatch", null)
+                        .WithMany()
+                        .HasForeignKey("MatchId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.OptionFileBuild", b =>
                 {
                     b.HasOne("Pes17League.Clubs.Domain.PatchVersion", null)
@@ -2258,6 +2902,27 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.HasOne("Pes17League.Clubs.Domain.FootballPlayer", null)
                         .WithMany()
                         .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.Sanction", b =>
+                {
+                    b.HasOne("Pes17League.Clubs.Domain.Club", null)
+                        .WithMany()
+                        .HasForeignKey("ClubId");
+
+                    b.HasOne("Pes17League.Clubs.Domain.CompetitionEdition", null)
+                        .WithMany()
+                        .HasForeignKey("EditionId");
+
+                    b.HasOne("Pes17League.Clubs.Domain.Manager", null)
+                        .WithMany()
+                        .HasForeignKey("ManagerId");
+
+                    b.HasOne("Pes17League.Clubs.Domain.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

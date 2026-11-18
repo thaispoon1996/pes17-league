@@ -24,7 +24,7 @@ public class MatchOrchestratorTests
         }
     }
 
-    internal static async Task<(Guid Season, Guid Md1, Guid Human)> SetupAsync(TestDb t, int clubs, bool human)
+    internal static async Task<(Guid Season, Guid Md1, Guid Human)> SetupAsync(TestDb t, int clubs, bool human, bool lockRound = true)
     {
         await using var db = t.Context();
         var svc = new CompetitionService(db, t.Store, t.Clock);
@@ -34,7 +34,7 @@ public class MatchOrchestratorTests
         var arsenal = await db.ClubPesMappings.Where(m => m.PatchVersionId == import.PatchVersionId && m.PesClubIndex == 0).Select(m => m.ClubId).SingleAsync();
         Assert.True((await svc.StartSeasonAsync(season, import.PatchVersionId, human ? arsenal : null)).Ok);
         var md1 = await db.Matchdays.Where(m => m.SeasonId == season && m.Number == 1).Select(m => m.Id).SingleAsync();
-        Assert.True((await svc.CloseTransferWindowAsync(md1)).Ok);
+        if (lockRound) Assert.True((await svc.CloseTransferWindowAsync(md1)).Ok);
         return (season, md1, arsenal);
     }
 
@@ -186,7 +186,7 @@ public class MatchOrchestratorTests
 
         var goal = Assert.Single(highlights.Clips);
         Assert.EndsWith($"70' {a8Name} — Bàn thắng", goal.Caption);
-        Assert.Equal((raw.Goals[0].WallSeconds, 15.0, 5.0), (goal.VideoOffsetSec, goal.Pre, goal.Post));
+        Assert.Equal((raw.Goals[0].WallSeconds, 8.0, 3.0), (goal.VideoOffsetSec, goal.Pre, goal.Post));
         Assert.Contains("0–1", goal.Caption);
     }
 
@@ -295,6 +295,27 @@ public class MatchOrchestratorTests
         await using var db = t.Context();
         Assert.Equal(1, await db.RoundSettlements.CountAsync(s => s.MatchdayId == md1));
         Assert.Equal(MatchdayStatus.WindowOpen, (await db.Matchdays.SingleAsync(m => m.SeasonId == season && m.Number == 2)).Status);
+    }
+
+    /// <summary>PO 17/11 bỏ khoá vòng: vòng mở đá luôn, OF sinh riêng cho 2 đội lúc vào trận; vòng sau mở ngay, cùng 1 kỳ CN suốt mùa.</summary>
+    [DbFact]
+    public async Task Open_round_plays_without_lock_with_per_fixture_option_file()
+    {
+        await using var t = await TestDb.CreateAsync();
+        var (season, md1, _) = await SetupAsync(t, 4, human: false, lockRound: false);
+        var runner = new FakeRunner((_, _) => Task.FromResult(new MatchRunOutcome(true, 1, 0, [new(MatchSide.Home, 1, 10, 100)])));
+        var orch = new MatchOrchestrator(t.Context, t.Store, t.Clock, runner);
+        var r1 = await orch.PlayBotFixturesAsync(md1);
+        Assert.Equal(2, r1.Fixtures.Count(f => f.Played));
+        Assert.NotNull(r1.Settlement);
+        await using var db = t.Context();
+        Assert.Equal(2, await db.OptionFileBuilds.CountAsync(b => b.MatchdayId == md1 && b.Status == OptionFileBuildStatus.Built));   // mỗi trận 1 OF
+        var md2 = await db.Matchdays.SingleAsync(m => m.SeasonId == season && m.Number == 2);
+        Assert.Equal(MatchdayStatus.WindowOpen, md2.Status);
+        var w1 = (await db.Matchdays.SingleAsync(m => m.Id == md1)).TransferWindowId;
+        Assert.Equal(w1, md2.TransferWindowId);
+        Assert.Null((await db.Matchdays.SingleAsync(m => m.Id == md1)).OptionFileBuildId);
+        Assert.Equal(2, (await orch.PlayBotFixturesAsync(md2.Id)).Fixtures.Count(f => f.Played));
     }
 
     /// <summary>Ổ ghi hình còn dưới mức (PO uỷ quyền 06/11): 30 GB, mỗi trận tốn 6 GB, mức 20 GB → đá 2 trận rồi dừng, 2 trận giữ Scheduled.</summary>

@@ -216,6 +216,7 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
                 && f.Status == FixtureStatus.Played && f.HomeGoals != null && f.AwayGoals != null).ToListAsync(ct);
 
         var tables = new Dictionary<Guid, IReadOnlyList<StandingRow<Guid>>>();
+        var deducted = await SanctionService.DeductionsAsync(db, ct);   // trừ điểm kỷ luật tính vào lên/xuống hạng, suất châu lục
         var cups = new List<CupRecord>();
         foreach (var e in editions)
         {
@@ -226,14 +227,14 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
                 [.. played.Where(f => f.Stage == stage).Select(f => new PlayedFixture<Guid>(f.HomeClubId, f.AwayClubId, f.HomeGoals!.Value, f.AwayGoals!.Value))];
             if (comp.Type == CompetitionType.DomesticLeague)
             {
-                tables[comp.Id] = Standings.Compute(clubIds, Of(FixtureStage.League), id => names[id]);
+                tables[comp.Id] = Standings.Compute(clubIds, Of(FixtureStage.League), id => names[id], SanctionService.For(deducted, e.Id));
                 continue;
             }
             if (comp.Type == CompetitionType.DomesticCup) continue;   // cúp quốc gia không ảnh hưởng suất C1/C2 mùa sau
             var final = played.Where(f => f.Stage == FixtureStage.Final).ToList();
             if (final.Count != 1 || final[0].WinnerClubId() is not { } champion)     // hoà sau 120' → đội thắng loạt penalty (PO 06/11)
                 throw new AdminRuleException($"{comp.Name} {prev.Name}: chưa xác định được vô địch (cần đúng 1 trận chung kết có đội thắng; hoà thì cần tỷ số penalty)");
-            foreach (var row in Standings.Compute(clubIds, Of(FixtureStage.LeaguePhase), id => names[id]))
+            foreach (var row in Standings.Compute(clubIds, Of(FixtureStage.LeaguePhase), id => names[id], SanctionService.For(deducted, e.Id)))
             {
                 var stages = played.Where(f => f.HomeClubId == row.Club || f.AwayClubId == row.Club).Select(f => f.Stage).Where(s => s != FixtureStage.League).ToList();
                 var reached = row.Club == champion ? CupReach.Champion

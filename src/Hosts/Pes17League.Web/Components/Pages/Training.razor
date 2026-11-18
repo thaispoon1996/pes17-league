@@ -7,6 +7,7 @@
 
 @* FM đợt 4 (PO 12/11 duyệt mặc định): giáo án tập luyện CLB + tiềm năng ẩn (sao). Áp khi chốt vòng chia hết 5; luật TrainingRules. *@
 @if (season is null) { return; }
+@if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }   @* PO 17/11: chưa có CLB → chỉ lời nhắc, ẩn tab Quản lý *@
 @{ var me = season.HumanClubId; }
 <div class="fm">
     <ManagerNav />
@@ -17,7 +18,9 @@
             <p>@season.Name · tập luyện có hiệu lực ở các vòng 5, 10, 15… (khi khoá vòng) · thể lực/chấn thương mô phỏng mỗi vòng, BOT tự để cầu thủ chấn thương/mệt ra ngoài</p>
         </div>
     </header>
-    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> }
+    else
+    {
     @if (message is not null) { <p class="msg">@message</p> }
 
     <section class="offer-form">
@@ -69,6 +72,7 @@
             </tbody>
         </table>
     </section>
+    }
 </div>
 
 @code {

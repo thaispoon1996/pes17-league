@@ -81,10 +81,34 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
         {
             offer.Note = ((offer.Note ?? "") + " [kích hoạt phí giải phóng]").Trim();
             await db.SaveChangesAsync(ct);
-            return await CompleteAsync(offer.Id, ct);
+            return await CompleteAndMailAsync(offer, ct);
         }
         await db.SaveChangesAsync(ct);
+        await MailAsync(offer, toBuyer: false, "Đề nghị chuyển nhượng mới", "CLB {buyer} gửi đề nghị mua {player} với giá {fee}. Vào mục Đề nghị chuyển nhượng để trả lời.", ct);
         return new(offer.Id, Status: offer.Status);
+    }
+
+    /// <summary>Thư hệ thống (PO 17/11 hòm thư) tới HLV người của CLB mua/bán; CLB BOT thì bỏ qua. {buyer} {seller} {player} {fee} {counter}.</summary>
+    private async Task MailAsync(TransferOffer o, bool toBuyer, string subject, string body, CancellationToken ct)
+    {
+        var mail = new MailService(db, clock);
+        var to = await mail.ManagerOfClubAsync(toBuyer ? o.BuyerClubId : o.SellerClubId, ct);
+        if (to is null) return;
+        var clubs = await db.Clubs.Where(c => c.Id == o.BuyerClubId || c.Id == o.SellerClubId).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        var player = await db.Players.Where(p => p.Id == o.PlayerId).Select(p => p.Name).SingleOrDefaultAsync(ct) ?? "?";
+        string F(long v) => v.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("vi-VN"));
+        string Fill(string t) => t.Replace("{buyer}", clubs.GetValueOrDefault(o.BuyerClubId, "?")).Replace("{seller}", clubs.GetValueOrDefault(o.SellerClubId, "?"))
+            .Replace("{player}", player).Replace("{fee}", F(o.Fee)).Replace("{counter}", o.CounterFee is { } c ? F(c) : "");
+        await mail.SystemAsync(to, Fill(subject), Fill(body), o.PlayerId, ct: ct);
+    }
+
+    private async Task<OfferResult> CompleteAndMailAsync(TransferOffer o, CancellationToken ct)
+    {
+        var r = await CompleteAsync(o.Id, ct);
+        if (r.Error is null)
+            foreach (var buyer in new[] { true, false })
+                await MailAsync(o, buyer, "Hoàn tất chuyển nhượng {player}", "{player} chuyển từ {seller} sang {buyer}. Thương vụ đã hoàn tất.", ct);
+        return r;
     }
 
     /// <summary>CLB bán trả lời: chấp nhận (hoàn tất ngay), từ chối, hoặc trả giá <paramref name="counterFee"/>.</summary>
@@ -98,7 +122,7 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
         switch (reply)
         {
             case OfferReply.Accept:
-                return await CompleteAsync(o.Id, ct);
+                return await CompleteAndMailAsync(o, ct);
             case OfferReply.Reject:
                 o.Status = OfferStatus.Rejected;
                 break;
@@ -110,6 +134,8 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
                 break;
         }
         await db.SaveChangesAsync(ct);
+        if (o.Status == OfferStatus.Rejected) await MailAsync(o, toBuyer: true, "Đề nghị mua {player} bị từ chối", "CLB {seller} đã từ chối đề nghị mua {player} giá {fee}.", ct);
+        else await MailAsync(o, toBuyer: true, "{seller} trả giá {player}", "CLB {seller} trả giá {counter} cho {player} (bạn đề nghị {fee}). Vào mục Đề nghị chuyển nhượng để đồng ý hoặc rút.", ct);
         return new(o.Id, Status: o.Status);
     }
 
@@ -123,11 +149,12 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
         if (acceptCounter)
         {
             if (o.Status != OfferStatus.Countered) return new(o.Id, "CLB bán chưa trả giá.");
-            return await CompleteAsync(o.Id, ct);
+            return await CompleteAndMailAsync(o, ct);
         }
         o.Status = OfferStatus.Withdrawn;
         o.RespondedAt = clock.GetUtcNow();
         await db.SaveChangesAsync(ct);
+        await MailAsync(o, toBuyer: false, "{buyer} rút đề nghị mua {player}", "CLB {buyer} đã rút đề nghị mua {player}.", ct);
         return new(o.Id, Status: o.Status);
     }
 

@@ -20,6 +20,7 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
     public DbSet<Transfer> Transfers => Set<Transfer>();
     public DbSet<ClubLedgerEntry> Ledger => Set<ClubLedgerEntry>();
     public DbSet<PatchVersion> PatchVersions => Set<PatchVersion>();
+    public DbSet<LeagueApplication> LeagueApplications => Set<LeagueApplication>();
     public DbSet<ClubPesMapping> ClubPesMappings => Set<ClubPesMapping>();
     public DbSet<PlayerPesMapping> PlayerPesMappings => Set<PlayerPesMapping>();
     public DbSet<OptionFileBuild> OptionFileBuilds => Set<OptionFileBuild>();
@@ -40,6 +41,14 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
     public DbSet<GoalPoll> GoalPolls => Set<GoalPoll>();
     public DbSet<GoalVote> GoalVotes => Set<GoalVote>();
     public DbSet<Manager> Managers => Set<Manager>();
+    public DbSet<InviteCode> InviteCodes => Set<InviteCode>();
+    public DbSet<FriendlyMatch> FriendlyMatches => Set<FriendlyMatch>();
+    public DbSet<FriendlyGoal> FriendlyGoals => Set<FriendlyGoal>();
+    public DbSet<MatchmakingTicket> MatchmakingTickets => Set<MatchmakingTicket>();
+    public DbSet<FriendlyChatMessage> FriendlyChat => Set<FriendlyChatMessage>();
+    public DbSet<MailMessage> MailMessages => Set<MailMessage>();
+    public DbSet<MailRecipient> MailRecipients => Set<MailRecipient>();
+    public DbSet<MailBlock> MailBlocks => Set<MailBlock>();
     public DbSet<TransferOffer> TransferOffers => Set<TransferOffer>();
     public DbSet<ClubTraining> ClubTrainings => Set<ClubTraining>();
     public DbSet<ClubFinance> ClubFinances => Set<ClubFinance>();
@@ -57,6 +66,7 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
     public DbSet<CompetitionEdition> Editions => Set<CompetitionEdition>();
     public DbSet<EditionClub> EditionClubs => Set<EditionClub>();
     public DbSet<AdminAuditEntry> AdminAudit => Set<AdminAuditEntry>();
+    public DbSet<Sanction> Sanctions => Set<Sanction>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -248,6 +258,8 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
         b.Entity<SeasonEconomy>(e =>
         {
             e.HasKey(x => x.SeasonId);
+            e.Property(x => x.FriendlyWinPrize).HasDefaultValue(FriendlyRules.DefaultWinPrize);
+            e.Property(x => x.FriendlyDrawPrize).HasDefaultValue(FriendlyRules.DefaultDrawPrize);
             e.ToTable(t =>
             {
                 t.HasCheckConstraint("CK_SeasonEconomy_SoftWageCap", "\"SoftWageCap\" >= 0");
@@ -362,6 +374,22 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
             e.HasOne<Club>().WithMany().HasForeignKey(x => x.ClubId);
         });
 
+        b.Entity<Sanction>(e =>
+        {
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.Property(x => x.RevokeReason).HasMaxLength(500);
+            e.Property(x => x.Actor).HasMaxLength(100);
+            e.Property(x => x.BannedFixtureIds).HasMaxLength(4000);
+            e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.ClubId);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.ManagerId);
+            e.HasOne<CompetitionEdition>().WithMany().HasForeignKey(x => x.EditionId);
+            e.HasIndex(x => x.SeasonId);
+            e.Ignore(x => x.Active);
+            e.Ignore(x => x.BannedFixtures);
+        });
+
         b.Entity<AdminAuditEntry>(e =>
         {
             e.Property(x => x.Actor).HasMaxLength(100);
@@ -433,6 +461,88 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
             e.HasIndex(x => x.Username).IsUnique();
             e.Property(x => x.DisplayName).HasMaxLength(60);
             e.Property(x => x.PasswordHash).HasMaxLength(200);
+        });
+        b.Entity<InviteCode>(e =>
+        {
+            e.Property(x => x.Code).HasMaxLength(20);
+            e.HasIndex(x => x.Code).IsUnique();
+            e.Property(x => x.CreatedBy).HasMaxLength(60);
+            e.Property(x => x.Note).HasMaxLength(100);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.UsedByManagerId);
+        });
+        b.Entity<Manager>().Property(x => x.Elo).HasDefaultValue(FriendlyRules.StartElo);
+        b.Entity<FriendlyMatch>(e =>
+        {
+            e.Property(x => x.Mode).HasConversion<string>().HasMaxLength(10);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(12);
+            e.Property(x => x.HomeTeamName).HasMaxLength(60);
+            e.Property(x => x.AwayTeamName).HasMaxLength(60);
+            e.Property(x => x.LastError).HasMaxLength(300);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.HomeManagerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.AwayManagerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.HomeClubId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.AwayClubId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => new { x.HomeManagerId, x.CreatedAt });
+            e.HasIndex(x => new { x.AwayManagerId, x.CreatedAt });
+            e.HasIndex(x => new { x.SeasonId, x.Mode });
+        });
+        b.Entity<FriendlyGoal>(e =>
+        {
+            e.Property(x => x.ScorerName).HasMaxLength(60);
+            e.HasOne<FriendlyMatch>().WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.MatchId);
+        });
+        b.Entity<MatchmakingTicket>(e =>
+        {
+            e.Property(x => x.Mode).HasConversion<string>().HasMaxLength(10);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.ManagerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<FriendlyMatch>().WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => new { x.Mode, x.ExpiresAt });
+            e.HasIndex(x => x.ManagerId);
+        });
+        b.Entity<FriendlyChatMessage>(e =>
+        {
+            e.Property(x => x.Text).HasMaxLength(FriendlyRules.ChatMax);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.ManagerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<FriendlyMatch>().WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.MatchId, x.At });
+        });
+        b.Entity<MailMessage>(e =>
+        {
+            e.Property(x => x.Subject).HasMaxLength(MailTemplates.SubjectMax);
+            e.Property(x => x.Body).HasMaxLength(MailTemplates.BodyMax);
+            e.Property(x => x.Template).HasMaxLength(40);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.FromManagerId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.FromClubId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.ThreadId);
+            e.HasIndex(x => new { x.FromManagerId, x.At });
+        });
+        b.Entity<MailRecipient>(e =>
+        {
+            e.HasOne<MailMessage>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.ManagerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.ClubId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => new { x.ManagerId, x.ReadAt });
+            e.HasIndex(x => x.MessageId);
+        });
+        b.Entity<MailBlock>(e =>
+        {
+            e.HasKey(x => new { x.ManagerId, x.BlockedManagerId });
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.ManagerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.BlockedManagerId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<LeagueApplication>(e =>
+        {
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(12);
+            e.Property(x => x.Note).HasMaxLength(300);
+            e.Property(x => x.Reason).HasMaxLength(300);
+            e.Property(x => x.DecidedBy).HasMaxLength(100);
+            e.HasOne<Manager>().WithMany().HasForeignKey(x => x.ManagerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.PreferredClubId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne<Club>().WithMany().HasForeignKey(x => x.ClubId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => new { x.ManagerId, x.Status });
         });
         b.Entity<GoalPoll>(e =>
         {

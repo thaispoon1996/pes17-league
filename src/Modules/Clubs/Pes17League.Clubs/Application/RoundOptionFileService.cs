@@ -35,6 +35,33 @@ public sealed class RoundOptionFileService(ClubsDbContext db, IOptionFileStore s
         return await BuildAsync(await store.ReadAsync(round.StoragePath!, ct), round.PatchVersionId, matchdayId, clubIds, round.BuiltAt, ct);
     }
 
+    /// <summary>OF 1 trận giải (PO 17/11 bỏ khoá vòng): squad/sơ đồ/chỉ số hiện tại của <paramref name="clubIds"/> ghi lên OF gốc patch.
+    /// Vòng cũ đã khoá (có OF vòng) → như <see cref="BuildForMatchAsync"/>.</summary>
+    public async Task<RoundOptionFileResult> BuildForFixtureAsync(Guid matchdayId, IReadOnlyCollection<Guid> clubIds, CancellationToken ct = default)
+    {
+        var md = await db.Matchdays.SingleAsync(m => m.Id == matchdayId, ct);
+        if (md.OptionFileBuildId is not null) return await BuildForMatchAsync(matchdayId, clubIds, ct);
+        var patchId = await db.Seasons.Where(s => s.Id == md.SeasonId).Select(s => s.PatchVersionId).SingleAsync(ct)
+            ?? throw new InvalidOperationException("Mùa chưa gắn patch");
+        var patch = await db.PatchVersions.SingleAsync(p => p.Id == patchId, ct);
+        var baseFile = await store.ReadAsync(patch.BaseOptionFilePath, ct);
+        if (Hash.Sha256(baseFile) != patch.BaseOptionFileSha256)
+            throw new InvalidOperationException("OF gốc trong kho không khớp sha256 đã lưu");
+        return await BuildAsync(baseFile, patchId, matchdayId, clubIds, null, ct);
+    }
+
+    /// <summary>Giao hữu xếp hạng (PO 16/11): squad + sơ đồ hiện tại của 2 CLB ghi lên OF vòng mới nhất của mùa (chưa khoá vòng nào → OF gốc patch).</summary>
+    public async Task<RoundOptionFileResult> BuildForFriendlyAsync(Guid seasonId, IReadOnlyCollection<Guid> clubIds, CancellationToken ct = default)
+    {
+        var md = await db.Matchdays.Where(m => m.SeasonId == seasonId && m.OptionFileBuildId != null).OrderByDescending(m => m.Number)
+            .Select(m => (Guid?)m.Id).FirstOrDefaultAsync(ct);
+        if (md is { } id) return await BuildForMatchAsync(id, clubIds, ct);
+        var patchId = await db.Seasons.Where(s => s.Id == seasonId).Select(s => s.PatchVersionId).SingleAsync(ct)
+            ?? throw new InvalidOperationException("Mùa chưa gắn patch");
+        var patch = await db.PatchVersions.SingleAsync(p => p.Id == patchId, ct);
+        return await BuildAsync(await store.ReadAsync(patch.BaseOptionFilePath, ct), patchId, null, clubIds, null, ct);
+    }
+
     /// <param name="adminCutoff">OF trận: lúc khoá vòng — phần admin sửa sau đó để vòng sau. Null = OF vòng.</param>
     private async Task<RoundOptionFileResult> BuildAsync(byte[] baseFile, Guid patchVersionId, Guid? matchdayId, IReadOnlyCollection<Guid>? clubIds,
         DateTimeOffset? adminCutoff, CancellationToken ct)

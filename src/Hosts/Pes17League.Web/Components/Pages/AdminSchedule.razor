@@ -8,7 +8,6 @@
 @inject MatchJobService Jobs
 
 <h1>Quản trị</h1>
-<AdminNav />
 @if (msg is not null) { <p class="msg">@msg</p> }
 
 <div class="panel">
@@ -34,27 +33,17 @@
         }
         @if (plan is { Written: true, SeasonStatus: SeasonStatus.Planned })
         {
-            <button class="primary" disabled="@busy" @onclick="Start">Bắt đầu mùa</button>
+            <button class="primary" disabled="@busy" data-confirm="Bắt đầu mùa? Lịch thi đấu sẽ được chốt." @onclick="Start">Bắt đầu mùa</button>
         }
     </div>
     @if (NoFund) { <p class="warn">Chưa đặt quỹ ngân sách đầu mùa: bắt đầu mùa lúc này mọi CLB nhận 0 đồng. <a href="admin/kinh-te">Đặt ở trang Kinh tế →</a></p> }
-    @if (seasonId == OpenSeasonId && humanOptions.Count > 0)
+    @if (seasonId == OpenSeasonId && currentHuman != Guid.Empty)
     {
-        @* CLB của tôi (PO uỷ quyền 06/11): PO tự chọn, mặc định không cầm CLB nào; đổi được cả khi mùa đang đá (CLB cũ về BOT, lịch/BXH giữ nguyên). *@
-        <div class="filters">
-            <label>🎮 CLB của tôi
-                <select @bind="human" disabled="@(busy || Jobs.Running)">
-                    <option value="@Guid.Empty">— Không cầm CLB nào (BOT đá mọi trận) —</option>
-                    @foreach (var g in humanOptions.GroupBy(o => o.Group))
-                    {
-                        <optgroup label="@g.Key">@foreach (var o in g) { <option value="@o.Id">@o.Name</option> }</optgroup>
-                    }
-                </select>
-            </label>
-            <button disabled="@(busy || Jobs.Running || human == currentHuman)" @onclick="SaveHuman">Lưu CLB của tôi</button>
-        </div>
-        @if (Jobs.Running) { <p class="muted">Máy trận đang bận (@Jobs.Title): đổi CLB của tôi sau khi xong.</p> }
-        else if (currentHuman == Guid.Empty) { <p class="warn">Chưa chọn CLB của tôi: BOT sẽ đá mọi trận, không có "trận của tôi".</p> }
+        @* PO 17/11: admin = Ban tổ chức, KHÔNG cầm CLB / đá trận. CLB admin cầm từ trước (phân công ParticipantId null) → trả về BOT
+           hoặc giao cho tài khoản người chơi ở Quản trị › HLV. *@
+        <p class="warn">Admin không còn được cầm CLB: <b>@humanOptions.FirstOrDefault(o => o.Id == currentHuman)?.Name</b> đang do tài khoản admin cũ giữ.
+            Giao cho người chơi ở <a href="admin/hlv">Quản trị › HLV</a> hoặc
+            <button disabled="@(busy || Jobs.Running)" @onclick="SaveHuman">Trả về BOT</button></p>
     }
 </div>
 
@@ -250,10 +239,10 @@
 
     async Task SaveHuman()
     {
-        var name = humanOptions.FirstOrDefault(o => o.Id == human)?.Name;
+        human = Guid.Empty;   // PO 17/11: chỉ còn "trả về BOT", admin không cầm CLB
+        string? name = null;
         var old = humanOptions.FirstOrDefault(o => o.Id == currentHuman)?.Name;
-        if (!await JS.InvokeAsync<bool>("confirm", (name is null ? "Không cầm CLB nào? BOT sẽ đá mọi trận." : $"Cầm {name}? Các trận chưa đá của {name} chờ bạn đá.")
-            + (old is null ? "" : $"\n{old} về BOT.") + "\nLịch, BXH, kết quả đã đá giữ nguyên.")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"{old} về BOT?\nLịch, BXH, kết quả đã đá giữ nguyên.")) return;
         busy = true;
         try
         {
@@ -261,7 +250,7 @@
             await using var db = await Dbs.CreateDbContextAsync();
             await new ClubAdminService(db, Clock).SetHumanClubAsync(human == Guid.Empty ? null : human, AdminText.Actor);
             currentHuman = human;
-            msg = name is null ? "Đã bỏ cầm CLB: BOT đá mọi trận." : $"CLB của tôi: {name}.";
+            msg = $"{old} đã về BOT.";
         }
         catch (AdminRuleException e) { msg = e.Message; }
         finally { busy = false; }
@@ -311,7 +300,7 @@
     {
         var name = plan!.SeasonName;
         if (!await JS.InvokeAsync<bool>("confirm", $"Bắt đầu {name}?\nTính giá cầu thủ, lương hợp đồng nhập, ngân sách đầu mùa cho mọi CLB và mở kỳ chuyển nhượng khung ngày 1."
-            + (currentHuman == Guid.Empty ? "\nChưa chọn CLB của tôi: BOT sẽ đá mọi trận (chọn được cả khi mùa đang đá)." : "")
+            + (currentHuman == Guid.Empty ? "" : "\nCLB admin cầm từ trước: trả về BOT hoặc giao cho người chơi trước khi bắt đầu.")
             + (NoFund ? "\nQuỹ ngân sách đầu mùa = 0: mọi CLB nhận 0 đồng (đặt ở trang Kinh tế; bù được 1 lần sau khi bắt đầu)." : ""))) return;
         busy = true;
         try

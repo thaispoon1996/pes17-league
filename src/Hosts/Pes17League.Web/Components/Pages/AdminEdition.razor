@@ -7,7 +7,6 @@
 @inject IJSRuntime JS
 
 <h1>@(edition is null ? "Mùa giải" : $"{comp.Name} — {season.Name}")</h1>
-<AdminNav />
 @if (edition is null) { if (loaded) { <p>Không tìm thấy mùa giải.</p> } return; }
 @{
     var cup = comp.Type is CompetitionType.ContinentalCup or CompetitionType.DomesticCup;
@@ -77,7 +76,7 @@
     }
     @if (draft)
     {
-        <div class="actions"><button class="danger" @onclick="Delete">Xoá mùa giải</button></div>
+        <div class="actions"><button class="danger" data-confirm="Xoá mùa giải này? Không hoàn tác được." data-confirm-ok="Xoá" @onclick="Delete">Xoá mùa giải</button></div>
     }
     else { <p class="muted">Đã xếp lịch: không sửa CLB được.</p> }
 </div>

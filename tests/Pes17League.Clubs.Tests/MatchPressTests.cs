@@ -20,7 +20,8 @@ public class MatchPressTests
         Assert.Contains($"Arsenal {MatchReportText.Dash(2, 1)} Chelsea", title);
         Assert.Contains("Saka", title);
         Assert.Contains("cú đúp", title);
-        Assert.Contains("phút 88, Saka (Arsenal).", body);
+        Assert.Contains("phút 88, Saka (Arsenal)", body);
+        Assert.Contains("nghẹt", body);
         Assert.DoesNotContain("không rõ người ghi", body);
         Assert.DoesNotContain("sút xa", body);
         Assert.True(MatchReportText.Accepts(Brief(2, 1, goals), title, body));
@@ -34,6 +35,7 @@ public class MatchPressTests
         Assert.Contains($"Arsenal {MatchReportText.Dash(0, 0)} Chelsea", title);
         Assert.Contains("chia điểm", title);
         Assert.Contains("Trận không có bàn thắng.", body);
+        Assert.Contains("khó chịu", body);
         Assert.DoesNotContain("Saka", body);
         Assert.True(MatchReportText.Accepts(brief, title, body));
     }

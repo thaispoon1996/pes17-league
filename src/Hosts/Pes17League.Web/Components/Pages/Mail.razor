@@ -1,0 +1,373 @@
+@page "/thu"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@inject MailHub Hub
+@inject LeagueQueries Q
+@implements IDisposable
+
+@* Hòm thư (PO 17/11): thư chính thức giữa người chơi / CLB / Ban tổ chức, form mẫu gửi nhanh, thư hệ thống.
+   Admin (không phải HLV) = hòm Ban tổ chức. ?soan=1&den=<managerId>|&clb=<clubId>|&btc=1&mau=<key>&cauthu=<playerId> mở sẵn form. *@
+<section class="hero">
+    <span class="pill">Hòm thư</span>
+    <h1>@(me is null && admin ? "Hòm thư Ban tổ chức" : "Hòm thư")</h1>
+    <p>Thư chính thức giữa các HLV, CLB và Ban tổ chức. Có form mẫu để gửi nhanh.</p>
+</section>
+@if (!loaded) { return; }
+@if (me is null && !admin) { <p class="msg">Cần đăng nhập bằng tài khoản người chơi để dùng hòm thư.</p> return; }
+@if (error is not null) { <p class="msg">@error</p> }
+@if (notice is not null) { <p class="msg ok">@notice</p> }
+<div class="mail">
+    <nav class="mail-folders">
+        <button class="primary wide" @onclick="() => Compose(null)">✏️ Soạn thư</button>
+        <button class="@(view == View.List && folder == MailFolder.Inbox ? "on" : "")" @onclick="() => Open(MailFolder.Inbox)">📥 Hộp đến @if (unread > 0) { <span class="badge">@unread</span> }</button>
+        <button class="@(view == View.List && folder == MailFolder.Sent ? "on" : "")" @onclick="() => Open(MailFolder.Sent)">📤 Đã gửi</button>
+        <button class="@(view == View.List && folder == MailFolder.Archived ? "on" : "")" @onclick="() => Open(MailFolder.Archived)">🗄 Lưu trữ</button>
+    </nav>
+    <section class="mail-main panel">
+        @if (view == View.List)
+        {
+            <h2>@FolderName(folder)</h2>
+            @if (rows.Count == 0) { <p class="muted">Không có thư.</p> }
+            <ul class="mail-list">
+                @foreach (var r in rows)
+                {
+                    <li class="@(r.Read ? "" : "unread")" @onclick="() => OpenThread(r.ThreadId)">
+                        <span class="mail-from">@(folder == MailFolder.Sent ? "Tới: " + r.To : r.From)@(r.InThread > 1 ? $" ({r.InThread})" : "")</span>
+                        <span class="mail-subj"><b>@r.Subject</b> <span class="muted">— @r.Snippet</span></span>
+                        <span class="mail-at">@When(r.At)</span>
+                    </li>
+                }
+            </ul>
+        }
+        else if (view == View.Thread)
+        {
+            <div class="mail-tools">
+                <button class="link" @onclick="() => Open(folder)">← @FolderName(folder)</button>
+                <span class="grow"></span>
+                @if (folder == MailFolder.Archived) { <button @onclick="() => Archive(false)">📥 Đưa về hộp đến</button> }
+                else { <button @onclick="() => Archive(true)">🗄 Lưu trữ</button> }
+                @if (folder == MailFolder.Inbox) { <button @onclick="MarkUnread">✉ Đánh dấu chưa đọc</button> }
+                @if (me is { } my && Other() is { } other)
+                {
+                    <button class="link" @onclick="() => Block(other, !blocked)">@(blocked ? "Bỏ chặn" : "🚫 Chặn người này")</button>
+                }
+            </div>
+            @if (thread.Count > 0) { <h2>@thread[0].Subject</h2> }
+            @foreach (var m in thread)
+            {
+                <article class="mail-msg @(m.Mine ? "mine" : "")">
+                    <header>
+                        <b>@m.From</b> <span class="muted">→ @m.To</span>
+                        <span class="mail-at">@m.At.ToOffset(TimeSpan.FromHours(7)).ToString("HH:mm dd/MM/yyyy")</span>
+                        @if (MailTemplates.Find(m.Template) is { } t) { <span class="pill">@t.Name</span> }
+                    </header>
+                    <div class="mail-body">@m.Body</div>
+                    @if (m.PlayerId is { } pid) { <a class="btn" href="cau-thu/@pid">Xem cầu thủ</a> }
+                    @if (m.Template == "giao-huu") { <a class="btn" href="giao-huu">⚽ Sảnh giao hữu</a> }
+                </article>
+            }
+            @if (CanReply())
+            {
+                <form class="mail-reply" @onsubmit="Reply">
+                    <textarea @bind="replyBody" rows="5" maxlength="@MailTemplates.BodyMax" placeholder="Trả lời…"></textarea>
+                    <button class="primary" type="submit">↩ Gửi trả lời</button>
+                </form>
+            }
+        }
+        else
+        {
+            <h2>Soạn thư</h2>
+            <div class="mail-form">
+                <label>Mẫu thư
+                    <select value="@tpl" @onchange="e => PickTemplate(e.Value?.ToString())">
+                        <option value="">— Tự soạn —</option>
+                        @foreach (var t in MailTemplates.All.Where(t => !t.ToAdmin || me is not null)) { <option value="@t.Key">@t.Name</option> }
+                    </select>
+                </label>
+                <label>Gửi tới
+                    <select value="@toKey" @onchange="OnRecipient">
+                        <option value="">— Chọn người nhận —</option>
+                        @if (me is not null) { <option value="btc">🏛 @MailService.AdminName</option> }
+                        <optgroup label="Câu lạc bộ (tới HLV đang dẫn)">
+                            @foreach (var c in clubs) { <option value="clb:@c.Id">@c.Name — @c.Manager</option> }
+                        </optgroup>
+                        <optgroup label="Người chơi">
+                            @foreach (var p in people.Where(p => p.Id != me)) { <option value="ng:@p.Id">@p.Name</option> }
+                        </optgroup>
+                    </select>
+                </label>
+                @if (Template is { NeedsPlayer: true })
+                {
+                    <label>Cầu thủ
+                        <select value="@(playerId?.ToString() ?? "")" @onchange="e => { playerId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null; Refill(); }">
+                            <option value="">— Chọn cầu thủ —</option>
+                            @foreach (var p in players) { <option value="@p.Id">@p.Name</option> }
+                        </select>
+                    </label>
+                }
+                @if (Template is { NeedsFee: true })
+                {
+                    <label>Mức phí đề nghị
+                        <input type="number" min="0" step="100000" value="@fee" @onchange="e => { fee = long.TryParse(e.Value?.ToString(), out var v) ? v : null; Refill(); }" />
+                    </label>
+                }
+                @if (tpl == "hoi-mua" && myClub is not null)
+                {
+                    <label class="check"><input type="checkbox" checked="@withOffer" @onchange="e => withOffer = e.Value is true" />
+                        Gửi kèm đề nghị chuyển nhượng chính thức (mua đứt, mức phí trên; hợp đồng + lương mặc định — chỉnh ở trang Đề nghị)</label>
+                }
+                @if (Template is { NeedsFixture: true })
+                {
+                    <label>Trận
+                        <select value="@(fixtureId?.ToString() ?? "")" @onchange="e => { fixtureId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null; Refill(); }">
+                            <option value="">— Chọn trận —</option>
+                            @foreach (var f in fixtures) { <option value="@f.Id">@f.Label</option> }
+                        </select>
+                    </label>
+                }
+                <label>Tiêu đề <input @bind="subject" maxlength="@MailTemplates.SubjectMax" /></label>
+                <label>Nội dung <textarea @bind="body" rows="12" maxlength="@MailTemplates.BodyMax"></textarea></label>
+                <div class="actions">
+                    <button class="primary" @onclick="Send">📨 Gửi thư</button>
+                    <button class="link" @onclick="() => Open(folder)">Huỷ</button>
+                </div>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    enum View { List, Thread, Compose }
+    [SupplyParameterFromQuery(Name = "soan")] public int? Soan { get; set; }
+    [SupplyParameterFromQuery(Name = "den")] public Guid? Den { get; set; }
+    [SupplyParameterFromQuery(Name = "clb")] public Guid? Clb { get; set; }
+    [SupplyParameterFromQuery(Name = "btc")] public int? Btc { get; set; }
+    [SupplyParameterFromQuery(Name = "mau")] public string? Mau { get; set; }
+    [SupplyParameterFromQuery(Name = "cauthu")] public Guid? CauThu { get; set; }
+
+    Guid? me;
+    bool admin, loaded, blocked;
+    string myName = "", myClubName = "";
+    Guid? myClub;
+    View view = View.List;
+    MailFolder folder = MailFolder.Inbox;
+    List<MailRow> rows = [];
+    List<MailView> thread = [];
+    Guid? threadId;
+    int unread;
+    string? error, notice;
+    string replyBody = "";
+    // soạn thư
+    string tpl = "", toKey = "", subject = "", body = "";
+    Guid? playerId, fixtureId;
+    long? fee;
+    bool withOffer = true;
+    string? sendNote;
+    List<(Guid Id, string Name, string Manager)> clubs = [];
+    List<(Guid Id, string Name)> people = [], players = [];
+    List<(Guid Id, string Label)> fixtures = [];
+
+    MailTemplate? Template => MailTemplates.Find(tpl);
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync();
+        admin = await Me.IsAdminAsync();
+        myName = await Me.NameAsync();
+        if (me is null && !admin) { loaded = true; return; }
+        Hub.Changed += OnChanged;
+        await using (var db = await Dbs.CreateDbContextAsync())
+        {
+            if (me is { } id)
+            {
+                myName = await db.Managers.Where(m => m.Id == id).Select(m => m.DisplayName).SingleAsync();
+                myClub = await new MailService(db, Clock).ClubOfAsync(id);
+                if (myClub is { } c) myClubName = await db.Clubs.Where(x => x.Id == c).Select(x => x.Name).SingleAsync();
+            }
+            else myName = MailService.AdminName;
+        }
+        await LoadAsync();
+        if (Soan == 1)
+        {
+            await Compose(Mau);
+            toKey = Btc == 1 ? "btc" : Clb is { } cid ? $"clb:{cid}" : Den is { } mid ? $"ng:{mid}" : "";
+            await PickRecipient();
+            if (CauThu is { } p && players.Any(x => x.Id == p)) { playerId = p; Refill(); }
+        }
+        loaded = true;
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new MailService(db, Clock);
+        unread = await svc.UnreadAsync(me);
+        if (view == View.List) rows = await svc.ListAsync(me, folder);
+        else if (view == View.Thread && threadId is { } t)
+        {
+            thread = await svc.ThreadAsync(me, t);
+            unread = await svc.UnreadAsync(me);
+            blocked = me is { } my && Other() is { } o && await svc.BlockedAsync(my, o);
+        }
+    }
+
+    async Task Do(Func<MailService, Task> act, string? ok = null)
+    {
+        error = notice = sendNote = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await act(new MailService(db, Clock));
+            notice = sendNote ?? ok;
+            Hub.Notify();
+        }
+        catch (AdminRuleException e) { error = e.Message; }
+        await LoadAsync();
+    }
+
+    Task Open(MailFolder f) { folder = f; view = View.List; threadId = null; error = notice = null; return LoadAsync(); }
+    Task OpenThread(Guid t) { threadId = t; view = View.Thread; replyBody = ""; error = notice = null; return LoadAsync(); }
+    Task Archive(bool v) => Do(async s => { await s.ArchiveAsync(me, threadId!.Value, v); view = View.List; }, v ? "Đã chuyển vào Lưu trữ." : "Đã đưa về Hộp đến.");
+    Task MarkUnread() => Do(async s => { await s.MarkUnreadAsync(me, threadId!.Value); view = View.List; });
+    Task Block(Guid other, bool v) => Do(s => s.BlockAsync(me!.Value, other, v), v ? "Đã chặn — người này không gửi thư cho bạn được nữa." : "Đã bỏ chặn.");
+
+    static bool IsSystem(MailView m) => m.FromManagerId is null && !m.FromAdmin;
+    /// <summary>Người chơi kia trong chuỗi (để chặn / trả lời); null = Ban tổ chức hoặc hệ thống.</summary>
+    Guid? Other() => thread.Where(m => !m.Mine).Select(m => m.FromManagerId).FirstOrDefault(x => x is not null);
+    bool CanReply() => thread.Any(m => !m.Mine && !IsSystem(m));
+
+    Task Reply() => Do(async s =>
+    {
+        var last = thread.Last(m => !m.Mine && !IsSystem(m));
+        var to = last.FromAdmin ? new MailTo(Admin: true) : new MailTo(ManagerId: last.FromManagerId);
+        var subj = last.Subject.StartsWith("Re: ") ? last.Subject : "Re: " + last.Subject;
+        await s.SendAsync(me, new MailDraft(to, subj[..Math.Min(subj.Length, MailTemplates.SubjectMax)], replyBody, ReplyTo: last.Id));
+        replyBody = "";
+    }, "Đã gửi trả lời.");
+
+    async Task Compose(string? key)
+    {
+        view = View.Compose;
+        error = notice = null;
+        tpl = MailTemplates.Find(key)?.Key ?? "";
+        toKey = ""; subject = ""; body = ""; playerId = null; fixtureId = null; fee = null; players = [];
+        await using var db = await Dbs.CreateDbContextAsync();
+        var humans = await (from a in db.TeamAssignments where a.To == null && a.ControllerType == ControllerType.Human && a.ParticipantId != null
+                            join c in db.Clubs on a.ClubId equals c.Id join m in db.Managers on a.ParticipantId equals m.Id
+                            orderby c.Name select new { c.Id, c.Name, m.DisplayName }).ToListAsync();
+        clubs = humans.Select(h => (h.Id, h.Name, h.DisplayName)).ToList();
+        people = (await db.Managers.Where(m => !m.Disabled).OrderBy(m => m.DisplayName).Select(m => new { m.Id, m.DisplayName }).ToListAsync())
+            .Select(m => (m.Id, m.DisplayName)).ToList();
+        if (myClub is { } club)
+        {
+            var fx = await (from f in db.Fixtures join md in db.Matchdays on f.MatchdayId equals md.Id join s in db.Seasons on md.SeasonId equals s.Id
+                            where s.Status == SeasonStatus.Active && (f.HomeClubId == club || f.AwayClubId == club)
+                            orderby md.Number select new { f.Id, md.Number, f.HomeClubId, f.AwayClubId, f.Status }).ToListAsync();
+            var ids = fx.SelectMany(f => new[] { f.HomeClubId, f.AwayClubId }).Distinct().ToList();
+            var names = await db.Clubs.Where(c => ids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.ShortName ?? c.Name);
+            var next = fx.FindIndex(f => f.Status != FixtureStatus.Played);
+            var from = Math.Max(0, (next < 0 ? fx.Count : next) - 3);
+            fixtures = fx.Skip(from).Take(8).Select(f => (f.Id, $"Vòng {f.Number}: {names[f.HomeClubId]} – {names[f.AwayClubId]}")).ToList();
+        }
+        if (Template?.ToAdmin == true) toKey = "btc";
+        Refill();
+    }
+
+    async Task PickTemplate(string? key)
+    {
+        var keep = toKey;
+        await Compose(key);
+        if (Template?.ToAdmin != true) toKey = keep;
+        await PickRecipient();
+    }
+
+    Task OnRecipient(ChangeEventArgs e) { toKey = e.Value?.ToString() ?? ""; return PickRecipient(); }
+
+    /// <summary>Người nhận đổi → danh sách cầu thủ (mẫu hỏi mua/trao đổi): cầu thủ của CLB người nhận.</summary>
+    async Task PickRecipient()
+    {
+        players = [];
+        Guid? club = toKey.StartsWith("clb:") && Guid.TryParse(toKey[4..], out var c) ? c : null;
+        await using var db = await Dbs.CreateDbContextAsync();
+        if (club is null && toKey.StartsWith("ng:") && Guid.TryParse(toKey[3..], out var m)) club = await new MailService(db, Clock).ClubOfAsync(m);
+        if (club is { } id)
+            players = (await (from s in db.SquadMemberships where s.ClubId == id && s.LeftAt == null join p in db.Players on s.PlayerId equals p.Id
+                              orderby p.Name select new { p.Id, p.Name }).ToListAsync()).Select(p => (p.Id, p.Name)).ToList();
+        if (playerId is { } pid && players.All(p => p.Id != pid)) playerId = null;
+        Refill();
+        StateHasChanged();
+    }
+
+    /// <summary>Điền lại tiêu đề/nội dung theo mẫu + chỗ trống đã chọn (thư tự soạn thì giữ nguyên).</summary>
+    void Refill()
+    {
+        if (Template is not { } t) return;
+        var to = toKey == "btc" ? MailService.AdminName
+            : toKey.StartsWith("clb:") ? clubs.FirstOrDefault(c => $"clb:{c.Id}" == toKey) is { Name: not null } x ? $"HLV {x.Manager} ({x.Name})" : ""
+            : people.FirstOrDefault(p => $"ng:{p.Id}" == toKey).Name ?? "";
+        var values = new Dictionary<string, string?>
+        {
+            ["to"] = to, ["me"] = myName, ["club"] = myClubName.Length > 0 ? myClubName : myName,
+            ["player"] = players.FirstOrDefault(p => p.Id == playerId).Name,
+            ["fee"] = fee is { } f ? f.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("vi-VN")) : null,
+            ["fixture"] = fixtures.FirstOrDefault(x => x.Id == fixtureId).Label,
+        };
+        subject = MailTemplates.Fill(t.Subject, values);
+        body = MailTemplates.Fill(t.Body, values);
+    }
+
+    Task Send() => Do(async s =>
+    {
+        MailTo to = toKey == "btc" ? new(Admin: true)
+            : toKey.StartsWith("clb:") && Guid.TryParse(toKey[4..], out var c) ? new(ClubId: c)
+            : toKey.StartsWith("ng:") && Guid.TryParse(toKey[3..], out var m) ? new(ManagerId: m)
+            : throw new AdminRuleException("Chưa chọn người nhận");
+        if (Template is { NeedsPlayer: true } && playerId is null) throw new AdminRuleException("Chọn cầu thủ cho mẫu thư này");
+        if (Template is { NeedsFixture: true } && fixtureId is null) throw new AdminRuleException("Chọn trận cho mẫu thư này");
+        string? offerNote = null;
+        if (tpl == "hoi-mua" && withOffer && myClub is { } buyer && playerId is { } pid)
+        {
+            if (fee is not { } f || f <= 0) throw new AdminRuleException("Nhập mức phí để gửi kèm đề nghị chính thức");
+            offerNote = await MakeOfferAsync(buyer, pid, f);
+        }
+        await s.SendAsync(me, new MailDraft(to, subject, body, tpl.Length > 0 ? tpl : null, playerId, fixtureId));
+        sendNote = offerNote;
+        folder = MailFolder.Sent;
+        view = View.List;
+    }, "Đã gửi thư.");
+
+    /// <summary>Thư "Hỏi mua" kèm đề nghị thật (PO 17/11): mua đứt, phí theo thư, hợp đồng mặc định mùa, lương = max(lương theo giá, lương hiện tại).
+    /// Đề nghị lỗi → không gửi thư (báo lỗi để sửa).</summary>
+    async Task<string> MakeOfferAsync(Guid buyer, Guid pid, long f)
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var season = await Q.SeasonAsync() ?? throw new AdminRuleException("Chưa có mùa đang mở");
+        var window = await Q.OpenWindowAsync(season.Id) ?? throw new AdminRuleException("Kỳ chuyển nhượng đang đóng");
+        var price = await db.PlayerPrices.Where(x => x.PlayerId == pid && x.SeasonId == season.Id).Select(x => x.Price).FirstOrDefaultAsync();
+        var wage = await db.Contracts.Where(c => c.PlayerId == pid && c.Status == ContractStatus.Active).Select(c => (long?)c.Wage).FirstOrDefaultAsync();
+        var r = await new TransferOfferService(db, Clock).MakeAsync(window.Id, new OfferDraft(pid, buyer, OfferKind.Permanent, f,
+            season.Economy.DefaultContractMatches, Math.Max(ContractRules.Wage(price, season.Economy.WagePermille), wage ?? 0), Note: "Gửi kèm thư hỏi mua"));
+        if (!r.Ok) throw new AdminRuleException($"Đề nghị chưa gửi được: {r.Error}");
+        return r.Status switch
+        {
+            OfferStatus.Completed => "Đã gửi thư — đề nghị đạt điều khoản phá hợp đồng, đã mua xong cầu thủ.",
+            OfferStatus.Failed => "Đã gửi thư — đề nghị không thành (xem lý do ở trang Đề nghị).",
+            _ => "Đã gửi thư + đề nghị chính thức. Theo dõi ở trang Đề nghị.",
+        };
+    }
+
+    static string FolderName(MailFolder f) => f switch { MailFolder.Sent => "Đã gửi", MailFolder.Archived => "Lưu trữ", _ => "Hộp đến" };
+    string When(DateTimeOffset at)
+    {
+        var v = at.ToOffset(TimeSpan.FromHours(7));
+        return v.Date == Clock.GetUtcNow().ToOffset(TimeSpan.FromHours(7)).Date ? v.ToString("HH:mm") : v.ToString("dd/MM");
+    }
+
+    void OnChanged() => InvokeAsync(async () => { if (view != View.Compose) { await LoadAsync(); StateHasChanged(); } else { await using var db = await Dbs.CreateDbContextAsync(); unread = await new MailService(db, Clock).UnreadAsync(me); StateHasChanged(); } });
+
+    public void Dispose() => Hub.Changed -= OnChanged;
+}

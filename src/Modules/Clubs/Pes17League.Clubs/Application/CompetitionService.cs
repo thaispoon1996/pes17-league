@@ -113,7 +113,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
                 db.Matchdays.Add(md);
                 db.Fixtures.AddRange(rounds[i].Select(f => new Fixture { MatchdayId = md.Id, HomeClubId = f.Home, AwayClubId = f.Away }));
             }
-            OpenWindow(seasonId, first!, now);
+            OpenWindow(seasonId, first!, now, await IsPes17PatchAsync(patchVersionId, ct));
             await db.SaveChangesAsync(ct);
 
             var eco = new EconomyService(db, clock, priceOptions, squadOptions);
@@ -148,7 +148,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
             season.Status = SeasonStatus.Active;
             db.SeasonClubs.AddRange(clubs.Select(c => new SeasonClub { SeasonId = seasonId, ClubId = c }));
             foreach (var e in editions) e.Status = EditionStatus.Active;
-            OpenWindow(seasonId, matchdays[0], now);
+            OpenWindow(seasonId, matchdays[0], now, await IsPes17PatchAsync(patch, ct));
             db.AdminAudit.Add(new AdminAuditEntry
             {
                 At = now, Actor = actor, EntityType = nameof(Season), EntityId = seasonId, Action = "StartSeason",
@@ -173,6 +173,14 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
             var season = (await db.Seasons.FindAsync([md.SeasonId], ct))!;
             // HLV BOT v1: xếp sơ đồ/XI/thiết lập cho CLB BOT trước khi sinh OF (hlv-bot-v1.md).
             await new BotCoachService(db, clock).ApplyAsync(md.Id, ct);
+            if (await IsPes17PatchAsync(season.PatchVersionId!.Value, ct))
+            {   // PES17: không khoá chuyển nhượng, không dựng OF — chụp đội hình (game nhận qua tools/pes17db/sync.sh)
+                var snap = await new Pes17RoundService(db, store, clock).SnapshotAsync(season.PatchVersionId!.Value, md.Id, ct);
+                md.Status = MatchdayStatus.Locked;
+                md.OptionFileBuildId = snap.Id;
+                await db.SaveChangesAsync(ct);
+                return new(null, snap.Id);
+            }
             var build = await new RoundOptionFileService(db, store, clock,
                 new SquadRulesOptions { MinSquadSize = _squad.MinSquadSize, MinGoalkeepers = _squad.MinGoalkeepers })
                 .BuildAsync(season.PatchVersionId!.Value, md.Id, ct);
@@ -193,7 +201,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
     {
         var (f, md) = await LoadFixtureAsync(fixtureId, ct);
         if (f is null) return new(CompetitionError.FixtureNotFound);
-        if (md!.Status is not (MatchdayStatus.Locked or MatchdayStatus.Playing)) return new(CompetitionError.WrongMatchdayStatus);
+        if (md!.Status is not (MatchdayStatus.WindowOpen or MatchdayStatus.Locked or MatchdayStatus.Playing)) return new(CompetitionError.WrongMatchdayStatus);   // PO 17/11: bỏ khoá vòng
         if (f.Status != FixtureStatus.Scheduled) return new(CompetitionError.WrongFixtureStatus);
         var attempt = new MatchAttempt { FixtureId = f.Id, ContainerName = containerName, StartedAt = clock.GetUtcNow() };
         db.MatchAttempts.Add(attempt);
@@ -232,7 +240,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
             ArgumentOutOfRangeException.ThrowIfNegative(awayGoals);
             var (f, md) = await LoadFixtureAsync(fixtureId, ct, lockMatchday: true);
             if (f is null) return new RecordResult(CompetitionError.FixtureNotFound);
-            if (md!.Status is not (MatchdayStatus.Locked or MatchdayStatus.Playing)) return new(CompetitionError.WrongMatchdayStatus);
+            if (md!.Status is not (MatchdayStatus.WindowOpen or MatchdayStatus.Locked or MatchdayStatus.Playing)) return new(CompetitionError.WrongMatchdayStatus);   // PO 17/11: bỏ khoá vòng
             if (f.Status == FixtureStatus.Played) return new(CompetitionError.WrongFixtureStatus);
             // Penalty cho trận knockout 1 lượt (chung kết châu lục / mọi vòng cúp quốc gia) khi hoà.
             if (penalties is { } p && (f.Leg is not null || f.Stage <= FixtureStage.LeaguePhase || !Fixture.PenaltiesValid(homeGoals, awayGoals, p.Home, p.Away)))
@@ -269,6 +277,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
                 .Select(r => new MatchRating { FixtureId = f.Id, ClubId = r.ClubId, PlayerId = r.PlayerId, Slot = r.Slot, Rating = r.Rating }).ToList();
             if (stats is not null) AddStats(f, stats, rows);
             db.MatchRatings.AddRange(rows);
+            await new AbsenceService(db, clock).ResetAsync(f, ct);   // có mặt (tự đá / giao trợ lý / Sẵn sàng) → chuỗi vắng về 0
             md.Status = MatchdayStatus.Playing;
             await db.SaveChangesAsync(ct);
 
@@ -311,7 +320,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
                             join m in db.Matchdays on f.MatchdayId equals m.Id
                             where m.SeasonId == seasonId && f.Status == FixtureStatus.Played && f.Stage == FixtureStage.League
                             select new PlayedFixture<Guid>(f.HomeClubId, f.AwayClubId, f.HomeGoals!.Value, f.AwayGoals!.Value)).ToListAsync(ct);
-        return Standings.Compute(clubs.Keys, played, id => clubs[id]);
+        return Standings.Compute(clubs.Keys, played, id => clubs[id], SanctionService.For(await SanctionService.DeductionsAsync(db, ct), null));
     }
 
     /// <summary>BXH một mùa giải (PO chọn 06/11, bước 6): giải quốc nội tính trận vòng tròn, cúp tính league phase; CLB = CLB của mùa giải.</summary>
@@ -332,12 +341,13 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
                 && (f.Stage == FixtureStage.League || f.Stage == FixtureStage.LeaguePhase))
             .Select(f => new { Edition = f.CompetitionEditionId!.Value, f.Stage, f.HomeClubId, f.AwayClubId, Home = f.HomeGoals!.Value, Away = f.AwayGoals!.Value })
             .ToListAsync(ct)).ToLookup(f => f.Edition);
+        var deducted = await SanctionService.DeductionsAsync(db, ct);   // trừ điểm kỷ luật (PO 17/11)
         return types.ToDictionary(t => t.Key, IReadOnlyList<StandingRow<Guid>> (t) =>
         {
             var stage = t.Value == CompetitionType.ContinentalCup ? FixtureStage.LeaguePhase : FixtureStage.League;
             var names = clubs[t.Key].ToDictionary(x => x.Id, x => x.Name);
             var own = played[t.Key].Where(f => f.Stage == stage).Select(f => new PlayedFixture<Guid>(f.HomeClubId, f.AwayClubId, f.Home, f.Away)).ToList();
-            return Standings.Compute(names.Keys, own, id => names[id]);
+            return Standings.Compute(names.Keys, own, id => names[id], SanctionService.For(deducted, t.Key));
         });
     }
 
@@ -378,21 +388,41 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
         md.Status = MatchdayStatus.Settled;
         await new SeasonScheduleService(db, clock, rng).AdvanceAsync(md.SeasonId, ct);
         var next = await db.Matchdays.SingleOrDefaultAsync(x => x.SeasonId == md.SeasonId && x.Number == md.Number + 1, ct);
-        if (next is not null) OpenWindow(md.SeasonId, next, clock.GetUtcNow());
+        if (next is not null) OpenWindow(md.SeasonId, next, clock.GetUtcNow(), await new Pes17RoundService(db, store, clock).IsPes17SeasonAsync(md.SeasonId, ct));
         else (await db.Seasons.FindAsync([md.SeasonId], ct))!.Status = SeasonStatus.Finished;
         await db.SaveChangesAsync(ct);
         return (settlement, next is null);
     }
 
-    /// <summary>Kỳ CN của vòng: mở ngay, đóng khi PO bấm (ClosesAt chỉ là mốc xa). Khung không có kỳ CN (<see cref="SeasonCalendar.HasTransferWindow"/>):
-    /// chỉ chờ khoá, không tạo TransferWindow.</summary>
-    private void OpenWindow(Guid seasonId, Matchday md, DateTimeOffset now)
+    /// <summary>Vòng mở là đá được ngay (PO 17/11 bỏ khoá vòng). Chuyển nhượng tự do cả mùa: 1 kỳ CN mở suốt mùa, vòng nào cũng gắn vào kỳ đó.
+    /// PES17 (<paramref name="pes17"/>): chợ tự do chung cả mùa không gắn vòng (<see cref="FreeMarketService"/>) → không tạo kỳ CN ở đây.</summary>
+    private void OpenWindow(Guid seasonId, Matchday md, DateTimeOffset now, bool pes17 = false)
     {
         md.Status = MatchdayStatus.WindowOpen;
-        if (!SeasonCalendar.HasTransferWindow(md.Number)) return;
-        var w = new TransferWindow { SeasonId = seasonId, MatchdayId = md.Id, OpensAt = now, ClosesAt = now.AddYears(1), Status = TransferWindowStatus.Open };
-        db.TransferWindows.Add(w);
+        if (pes17) return;
+        var w = db.TransferWindows.Local.FirstOrDefault(x => x.SeasonId == seasonId && x.Status == TransferWindowStatus.Open)
+            ?? db.TransferWindows.FirstOrDefault(x => x.SeasonId == seasonId && x.Status == TransferWindowStatus.Open && x.ClosesAt > now);
+        if (w is null)
+        {
+            w = new TransferWindow { SeasonId = seasonId, MatchdayId = md.Id, OpensAt = now, ClosesAt = now.AddYears(5), Status = TransferWindowStatus.Open };
+            db.TransferWindows.Add(w);
+        }
         md.TransferWindowId = w.Id;
+    }
+
+    /// <summary>Mùa đang đá chưa có kỳ CN mở (mùa bắt đầu trước 17/11, kỳ CN đã đóng khi khoá vòng) → mở 1 kỳ CN suốt mùa.
+    /// PES17: chợ tự do (MatchdayId null) đã mở → trả kỳ đó.</summary>
+    public static async Task<TransferWindow?> EnsureFreeTransfersAsync(ClubsDbContext db, Guid seasonId, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var w = await db.TransferWindows.FirstOrDefaultAsync(x => x.SeasonId == seasonId && x.Status == TransferWindowStatus.Open && x.ClosesAt > now && x.OpensAt <= now, ct);
+        if (w is not null) return w;
+        if (!await db.Seasons.AnyAsync(x => x.Id == seasonId && x.Status == SeasonStatus.Active, ct)) return null;
+        var md = await db.Matchdays.Where(m => m.SeasonId == seasonId && m.Status != MatchdayStatus.Settled).OrderBy(m => m.Number).FirstOrDefaultAsync(ct);
+        if (md is null) return null;
+        w = new TransferWindow { SeasonId = seasonId, MatchdayId = md.Id, OpensAt = now, ClosesAt = now.AddYears(5), Status = TransferWindowStatus.Open };
+        db.TransferWindows.Add(w);
+        await db.SaveChangesAsync(ct);
+        return w;
     }
 
     /// <param name="lockMatchday">Khoá dòng vòng (FOR UPDATE) tới hết transaction: các trận cùng vòng ghi kết quả lần lượt
@@ -416,6 +446,9 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
         if (md is not null) await db.Entry(md).ReloadAsync(ct);
         return md;
     }
+
+    private async Task<bool> IsPes17PatchAsync(Guid patchVersionId, CancellationToken ct) =>
+        Pes17RoundService.IsPes17(await db.PatchVersions.Where(p => p.Id == patchVersionId).Select(p => p.Name).FirstOrDefaultAsync(ct));
 
     /// <summary>Chạy trong transaction; kết quả lỗi (commit = false) → rollback để không ghi dở.</summary>
     private async Task<T> InTransactionAsync<T>(Func<Task<T>> action, Func<T, bool> commit, CancellationToken ct)

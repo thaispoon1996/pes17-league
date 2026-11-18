@@ -1,0 +1,12 @@
+@* Ảnh thay thế cho tin chưa có ảnh (trận 0–0, trận mất bản ghi): logo 2 CLB + tỷ số. *@
+<span class="@Class news-ph">
+    <Crest Name="@N.Home" Logo="@N.HomeLogo" Large="Large" />
+    <b>@Fmt.Score(N.HomeGoals, N.AwayGoals, N.HomePenalties, N.AwayPenalties)</b>
+    <Crest Name="@N.Away" Logo="@N.AwayLogo" Large="Large" />
+</span>
+
+@code {
+    [Parameter, EditorRequired] public NewsCard N { get; set; } = default!;
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public bool Large { get; set; }
+}

@@ -1,0 +1,386 @@
+{
+"101": {
+"league": "eng1",
+"pos": 0
+},
+"107": {
+"league": "eng1",
+"pos": 1
+},
+"4071": {
+"league": "eng1",
+"pos": 2
+},
+"4180": {
+"league": "eng1",
+"pos": 3
+},
+"377": {
+"league": "eng1",
+"pos": 4
+},
+"378": {
+"league": "eng1",
+"pos": 5
+},
+"102": {
+"league": "eng1",
+"pos": 6
+},
+"382": {
+"league": "eng1",
+"pos": 7
+},
+"177": {
+"league": "eng1",
+"pos": 8
+},
+"178": {
+"league": "eng1",
+"pos": 9
+},
+"104": {
+"league": "eng1",
+"pos": 10
+},
+"103": {
+"league": "eng1",
+"pos": 11
+},
+"173": {
+"league": "eng1",
+"pos": 12
+},
+"100": {
+"league": "eng1",
+"pos": 13
+},
+"106": {
+"league": "eng1",
+"pos": 14
+},
+"389": {
+"league": "eng1",
+"pos": 15
+},
+"396": {
+"league": "eng1",
+"pos": 16
+},
+"179": {
+"league": "eng1",
+"pos": 17
+},
+"105": {
+"league": "eng1",
+"pos": 18
+},
+"208": {
+"league": "eng1",
+"pos": 19
+},
+"4145": {
+"league": "esp1",
+"pos": 0
+},
+"258": {
+"league": "esp1",
+"pos": 1
+},
+"172": {
+"league": "esp1",
+"pos": 2
+},
+"108": {
+"league": "esp1",
+"pos": 3
+},
+"195": {
+"league": "esp1",
+"pos": 4
+},
+"361": {
+"league": "esp1",
+"pos": 5
+},
+"259": {
+"league": "esp1",
+"pos": 6
+},
+"362": {
+"league": "esp1",
+"pos": 7
+},
+"2187": {
+"league": "esp1",
+"pos": 8
+},
+"366": {
+"league": "esp1",
+"pos": 9
+},
+"261": {
+"league": "esp1",
+"pos": 10
+},
+"263": {
+"league": "esp1",
+"pos": 11
+},
+"4260": {
+"league": "esp1",
+"pos": 12
+},
+"370": {
+"league": "esp1",
+"pos": 13
+},
+"194": {
+"league": "esp1",
+"pos": 14
+},
+"109": {
+"league": "esp1",
+"pos": 15
+},
+"196": {
+"league": "esp1",
+"pos": 16
+},
+"265": {
+"league": "esp1",
+"pos": 17
+},
+"110": {
+"league": "esp1",
+"pos": 18
+},
+"267": {
+"league": "esp1",
+"pos": 19
+},
+"234": {
+"league": "ita1",
+"pos": 0
+},
+"186": {
+"league": "ita1",
+"pos": 1
+},
+"320": {
+"league": "ita1",
+"pos": 2
+},
+"4219": {
+"league": "ita1",
+"pos": 3
+},
+"124": {
+"league": "ita1",
+"pos": 4
+},
+"323": {
+"league": "ita1",
+"pos": 5
+},
+"336": {
+"league": "ita1",
+"pos": 6
+},
+"120": {
+"league": "ita1",
+"pos": 7
+},
+"119": {
+"league": "ita1",
+"pos": 8
+},
+"122": {
+"league": "ita1",
+"pos": 9
+},
+"4237": {
+"league": "ita1",
+"pos": 10
+},
+"121": {
+"league": "ita1",
+"pos": 11
+},
+"327": {
+"league": "ita1",
+"pos": 12
+},
+"123": {
+"league": "ita1",
+"pos": 13
+},
+"4241": {
+"league": "ita1",
+"pos": 14
+},
+"125": {
+"league": "ita1",
+"pos": 15
+},
+"1919": {
+"league": "ita1",
+"pos": 16
+},
+"4220": {
+"league": "ita1",
+"pos": 17
+},
+"333": {
+"league": "ita1",
+"pos": 18
+},
+"190": {
+"league": "ita1",
+"pos": 19
+},
+"4124": {
+"league": "peu",
+"pos": 0
+},
+"128": {
+"league": "peu",
+"pos": 1
+},
+"127": {
+"league": "peu",
+"pos": 2
+},
+"126": {
+"league": "peu",
+"pos": 3
+},
+"225": {
+"league": "peu",
+"pos": 4
+},
+"226": {
+"league": "peu",
+"pos": 5
+},
+"4139": {
+"league": "peu",
+"pos": 6
+},
+"227": {
+"league": "peu",
+"pos": 7
+},
+"5009": {
+"league": "peu",
+"pos": 8
+},
+"4137": {
+"league": "peu",
+"pos": 9
+},
+"436": {
+"league": "peu",
+"pos": 10
+},
+"5010": {
+"league": "peu",
+"pos": 11
+},
+"231": {
+"league": "peu",
+"pos": 12
+},
+"4126": {
+"league": "peu",
+"pos": 13
+},
+"4140": {
+"league": "peu",
+"pos": 14
+},
+"129": {
+"league": "peu",
+"pos": 15
+},
+"185": {
+"league": "peu",
+"pos": 16
+},
+"232": {
+"league": "peu",
+"pos": 17
+},
+"403": {
+"league": "fra1",
+"pos": 0
+},
+"180": {
+"league": "fra1",
+"pos": 1
+},
+"1329": {
+"league": "fra1",
+"pos": 2
+},
+"413": {
+"league": "fra1",
+"pos": 3
+},
+"182": {
+"league": "fra1",
+"pos": 4
+},
+"213": {
+"league": "fra1",
+"pos": 5
+},
+"414": {
+"league": "fra1",
+"pos": 6
+},
+"181": {
+"league": "fra1",
+"pos": 7
+},
+"113": {
+"league": "fra1",
+"pos": 8
+},
+"112": {
+"league": "fra1",
+"pos": 9
+},
+"216": {
+"league": "fra1",
+"pos": 10
+},
+"217": {
+"league": "fra1",
+"pos": 11
+},
+"114": {
+"league": "fra1",
+"pos": 12
+},
+"4211": {
+"league": "fra1",
+"pos": 13
+},
+"4123": {
+"league": "fra1",
+"pos": 14
+},
+"218": {
+"league": "fra1",
+"pos": 15
+},
+"4213": {
+"league": "fra1",
+"pos": 16
+},
+"221": {
+"league": "fra1",
+"pos": 17
+}
+}

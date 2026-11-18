@@ -93,7 +93,7 @@ else
             @if (Jobs.Running)
             {
                 <p class="muted">Tải xong sẽ tự chuyển sang màn hình game (xoay ngang điện thoại).</p>
-                <a class="btn wide" href="@Jobs.Options.StreamUrl" data-stream>📺 Mở màn hình game ngay</a>
+                <a class="btn wide" href="@Jobs.PlayLink" data-stream>📺 Mở màn hình game ngay</a>
             }
             else
             {
@@ -132,7 +132,7 @@ else
         if (!left && Jobs.Running && Jobs.Title == "Trận của tôi" && Jobs.Stage is "loading" or "kickoff")
         {
             left = true;
-            Nav.NavigateTo(await JS.InvokeAsync<string>("pesCtl.streamUrl", Jobs.Options.StreamUrl), forceLoad: true);
+            Nav.NavigateTo(await JS.InvokeAsync<string>("pesCtl.streamUrl", Jobs.PlayLink), forceLoad: true);
         }
     }
 

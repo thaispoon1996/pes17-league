@@ -29,6 +29,15 @@ public class TeamAssignment
     public ControllerType ControllerType { get; set; }
     public DateTimeOffset From { get; set; }
     public DateTimeOffset? To { get; set; }
+    /// <summary>Số vòng vắng liên tiếp của HLV người (PO 17/11: <see cref="AbsenceRules"/>); đá / giao trợ lý → về 0.</summary>
+    public int MissedInRow { get; set; }
+    public DateTimeOffset? MissWarnedAt { get; set; }
+}
+
+/// <summary>Vắng mặt (PO 17/11): vắng 3 vòng liên tiếp → cảnh cáo; 5 vòng → mất CLB (về BOT), danh sách chờ nhận.</summary>
+public static class AbsenceRules
+{
+    public const int WarnAt = 3, ReleaseAt = 5;
 }
 
 public class FootballPlayer
@@ -177,7 +186,7 @@ public class Transfer
     public Guid? OfferId { get; set; }
 }
 
-public enum LedgerReason { InitialBudget, TransferIn, TransferOut, Adjustment, Wage, LuxuryTax, RenewalFee, SellOn, Ticket, Sponsor, TvRights, Prize, Facility, Staff, Upgrade }
+public enum LedgerReason { InitialBudget, TransferIn, TransferOut, Adjustment, Wage, LuxuryTax, RenewalFee, SellOn, Ticket, Sponsor, TvRights, Prize, Facility, Staff, Upgrade, FriendlyPrize, Sanction }
 
 /// <summary>Sổ tiền ảo của CLB. Số dư = tổng Amount. Chỉ ghi khi Transfer hoàn tất (hoặc admin điều chỉnh).</summary>
 public class ClubLedgerEntry

@@ -1,0 +1,12 @@
+@inherits LayoutComponentBase
+@* Khu quản trị riêng (PO 16/11): header khác màu, menu quản trị; trang người chơi dùng MainLayout. *@
+<header class="admin-header">
+    <div class="in">
+        <a class="admin-brand" href="admin">⚙ PES 17 League <b>Quản trị</b></a>
+        <a class="admin-back" href="">← Trang giải</a>
+        <form method="post" action="/logout" data-enhance="false"><button class="link">Thoát</button></form>
+    </div>
+    <div class="in"><AdminNav /></div>
+</header>
+<main class="admin-main">@Body</main>
+<div id="blazor-error-ui">Có lỗi xảy ra. <a href="" class="reload">Tải lại</a></div>

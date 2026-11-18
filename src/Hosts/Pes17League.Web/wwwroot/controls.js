@@ -30,7 +30,12 @@
     } catch { return d; }
   };
   const save = c => { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch { } };
-  const streamUrl = url => url.split('#')[0] + '#ctl=' + encodeURIComponent(JSON.stringify(load()));
+  // Máy 2 người: giữ #playerN (người 2) trước cấu hình → #player3&ctl=… (pes-touch.js trả lại #player3 trước khi selkies đọc).
+  const streamUrl = url => {
+    const [base, hash = ''] = url.split('#');
+    const p = hash.match(/^player\d/);
+    return base + '#' + (p ? p[0] + '&' : '') + 'ctl=' + encodeURIComponent(JSON.stringify(load()));
+  };
 
   const keyName = code => !code ? '—' : code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5)
     : ({ ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'Space' })[code] ?? code;

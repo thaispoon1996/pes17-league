@@ -1,0 +1,40 @@
+# Máy PES17 (PO ok 18/11 "làm tiếp phần máy 2 người"): thay định nghĩa ~/pes6/pes17-web (không sửa bên đó).
+# Chạy: tools/bench/up.sh (tạo vé chủ SELKIES_MASTER_TOKEN trong $DATA/bench.env nếu chưa có, không in ra).
+# Chế độ token: chỉ người có link vé của trận vào được (web cấp qua pes-tokens.py), máy tự bấm bằng vé pad.
+name: pes17-web
+services:
+  bench:
+    build: .
+    image: pes17-bench:local
+    container_name: pes17-bench
+    shm_size: "1gb"
+    devices: ["/dev/dri:/dev/dri"]
+    cpuset: "4-11"
+    mem_limit: 6g
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Asia/Ho_Chi_Minh
+      SELKIES_ENCODER: x264enc
+      SELKIES_VIDEO_BITRATE: "18"
+      SELKIES_FRAMERATE: "60"
+      SELKIES_ENABLE_RATE_CONTROL: "true"
+      SELKIES_RATE_CONTROL_MODE: cbr
+      SELKIES_MANUAL_WIDTH: "1280"
+      SELKIES_MANUAL_HEIGHT: "720"
+      DRINODE: /dev/dri/renderD128
+      DRI_NODE: /dev/dri/renderD128
+      SELKIES_MASTER_TOKEN: ${SELKIES_MASTER_TOKEN:?thiếu bench.env}
+      SELKIES_UI_SHOW_SIDEBAR: "false"
+      SELKIES_UI_SHOW_LOGO: "false"
+      SELKIES_UI_TITLE: "PES 17 League"
+    ports: ["100.66.228.1:3117:3001"]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+    volumes:
+      - /data/pesleague/pes17/config:/config
+      - /data/pesleague/pes17/bench:/bench
+      - /data/pesleague/pes17/game:/game:ro
+      - ./startwm.sh:/defaults/startwm.sh:ro
+      - ./pes-tokens.py:/usr/local/bin/pes-tokens.py:ro

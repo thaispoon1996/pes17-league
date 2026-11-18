@@ -1,0 +1,47 @@
+@page "/vai-tro"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject CurrentUser Me
+@inject IDbContextFactory<ClubsDbContext> Dbs
+
+@* Vai trò & quyền (PO 17/11): 1 khách vãng lai / 2 người chơi có tài khoản / 3 HLV đá giải (có CLB) / 4 admin = Ban tổ chức (chỉ PO),
+   admin không cầm CLB, không đá, không giao hữu. *@
+<section class="hero">
+    <span class="pill">Hướng dẫn</span>
+    <h1>Vai trò &amp; quyền</h1>
+    <p>Bạn đang là: <b>@role</b>.@if (role == Guest) { <span> <a href="login">Đăng nhập</a> hoặc <a href="dang-ky">Đăng ký</a> (mật khẩu tối thiểu 3 ký tự).</span> }</p>
+</section>
+<div class="table-wrap"><table class="table">
+    <thead><tr><th class="left">Việc</th><th>Khách vãng lai</th><th>Có tài khoản</th><th>HLV đá giải<br /><small>có CLB</small></th><th>Admin<br /><small>Ban tổ chức</small></th></tr></thead>
+    <tbody>
+        <tr><td class="left">Xem giải đấu, vòng, BXH, lịch, trực tiếp, giao hữu, chuyển nhượng, tin tức, thống kê, hồ sơ CLB/cầu thủ/người chơi</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td class="left">Đăng ký tài khoản</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td class="left">Hồ sơ người chơi, cài tay cầm/bàn phím, hòm thư</td><td>—</td><td>✅</td><td>✅</td><td>hòm thư BTC</td></tr>
+        <tr><td class="left">Giao hữu <b>xếp hạng cá nhân</b> (chọn đội bất kỳ, tính Elo) + chat sảnh</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td class="left">Nộp đơn <a href="dang-ky-giai">đăng ký đá giải</a></td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td class="left">Giao hữu <b>thách đấu bằng CLB</b> của mình (Elo, tiền thưởng)</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td class="left">Quản lý CLB: đội hình, chuyển nhượng, tài chính, tập luyện, học viện</td><td>—</td><td>—</td><td>✅ CLB mình</td><td>—</td></tr>
+        <tr><td class="left">Đá trận giải (Chuẩn bị trận, Vào trận)</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td class="left">Điều hành: giải đấu, mùa, lịch, cài đặt game/patch, luật, kinh tế, thưởng/phạt, duyệt đơn, giao/thu CLB, xử lý sự cố trận</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+    </tbody>
+</table></div>
+<section class="panel">
+    <h2>Quy trình</h2>
+    <p><b>Đá giao hữu:</b> đăng nhập → Giao hữu → <i>Tìm trận</i> hoặc <i>Thách đấu</i> người đang online → vào phòng chọn đội/đội hình, bấm Sẵn sàng → máy giao hữu mở game cho 2 bên.</p>
+    <p><b>Đá giải:</b> đăng ký tài khoản → nộp đơn ở <a href="dang-ky-giai">Đăng ký đá giải</a> → Ban tổ chức duyệt giao CLB → chỉnh đội hình trước trận, đến giờ bấm Vào trận.</p>
+    <p><b>Admin</b> là Ban tổ chức (chủ tịch liên đoàn): chỉ điều hành, không cầm CLB, không thi đấu.</p>
+    <p class="muted">Giai đoạn test: tự đăng ký không cần mã mời; tài khoản Ban tổ chức tạo/đặt lại có mật khẩu mặc định <code>@ManagerService.DefaultPassword</code>.</p>
+</section>
+
+@code {
+    const string Guest = "Khách vãng lai";
+    string role = "";
+    protected override async Task OnInitializedAsync()
+    {
+        if (await Me.IsAdminAsync()) { role = "Admin (Ban tổ chức)"; return; }
+        if (await Me.ManagerIdAsync() is not { } id) { role = Guest; return; }
+        await using var db = await Dbs.CreateDbContextAsync();
+        role = await db.TeamAssignments.AnyAsync(a => a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human)
+            ? "HLV đá giải" : "Người chơi có tài khoản";
+    }
+}

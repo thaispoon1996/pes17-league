@@ -1,5 +1,6 @@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+        @* PO 16/11: trang quản trị (Admin*.razor, Ẩn/hiện) dùng khu riêng AdminLayout *@
+        <RouteView RouteData="routeData" DefaultLayout="@(routeData.PageType.Name.StartsWith("Admin") || routeData.PageType == typeof(Pages.Visibility) ? typeof(AdminLayout) : typeof(MainLayout))" />
     </Found>
 </Router>

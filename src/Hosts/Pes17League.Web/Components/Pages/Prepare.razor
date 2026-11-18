@@ -7,20 +7,30 @@
 @inject NavigationManager Nav
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject CurrentUser Me
+@inject FriendlyHub Hub
+@inject FriendlyMachineOptions Machine
+@inject StreamPass Pass
 
-@* Chuẩn bị trận của PO (PO 05/11): chỉnh đội hình/chiến thuật trên sân → "Sẵn sàng" = chốt đội hình, game khởi động và tự vào trận
-   (màn chờ /vao-tran đếm ngược). Game chỉ đọc đội hình lúc khởi động nên sau Sẵn sàng không sửa được nữa. *@
+@* Chuẩn bị trận của PO (PO 05/11): chỉnh đội hình/chiến thuật trên sân → "Sẵn sàng" = chốt đội hình, game tự vào trận
+   (màn chờ /vao-tran đếm ngược). Vào trận nhanh (PO 16/11): mở trang lúc máy rảnh → máy dựng sẵn game tới màn Chọn đội, vẫn sửa
+   đội hình được; Sẵn sàng → dựng OF đội hình mới nhất, ghi vào bộ nhớ game rồi chọn đội (bớt khởi động + đi menu). *@
 @if (season is null || fixture is null) { <p>Không tìm thấy trận.</p> return; }
 <section class="hero">
     <span class="pill">Chuẩn bị trận · Vòng @fixture.Matchday</span>
     <h1>@season.Clubs[fixture.Home] – @season.Clubs[fixture.Away]</h1>
-    <p>Bạn đá đội @(side == MatchSide.Home ? "nhà" : "khách"). Chỉnh đội hình, chiến thuật rồi bấm Sẵn sàng.</p>
+    <p>Bạn đá đội @(adminPick ? season.Clubs[club] + " " : "")(@(side == MatchSide.Home ? "nhà" : "khách")). Chỉnh đội hình, chiến thuật rồi bấm Sẵn sàng.</p>
+    @if (adminPick && !(Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id))
+    {
+        <p><a class="btn" href="chuan-bi/@fixture.Id?ben=@(side == MatchSide.Home ? "khach" : "nha")">⇄ Đổi sang đá @season.Clubs[side == MatchSide.Home ? fixture.Away : fixture.Home]</a></p>
+    }
 </section>
 <div class="grid">
     <section class="panel">
-        <LineupBoard Season="season" ClubId="season.HumanClubId" Locked="Jobs.LineupLocked" LockedMessage="Đội hình đã chốt cho trận đang vào." />
+        <LineupBoard Season="season" ClubId="club" Locked="Jobs.LineupLocked" LockedMessage="Đội hình đã chốt cho trận đang vào." />
     </section>
-    <aside class="panel">
+    @* Điện thoại (PO 17/11): khu Vào trận nằm dưới cùng → nút nổi nhảy tới *@
+    <button type="button" class="jump-cta no-busy" onclick="document.getElementById('vao-tran').scrollIntoView({behavior:'smooth'})">⚽ Vào trận ↓</button>
+    <aside class="panel" id="vao-tran">
         <div class="panel-head"><h2>Vào trận</h2></div>
         @if (fixture.Status == FixtureStatus.Played)
         {
@@ -28,28 +38,71 @@
         }
         else if (season.IsHuman(fixture.Home) && season.IsHuman(fixture.Away))
         {
-            @* Đợt 2 (PO ok 12/11): người vs người = máy đá theo chiến thuật của 2 HLV *@
-            <p>Trận giữa 2 HLV người: máy đá theo đội hình, chiến thuật của hai bên khi admin chạy vòng. Chỉnh chiến thuật bên trái trước khi vòng đá.</p>
+            @* PO 17/11: người vs người = 2 HLV cùng đá trên máy 2 người (máy giao hữu). 2 bên bấm Sẵn sàng + mở trang này → máy nhận trận. *@
+            var mineReady = side == MatchSide.Home ? fixture.HomeReadyAt is not null : fixture.AwayReadyAt is not null;
+            var otherReady = side == MatchSide.Home ? fixture.AwayReadyAt is not null : fixture.HomeReadyAt is not null;
+            var other = season.Clubs[side == MatchSide.Home ? fixture.Away : fixture.Home];
+            if (Hub.LeagueFixtureId == fixture.Id)
+            {
+                <p><b>Máy đang chạy trận (@(Hub.Stage(fixture.Id) ?? "khởi động")).</b> Bạn đá đội @(side == MatchSide.Home ? "nhà" : "khách") — dùng bàn phím, cảm ứng hoặc tay cầm tùy ý.</p>
+                <p class="muted">⚠️ Đứng 5 phút không ai bấm (chưa giao bóng hoặc tạm dừng) thì bên không thao tác bị xử thua 0-3; giới hạn 45 phút tính từ giao bóng.</p>
+                @if (PlayLink is { } link) { <a class="btn primary wide" data-stream href="@link" target="_blank">🎮 Mở màn hình chơi</a> }
+                else { <p class="muted">Máy đang chuẩn bị trận — nút Vào máy mở khi trận bắt đầu tải</p> }
+            }
+            else if (fixture.AssistantPlays)
+            {
+                <p>@(banned ? "Bạn đang bị Ban tổ chức cấm chỉ đạo: trợ lý đá thay trận này (xem Kỷ luật)." : "Quá hạn vòng: trợ lý đá thay trận này.")</p>
+            }
+            else if (!locked)
+            {
+                <p class="muted">Vòng này chưa mở.</p>
+            }
+            else
+            {
+                <p>Trận giữa 2 HLV người: hai bạn cùng đá trực tiếp trên máy 2 người (mỗi người dùng bàn phím, cảm ứng hoặc tay cầm tùy ý).
+                   Hẹn giờ với đối thủ qua <a href="thu?soan=1&clb=@(side == MatchSide.Home ? fixture.Away : fixture.Home)&mau=hen-gio">✉ thư</a>,
+                   cả hai bấm Sẵn sàng và để mở trang này — máy rảnh là vào trận.</p>
+                <p>Bạn: @(mineReady ? "✅ Sẵn sàng" : "chưa sẵn sàng") · @other: @(otherReady ? "✅ Sẵn sàng" : "chưa sẵn sàng")
+                   @if (otherReady && mineReady && !Hub.IsOnline(otherManager)) { <span class="muted"> (đối thủ chưa mở trang trận)</span> }</p>
+                @if (Hub.DuelError(fixture.Id) is { } err) { <p class="msg">Lần trước lỗi: @err. Bấm Sẵn sàng lại để đá lại.</p> }
+                @if (mineReady && otherReady && Hub.LeagueFixtureId is not null) { <p class="muted">Máy 2 người đang bận trận khác, chờ chút.</p> }
+                <button class="@(mineReady ? "wide" : "primary wide")" @onclick="() => DuelReady(!mineReady)">@(mineReady ? "↩ Bỏ Sẵn sàng" : "✅ Sẵn sàng")</button>
+                <p class="muted">Quá hạn vòng mà chưa đá: trợ lý đá thay; bên chưa bấm Sẵn sàng tính vắng (@AbsenceRules.WarnAt vòng liên tiếp cảnh cáo, @AbsenceRules.ReleaseAt vòng về BOT).</p>
+            }
         }
         else if (fixture.AssistantPlays)
         {
-            <p>Trợ lý sẽ đá thay trận này (máy đá theo chiến thuật của bạn).</p>
-            <button class="wide" @onclick="() => SetAssistant(false)">↩ Huỷ, tôi tự đá</button>
+            @if (banned)
+            {
+                <p>Bạn đang bị Ban tổ chức <a href="ky-luat">cấm chỉ đạo</a>: trợ lý đá thay trận này (máy đá theo chiến thuật của bạn).</p>
+            }
+            else
+            {
+                <p>Trợ lý sẽ đá thay trận này (máy đá theo chiến thuật của bạn).</p>
+                <button class="wide" @onclick="() => SetAssistant(false)">↩ Huỷ, tôi tự đá</button>
+            }
         }
         else if (!locked)
         {
-            <p class="muted">Vòng chưa khoá (còn mở kỳ chuyển nhượng) — đóng kỳ CN ở trang Vòng đấu rồi mới vào trận được.</p>
+            <p class="muted">Vòng này chưa mở.</p>
+        }
+        else if (Jobs.Preparing && Jobs.HumanFixture?.FixtureId == fixture.Id)
+        {
+            @if (Jobs.Ready)
+            {
+                <p class="muted">Game đã dựng sẵn. Bấm Sẵn sàng: đội hình hiện tại được ghi vào game và vào trận (~@(Jobs.SecondsToKickoffEstimateWarm) giây).</p>
+            }
+            else
+            {
+                <p class="muted">Máy đang dựng sẵn game (@(Jobs.Stage ?? "khởi động")) — vẫn chỉnh đội hình được. Bấm Sẵn sàng lúc nào cũng được, game tự đi tiếp.</p>
+            }
+            <button class="primary wide" @onclick="Go">✅ Sẵn sàng — chốt đội hình & vào trận</button>
+            <button class="wide" data-confirm="Huỷ dựng sẵn và trả máy?" @onclick="Jobs.Cancel">✖ Huỷ dựng sẵn (trả máy)</button>
         }
         else if (Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id)
         {
             <p>Đội hình đã chốt, game đang vào trận.</p>
             <a class="btn primary wide" href="vao-tran">📺 Màn hình chờ vào trận</a>
-        }
-        else if (admin && Jobs.CanPreemptBots)
-        {
-            @* PO 15/11: admin được ưu tiên — ngắt BOT, vào trận ngay, xong BOT tự đá tiếp *@
-            <p class="muted">BOT đang đá@(Jobs.BotMinutesLeft is { } m0 ? $" (trận hiện tại còn khoảng {m0} phút)" : ""). Bấm Sẵn sàng: trận BOT bị ngắt (về lịch, đá lại sau), trận của bạn vào ngay; đá xong BOT tự đá tiếp.</p>
-            <button class="primary wide" disabled="@starting" @onclick="Ready">✅ Sẵn sàng — ngắt BOT & vào trận ngay</button>
         }
         else if (Jobs.Running)
         {
@@ -69,9 +122,9 @@
             <p class="muted">Bấm Sẵn sàng: đội hình được chốt, game khởi động và tự vào trận (~@(Jobs.SecondsToKickoffEstimate) giây, có đếm ngược).</p>
             <button class="primary wide" @onclick="Ready">✅ Sẵn sàng — chốt đội hình & vào trận</button>
         }
-        @if (fixture.Status == FixtureStatus.Scheduled && season.NeedsHuman(fixture) && !(Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id))
+        @if (fixture.Status == FixtureStatus.Scheduled && season.NeedsHuman(fixture) && !season.BothHuman(fixture) && !(Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id))
         {
-            <button class="wide" title="Không đá được: máy đá thay theo đội hình, chiến thuật hiện tại" @onclick="() => SetAssistant(true)">🧑‍💼 Để trợ lý đá trận này</button>
+            <button class="wide" title="Không đá được: máy đá thay theo đội hình, chiến thuật hiện tại" data-confirm="Để trợ lý đá trận này theo đội hình, chiến thuật hiện tại?" @onclick="() => SetAssistant(true)">🧑‍💼 Để trợ lý đá trận này</button>
         }
         <p><a href="">← Vòng đấu</a></p>
     </aside>
@@ -79,11 +132,18 @@
 
 @code {
     [Parameter] public Guid FixtureId { get; set; }
+    [SupplyParameterFromQuery(Name = "ben")] public string? Ben { get; set; }
+    Guid club;
+    bool adminPick;
     SeasonInfo? season;
     FixtureView? fixture;
     MatchSide side;
-    bool locked, admin;
-    Timer? tick;
+    bool locked, admin, banned;
+    Timer? tick, touch;
+    Guid? me;
+    Guid otherManager;
+    string? myName;
+    string? PlayLink => Pass.Link(fixture!.Id, side == MatchSide.Home);   // vé riêng từng trận (PO 17/11)
 
     protected override async Task OnInitializedAsync()
     {
@@ -95,14 +155,74 @@
         await using var db = await Dbs.CreateDbContextAsync();
         var md = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id where f.Id == FixtureId select m).SingleOrDefaultAsync();
         if (md is null) return;
-        locked = md.Status is MatchdayStatus.Locked or MatchdayStatus.Playing;
+        locked = md.Status is MatchdayStatus.WindowOpen or MatchdayStatus.Locked or MatchdayStatus.Playing;   // PO 17/11: bỏ khoá vòng
         fixture = (await Q.FixturesAsync(season.Id, md.Id)).FirstOrDefault(f => f.Id == FixtureId);
-        if (fixture is null || (fixture.Home != season.HumanClubId && fixture.Away != season.HumanClubId)) { fixture = null; return; }
-        side = fixture.Home == season.HumanClubId ? MatchSide.Home : MatchSide.Away;
+        if (fixture is null) return;
+        if (fixture.Home == season.HumanClubId || fixture.Away == season.HumanClubId)
+            side = fixture.Home == season.HumanClubId ? MatchSide.Home : MatchSide.Away;
+        else { fixture = null; return; }   // PO 17/11: admin = Ban tổ chức, không đá trận (bỏ "admin đá trận BOT" 16/11)
+        club = side == MatchSide.Home ? fixture.Home : fixture.Away;
+        banned = await SanctionService.IsBannedAsync(db, FixtureId);   // Ban tổ chức cấm chỉ đạo (PO 17/11)
+        if (season.BothHuman(fixture))
+        {
+            me = await Me.ManagerIdAsync();
+            var otherClub = side == MatchSide.Home ? fixture.Away : fixture.Home;
+            otherManager = await new MailService(db, TimeProvider.System).ManagerOfClubAsync(otherClub) ?? Guid.Empty;
+            myName = season.Clubs[club];
+            Hub.Changed += OnHub;
+            touch = new Timer(_ => { if (me is { } id) Hub.Touch(id, myName!); }, null, 0, 5000);   // máy chỉ nhận trận khi 2 HLV đang mở trang
+        }
+        Warm();
+    }
+
+    async Task DuelReady(bool on)
+    {
+        if (me is not { } id) return;
+        await using (var db = await Dbs.CreateDbContextAsync())
+        {
+            try { await new LeagueDuelService(db, TimeProvider.System).ReadyAsync(FixtureId, id, on); }
+            catch (AdminRuleException e) { Hub.SetDuelError(FixtureId, e.Message); }
+        }
+        Hub.Notify();
+    }
+
+    async Task ReloadAsync()
+    {
+        if (season is null || fixture is null) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var md = await db.Fixtures.Where(f => f.Id == FixtureId).Select(f => f.MatchdayId).SingleAsync();
+        fixture = (await Q.FixturesAsync(season.Id, md)).FirstOrDefault(f => f.Id == FixtureId) ?? fixture;
+        StateHasChanged();
+    }
+
+    void OnHub() => InvokeAsync(ReloadAsync);
+
+    /// <summary>Máy rảnh + trận của HLV (không phải admin chọn trận BOT) → dựng sẵn game ngay khi mở trang (PO 16/11).</summary>
+    void Warm()
+    {
+        if (adminPick || !locked || Jobs.Running || Jobs.Declined(fixture!.Id) || fixture.Status != FixtureStatus.Scheduled
+            || fixture.AssistantPlays || (season!.IsHuman(fixture.Home) && season.IsHuman(fixture.Away))) return;
+        Jobs.PlayHuman(fixture.Id, side, prepare: true);
+    }
+
+    void Go()
+    {
+        Jobs.Go();
+        Nav.NavigateTo("vao-tran");
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (adminPick && fixture is not null)
+        {
+            side = Ben == "khach" ? MatchSide.Away : MatchSide.Home;
+            club = side == MatchSide.Home ? fixture.Home : fixture.Away;
+        }
     }
 
     async Task SetAssistant(bool on)
     {
+        if (!on && banned) return;
         await using (var db = await Dbs.CreateDbContextAsync())
             await db.Fixtures.Where(f => f.Id == FixtureId && f.Status == FixtureStatus.Scheduled).ExecuteUpdateAsync(x => x.SetProperty(f => f.AssistantPlays, on));
         fixture = fixture! with { AssistantPlays = on };
@@ -115,7 +235,7 @@
         starting = true;
         try
         {
-            if (admin ? await Jobs.PlayHumanNowAsync(fixture!.Id, side) : Jobs.PlayHuman(fixture!.Id, side)) Nav.NavigateTo("vao-tran");
+            if (Jobs.PlayHuman(fixture!.Id, side)) Nav.NavigateTo("vao-tran");
         }
         finally { starting = false; }
     }
@@ -125,6 +245,8 @@
     public void Dispose()
     {
         Jobs.Changed -= OnJob;
+        Hub.Changed -= OnHub;
         tick?.Dispose();
+        touch?.Dispose();
     }
 }

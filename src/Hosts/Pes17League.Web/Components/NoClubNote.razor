@@ -1,0 +1,12 @@
+@inject CurrentUser Me
+@* Lời nhắc khi người xem chưa có "CLB của tôi" — theo vai trò (PO 16/11). *@
+@if (role == 1) { <p class="msg">Ban tổ chức không cầm CLB@(Suffix). <a href="admin">Về Quản trị →</a></p> }
+else if (role == 2) { <p class="msg">Bạn chưa được giao CLB@(Suffix). <a href="dang-ky-giai">Nộp đơn đăng ký đá giải →</a></p> }
+else if (role == 3) { <p class="msg">Đăng nhập để quản lý CLB@(Suffix). <a href="login">Đăng nhập →</a></p> }
+
+@code {
+    [Parameter] public string Suffix { get; set; } = "";
+    int role;   // 1 admin, 2 HLV, 3 khách
+    protected override async Task OnInitializedAsync() =>
+        role = await Me.IsAdminAsync() ? 1 : await Me.IsGuestAsync() ? 3 : 2;
+}

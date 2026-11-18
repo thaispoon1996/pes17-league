@@ -26,6 +26,8 @@ public interface IMatchPress
 public sealed class MatchPress(Func<ClubsDbContext> dbFactory, IArticleWriter writer, IFrameGrabber frames, string photoDir, TimeProvider clock) : IMatchPress
 {
     public const double AfterGoalSec = 3;
+    /// <summary>Trận không có bàn (hoặc bàn không có mốc video): 1 ảnh giữa hiệp 1; video ngắn thì lùi về mốc dự phòng.</summary>
+    public const double SceneSec = 240, SceneFallbackSec = 60;
 
     public async Task<string?> PublishAsync(Guid fixtureId, string? recordingPath, CancellationToken ct)
     {
@@ -79,7 +81,8 @@ public sealed class MatchPress(Func<ClubsDbContext> dbFactory, IArticleWriter wr
     {
         var timed = goals.Where(g => g.VideoOffsetSec is not null).ToList();
         var picked = Pick(timed, g => g.ClubId == f.HomeClubId);
-        if (picked.Count == 0 || recordingPath is null || !File.Exists(recordingPath)) return [];
+        if (recordingPath is null || !File.Exists(recordingPath)) return [];
+        if (picked.Count == 0) return await SceneAsync(f, clubs, recordingPath, ct);
         var planned = new List<(Goal Goal, int Home, int Away, int Sort, string Dest)>();
         var grabs = new List<FrameGrab>();
         int h = 0, a = 0, sort = 0;
@@ -108,6 +111,16 @@ public sealed class MatchPress(Func<ClubsDbContext> dbFactory, IArticleWriter wr
             });
         }
         return list;
+    }
+
+    private async Task<List<MatchPhoto>> SceneAsync(Fixture f, Dictionary<Guid, string> clubs, string recordingPath, CancellationToken ct)
+    {
+        var dest = Path.Combine(photoDir, f.Id.ToString("N"), "1.jpg");
+        try { await frames.GrabAsync(recordingPath, [new FrameGrab(dest, SceneSec, SceneFallbackSec)], ct); }
+        catch (Exception e) when (e is not OperationCanceledException) { return []; }
+        if (!File.Exists(dest)) return [];
+        var caption = $"{clubs[f.HomeClubId]} {f.HomeGoals}–{f.AwayGoals} {clubs[f.AwayClubId]}";
+        return [new MatchPhoto { FileName = $"{f.Id:N}/1.jpg", Caption = caption.Length <= 200 ? caption : caption[..200], Sort = 1 }];
     }
 
     /// <summary>Tối đa 3 bàn, theo thứ tự phút: bàn đầu, bàn lập thế dẫn cuối cùng (hoặc bàn gỡ hoà cuối nếu hoà), bàn cuối.</summary>

@@ -6,7 +6,6 @@
 @inject IJSRuntime JS
 
 <h1>Quản trị</h1>
-<AdminNav />
 @if (msg is not null) { <p class="msg">@msg</p> }
 
 <div class="panel">
@@ -48,6 +47,14 @@
             @if (v.CanTopUp) { <button class="primary" disabled="@busy" @onclick="TopUp">Bù ngân sách đầu mùa (1 lần)</button> }
             @if (v.Status == SeasonStatus.Active) { <button disabled="@(busy || M(softM) == stored?.SoftWageCap)" @onclick="SaveSoftCap">Lưu trần mềm</button> }
         </div>
+        @* Chợ tự do PES17 (PO 18/11): không theo vòng; mở = tính giá + lương + chia quỹ như Bắt đầu mùa. *@
+        @if (v.Status != SeasonStatus.Finished)
+        {
+            <div class="filters">
+                @if (freeWindow is { } fw) { <span class="msg">Chợ tự do đang mở từ @fw.OpensAt.ToLocalTime().ToString("HH:mm dd/MM/yyyy") — admin chuyển cầu thủ ở trang từng cầu thủ; đội hình đổi tự vào game.</span> }
+                else { <button class="primary" disabled="@busy" @onclick="OpenMarket">Mở chợ tự do</button> <small class="muted">(lưu tham số trước: quỹ chia 1 lần lúc mở)</small> }
+            </div>
+        }
         @foreach (var w in Warnings(v)) { <p class="warn">@w</p> }
         @* Mùa đã xong: đội hình, lương, số dư là của hiện tại, giá là của mùa đó → bảng không có nghĩa. *@
         @if (v.Status == SeasonStatus.Finished) { <p class="muted">Mùa đã xong: chỉ xem tham số đã dùng.</p> }
@@ -107,6 +114,7 @@
     Guid seasonId;
     BudgetPreview? view;
     SeasonEconomy? stored, previous;
+    TransferWindow? freeWindow;
     string? previousName, msg;
     double softM, fundM, fundPct, exponent;
     int permille;
@@ -140,6 +148,7 @@
         {
             stored = await db.SeasonEconomies.AsNoTracking().SingleOrDefaultAsync(e => e.SeasonId == seasonId) ?? new SeasonEconomy { SeasonId = seasonId };
             previous = prev is null ? null : await db.SeasonEconomies.AsNoTracking().SingleOrDefaultAsync(e => e.SeasonId == prev.Id);
+            freeWindow = await new FreeMarketService(db, Clock).WindowAsync(seasonId);
         }
         previousName = prev?.Name;
         (softM, permille, fundM, exponent) = (stored.SoftWageCap / 1e6, stored.WagePermille, stored.InitialBudgetFund / 1e6, stored.BudgetExponent);
@@ -197,6 +206,26 @@
             var diff = await svc.TopUpAsync(seasonId, new(SoftWageCap: c.SoftWageCap, InitialBudgetFund: c.InitialBudgetFund, BudgetExponent: c.BudgetExponent), AdminText.Actor);
             msg = $"Đã bù {Fmt.Money(diff.Values.Sum())} cho {diff.Count(d => d.Value != 0)} CLB.";
         });
+    }
+
+    async Task OpenMarket()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Mở chợ tự do {SeasonName}?\nTính giá + lương hợp đồng nhập, chia quỹ {Fmt.Money(stored!.InitialBudgetFund)} cho các CLB (1 lần, theo tham số ĐÃ LƯU)."
+            + (M(fundM) != stored.InitialBudgetFund ? "\nChú ý: quỹ đang nhập khác quỹ đã lưu — bấm Lưu tham số trước nếu muốn dùng số mới." : ""))) return;
+        busy = true;
+        try
+        {
+            await using (var db = await Dbs.CreateDbContextAsync())
+            {
+                var r = await new FreeMarketService(db, Clock).OpenAsync(seasonId, AdminText.Actor);
+                msg = $"Đã mở chợ tự do: {r.Prices} giá, {r.Wages} lương hợp đồng, ngân sách {r.Budgets} CLB.";
+            }
+            var done = msg;
+            await LoadAsync();
+            msg = done;
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
     }
 
     async Task SaveSoftCap()

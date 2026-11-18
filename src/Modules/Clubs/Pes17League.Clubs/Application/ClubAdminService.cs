@@ -263,6 +263,8 @@ public sealed class ClubAdminService(ClubsDbContext db, TimeProvider clock, IOpt
     {
         var current = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human && a.ParticipantId == participantId).ToListAsync(ct);
         if (current.Count == (clubId is null ? 0 : 1) && current.All(a => a.ClubId == clubId)) return;
+        // PO 17/11: admin = Ban tổ chức, không cầm CLB. Chỉ còn được trả CLB admin cầm từ trước (participantId null) về BOT.
+        if (clubId is not null && participantId is null) throw new AdminRuleException("Admin không được cầm CLB: giao CLB cho tài khoản người chơi");
         if (clubId is { } id)
         {
             var c = await db.Clubs.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new AdminRuleException("Không tìm thấy CLB");

@@ -29,15 +29,34 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         var psi = new ProcessStartInfo("python3") { RedirectStandardOutput = true, UseShellExecute = false };
         foreach (var a in new[] { scriptPath, "run", r.ContainerName, of, r.HomePesClubIndex.ToString(), r.AwayPesClubIndex.ToString() })
             psi.ArgumentList.Add(a);
-        if (r.HumanSide is { } side) psi.ArgumentList.Add(side == MatchSide.Home ? "home" : "away");
-        if (r.Go is not null) { psi.Environment["PESMATCH_WAIT_GO"] = "1"; psi.RedirectStandardInput = true; }
+        if (r.BothHuman) psi.ArgumentList.Add("both");
+        else if (r.HumanSide is { } side) psi.ArgumentList.Add(side == MatchSide.Home ? "home" : "away");
+        if (r.Go is not null) { psi.Environment[r.Refresh is null ? "PESMATCH_WAIT_GO" : "PESMATCH_WARM"] = "1"; psi.RedirectStandardInput = true; }
         if (r.ExtraTime) psi.Environment["PESMATCH_EXTRA_TIME"] = "1";
         if (recordingDir is not null) psi.Environment["PESMATCH_REC"] = Path.Combine(Path.GetFullPath(recordingDir), $"{r.FixtureId:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.mkv");
         if (liveDir is not null) psi.Environment["PESMATCH_LIVE"] = Path.Combine(Path.GetFullPath(liveDir), $"{r.FixtureId:N}.m3u8");
 
         using var p = Process.Start(psi)!;
-        r.Go?.ContinueWith(_ => { try { p.StandardInput.WriteLine("go"); p.StandardInput.Flush(); } catch { } },
-            TaskContinuationOptions.OnlyOnRanToCompletion);   // tiến trình đã thoát/dispose → bỏ qua
+        r.Go?.ContinueWith(async _ =>
+        {
+            var line = "go";
+            if (r.Refresh is not null)                       // vào trận nhanh: OF đội hình mới nhất → pesmatch ghi vào bộ nhớ game
+            {
+                try
+                {
+                    var fresh = Path.Combine(workDir, $"{r.FixtureId:N}.go.of");
+                    await File.WriteAllBytesAsync(fresh, await r.Refresh(ct), ct);
+                    line = $"go {Path.GetFullPath(fresh)}";
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    onEvent?.Invoke(r, JsonDocument.Parse(JsonSerializer.Serialize(new { @event = "refresh_error", reason = e.Message })).RootElement);
+                    try { p.Kill(true); } catch { }          // đội hình lỗi → không vào trận với đội hình cũ
+                    return;
+                }
+            }
+            try { p.StandardInput.WriteLine(line); p.StandardInput.Flush(); } catch { }
+        }, TaskContinuationOptions.OnlyOnRanToCompletion);   // tiến trình đã thoát/dispose → bỏ qua
         var goals = new List<RunGoal>();
         var ratings = new List<RunRating>();
         (int Home, int Away)? penalties = null;

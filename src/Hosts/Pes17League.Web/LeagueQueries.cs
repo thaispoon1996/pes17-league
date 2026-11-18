@@ -9,8 +9,9 @@ namespace Pes17League.Web;
 public sealed record SeasonInfo(Guid Id, string Name, Guid HumanClubId, IReadOnlyDictionary<Guid, string> Clubs, SeasonEconomy Economy, IReadOnlyDictionary<Guid, string> Logos,
     int Number = 0, SeasonStatus Status = SeasonStatus.Active, bool Pinned = false, IReadOnlySet<Guid>? HumanClubs = null)
 {
-    /// <summary>Trận chờ HLV người tự đá (đúng 1 bên Human, chưa giao trợ lý); còn lại máy đá (đợt 2) — như <see cref="MatchOrchestrator.NeedsHuman"/>.</summary>
-    public bool NeedsHuman(FixtureView f) => HumanClubs is { } h && !f.AssistantPlays && h.Contains(f.Home) != h.Contains(f.Away);
+    /// <summary>Trận chờ HLV người tự đá (có bên Human, chưa giao trợ lý); còn lại máy đá — như <see cref="MatchOrchestrator.NeedsHuman"/>.</summary>
+    public bool NeedsHuman(FixtureView f) => HumanClubs is { } h && !f.AssistantPlays && (h.Contains(f.Home) || h.Contains(f.Away));   // PO 17/11: cả người vs người
+    public bool BothHuman(FixtureView f) => IsHuman(f.Home) && IsHuman(f.Away);
     public bool IsHuman(Guid club) => HumanClubs?.Contains(club) == true;
 
     /// <summary>Logo CLB (lấy từ game hoặc admin tải lên); null → huy hiệu chữ.</summary>
@@ -25,7 +26,7 @@ public sealed record SeasonInfo(Guid Id, string Name, Guid HumanClubId, IReadOnl
 /// <param name="EditionId">Mùa giải của trận; null = mùa alpha 1 giải.</param>
 public sealed record FixtureView(Guid Id, int Matchday, Guid Home, Guid Away, FixtureStatus Status, int? HomeGoals, int? AwayGoals,
     IReadOnlyList<GoalView> Goals, int? HomePenalties = null, int? AwayPenalties = null, Guid? EditionId = null, FixtureStage Stage = FixtureStage.League, int? Leg = null,
-    bool AssistantPlays = false);
+    bool AssistantPlays = false, bool HomeAbsent = false, bool AwayAbsent = false, DateTimeOffset? HomeReadyAt = null, DateTimeOffset? AwayReadyAt = null);
 /// <summary>Giải của mùa liên đoàn (mùa giải có CLB); <see cref="Rules"/> = luật đã khoá của mùa giải.</summary>
 public sealed record EditionView(Guid Id, string Name, CompetitionType Type, Guid CompetitionId, string? Logo, string? Country, int? Tier, EditionStatus Status, CompetitionRules Rules);
 /// <summary>Tóm tắt 1 giải (bước 7): đầu bảng, số trận đã đá/tổng của đội đá nhiều nhất (cúp: league phase), giai đoạn cúp đang đá; <see cref="Champion"/> khi giải đã xong.</summary>
@@ -44,7 +45,8 @@ public sealed record MatchEventView(Guid ClubId, int Half, int Minute, bool Adde
 public sealed record MatchPlayerView(string Name, MatchRating Stats, Position Position = Position.CF);
 /// <summary>Thẻ tin trên trang chủ và trang Tin tức. <see cref="Image"/> = đường dẫn tương đối trong thư mục ảnh, null = chưa có ảnh.</summary>
 public sealed record NewsCard(Guid Id, Guid FixtureId, string Title, string? Image, string Home, string Away, int HomeGoals, int AwayGoals,
-    int? HomePenalties, int? AwayPenalties, string? Competition, Guid? CompetitionId, int Round, DateTimeOffset PublishedAt);
+    int? HomePenalties, int? AwayPenalties, string? Competition, Guid? CompetitionId, int Round, DateTimeOffset PublishedAt,
+    string? HomeLogo = null, string? AwayLogo = null);
 public sealed record NewsPhoto(string File, string Caption);
 public sealed record NewsPost(NewsCard Card, SeasonInfo Season, string Body, bool ByAi, IReadOnlyList<NewsPhoto> Photos);
 public sealed record NewsComp(Guid Id, string Name);
@@ -61,7 +63,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
     {
         await using var db = await dbs.CreateDbContextAsync();
         var s = await db.Seasons.Where(x => x.Status == SeasonStatus.Active).SingleOrDefaultAsync();
-        return s is null ? null : await InfoAsync(db, me is null ? null : await me.ManagerIdAsync(), s, pinned: false);
+        return s is null ? null : await InfoAsync(db, me is null ? null : await me.ParticipantKeyAsync(), s, pinned: false);
     }
 
     /// <summary>Mùa cho các trang chỉ đọc (Giải đấu, Lịch, BXH, Các mùa): <paramref name="number"/> = <c>?mua=N</c> (xem lại mùa cũ);
@@ -73,7 +75,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         var s = number is { } n
             ? await q.Where(x => x.Number == n).OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync()
             : await q.OrderBy(x => x.Status == SeasonStatus.Active ? 0 : 1).ThenByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
-        return s is null ? null : await InfoAsync(db, me is null ? null : await me.ManagerIdAsync(), s, pinned: number is not null);
+        return s is null ? null : await InfoAsync(db, me is null ? null : await me.ParticipantKeyAsync(), s, pinned: number is not null);
     }
 
     /// <summary>Số mùa (đang chạy + đã xong), mới nhất trước — trang Các mùa.</summary>
@@ -127,7 +129,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
     public async Task<TransferWindow?> OpenWindowAsync(Guid seasonId)
     {
         await using var db = await dbs.CreateDbContextAsync();
-        return await db.TransferWindows.Where(w => w.SeasonId == seasonId && w.Status == TransferWindowStatus.Open).FirstOrDefaultAsync();
+        return await CompetitionService.EnsureFreeTransfersAsync(db, seasonId, DateTimeOffset.UtcNow);   // PO 17/11: chuyển nhượng tự do cả mùa
     }
 
     /// <summary>Mọi khung ngày của mùa theo số.</summary>
@@ -152,7 +154,8 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
                             select new { g.FixtureId, View = new GoalView(g.ClubId, g.Half, g.Minute, g.ScorerPlayerId, p == null ? null : p.Name) }).ToListAsync())
             .OrderBy(g => g.View.Half).ThenBy(g => g.View.Minute).ToLookup(g => g.FixtureId, g => g.View);
         return [.. rows.Select(r => new FixtureView(r.f.Id, r.Number, r.f.HomeClubId, r.f.AwayClubId, r.f.Status, r.f.HomeGoals, r.f.AwayGoals, [.. goals[r.f.Id]],
-            r.f.HomePenalties, r.f.AwayPenalties, r.f.CompetitionEditionId, r.f.Stage, r.f.Leg, r.f.AssistantPlays))];
+            r.f.HomePenalties, r.f.AwayPenalties, r.f.CompetitionEditionId, r.f.Stage, r.f.Leg, r.f.AssistantPlays,
+            r.f.HomeAbsent, r.f.AwayAbsent, r.f.HomeReadyAt, r.f.AwayReadyAt))];
     }
 
     /// <summary>Trang trận: mùa của trận (mùa cũ → link giữ <c>mua=N</c>), giải, tên vòng, thống kê 2 đội, diễn biến, cầu thủ theo ô; null = không có trận.</summary>
@@ -162,7 +165,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         var row = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id join s in db.Seasons on m.SeasonId equals s.Id
                          where f.Id == fixtureId select new { f.CompetitionEditionId, f.PlayedAt, s }).SingleOrDefaultAsync();
         if (row is null) return null;
-        var season = await InfoAsync(db, me is null ? null : await me.ManagerIdAsync(), row.s, pinned: row.s.Status != SeasonStatus.Active);
+        var season = await InfoAsync(db, me is null ? null : await me.ParticipantKeyAsync(), row.s, pinned: row.s.Status != SeasonStatus.Active);
         var own = await FixturesAsync(row.s.Id, editionId: row.CompetitionEditionId);
         var fixture = own.Single(x => x.Id == fixtureId);
         var edition = row.CompetitionEditionId is { } eid ? (await EditionsAsync(row.s.Id)).SingleOrDefault(e => e.Id == eid) : null;
@@ -338,7 +341,9 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         }
         rows = rows.Take(take).ToList();
         var clubIds = rows.SelectMany(r => new[] { r.HomeClubId, r.AwayClubId }).Distinct().ToList();
-        var clubs = await db.Clubs.Where(c => clubIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
+        var clubRows = await db.Clubs.Where(c => clubIds.Contains(c.Id)).Select(c => new { c.Id, c.Name, c.LogoPath }).ToListAsync();
+        var clubs = clubRows.ToDictionary(c => c.Id, c => c.Name);
+        var logos = clubRows.ToDictionary(c => c.Id, c => c.LogoPath);
         var articleIds = rows.Select(r => r.Id).ToList();
         var photos = await db.MatchPhotos.AsNoTracking().Where(p => articleIds.Contains(p.ArticleId)).OrderBy(p => p.Sort).ToListAsync();
         var image = photos.GroupBy(p => p.ArticleId).ToDictionary(g => g.Key, g => g.First().FileName);
@@ -346,7 +351,8 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         {
             var ed = editions.FirstOrDefault(e => r.CompetitionEditionId == e.Id);
             return new NewsCard(r.Id, r.FixtureId, r.Title, image.GetValueOrDefault(r.Id), clubs[r.HomeClubId], clubs[r.AwayClubId],
-                r.HomeGoals ?? 0, r.AwayGoals ?? 0, r.HomePenalties, r.AwayPenalties, ed?.Name, ed?.CompId, r.Round, r.PublishedAt);
+                r.HomeGoals ?? 0, r.AwayGoals ?? 0, r.HomePenalties, r.AwayPenalties, ed?.Name, ed?.CompId, r.Round, r.PublishedAt,
+                logos[r.HomeClubId], logos[r.AwayClubId]);
         }).ToList();
     }
 
@@ -372,7 +378,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         if (card is null) return null;
         var photos = await db.MatchPhotos.AsNoTracking().Where(p => p.ArticleId == id).OrderBy(p => p.Sort)
             .Select(p => new NewsPhoto(p.FileName, p.Caption)).ToListAsync();
-        return new NewsPost(card, await InfoAsync(db, me is null ? null : await me.ManagerIdAsync(), row.s, pinned: row.s.Status != SeasonStatus.Active), row.a.Body, row.a.ByAi, photos);
+        return new NewsPost(card, await InfoAsync(db, me is null ? null : await me.ParticipantKeyAsync(), row.s, pinned: row.s.Status != SeasonStatus.Active), row.a.Body, row.a.ByAi, photos);
     }
 
     public async Task<Guid?> ArticleIdAsync(Guid fixtureId)
@@ -469,7 +475,7 @@ public static class Fmt
     /// <param name="window">Khung có kỳ CN; không có thì WindowOpen = chờ khoá.</param>
     public static string Status(MatchdayStatus s, bool window = true) => s switch
     {
-        MatchdayStatus.Planned => "Chưa tới", MatchdayStatus.WindowOpen => window ? "Mở kỳ CN" : "Chờ khoá", MatchdayStatus.Locked => "Đã khoá, chờ đá",
+        MatchdayStatus.Planned => "Chưa tới", MatchdayStatus.WindowOpen => "Đang mở", MatchdayStatus.Locked => "Đã khoá, chờ đá",
         MatchdayStatus.Playing => "Đang đá", MatchdayStatus.Completed => "Đá xong", MatchdayStatus.Settled => "Đã chốt", _ => s.ToString(),
     };
 

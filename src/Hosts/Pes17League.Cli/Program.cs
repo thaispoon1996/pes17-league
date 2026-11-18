@@ -6,6 +6,11 @@ using Pes17League.Clubs.Infrastructure;
 // CLI alpha (chưa có API/web): dựng mùa alpha, đá tuần tự các trận BOT của vòng hiện tại qua tools/match/pesmatch.py, xem BXH.
 //   setup-alpha OF_GOC HUMAN_IDX IDX...   tạo mùa + nhập patch + bắt đầu mùa (CLB HUMAN_IDX = PO) + đóng kỳ CN vòng 1
 //   setup-federation OF_GOC [TEN_MUA]     lưu trữ mùa alpha + tạo mùa đầu liên đoàn + nhập 101 CLB từ patch (BOT, nước, logo); chưa sinh lịch
+//   import-pes17 PESDB_JSON [TEN_MUA]     tạo mùa (Planned) + nhập toàn bộ CLB PES17 (bỏ đội tuyển) + cầu thủ từ tools/pes17db/pesdb.py export
+//   export-pes17-squads RA_JSON           đội hình hiện tại (patch PES17 mới nhất) → JSON cho tools/pes17db/deploy.sh
+//   setup-pes17-leagues LEAGUES_JSON PES_DOI_PO   mùa chưa xong: 5 giải (pesdb.py leagues) + mùa giải + CLB; PO cầm CLB mã PES_DOI_PO
+//   open-market                           mở chợ tự do PES17 cho mùa chưa xong (cần quỹ ngân sách đã lưu)
+//   move-player PES_CT PES_DOI|free       admin chuyển cầu thủ (mã PES17) sang CLB (mã đội PES17) / thả tự do, qua chợ tự do
 //   set-contracts SO_TRAN                 mùa chưa bắt đầu: hợp đồng nhập từ patch (chưa đá, chưa có lương) + gia hạn mặc định → SO_TRAN trận
 //   play-bots                             đá các trận BOT của vòng đang khoá/đang đá
 //   status                                vòng hiện tại + BXH
@@ -32,6 +37,27 @@ switch (args.FirstOrDefault())
     case "setup-federation" when args.Length >= 2:
         await SetupFederationAsync(args[1], args.Length >= 3 ? args[2] : "Mùa 1");
         break;
+    case "import-pes17" when args.Length >= 2:
+        await ImportPes17Async(args[1], args.Length >= 3 ? args[2] : "Mùa 1");
+        break;
+    case "export-pes17-squads" when args.Length >= 2:
+        await ExportPes17SquadsAsync(args[1]);
+        break;
+    case "setup-pes17-leagues" when args.Length >= 3:
+        await SetupPes17LeaguesAsync(args[1], int.Parse(args[2]));
+        break;
+    case "schedule-preview":
+        await SchedulePreviewAsync(args.Length >= 2 ? int.Parse(args[1]) : 1);
+        break;
+    case "start-pes17-season":
+        await StartPes17SeasonAsync(args.Length >= 2 && int.TryParse(args[1], out var sd) ? sd : 1, args.Contains("--dry"));
+        break;
+    case "open-market":
+        await OpenMarketAsync();
+        break;
+    case "move-player" when args.Length >= 3:
+        await MovePlayerAsync(int.Parse(args[1]), args[2] == "free" ? null : int.Parse(args[2]));
+        break;
     case "set-contracts" when args.Length >= 2:
         await SetContractsAsync(int.Parse(args[1]));
         break;
@@ -53,8 +79,11 @@ switch (args.FirstOrDefault())
     case "end-attempt":
         await EndStuckAttemptsAsync();
         break;
+    case "assign-club" when args.Length >= 3:
+        await AssignClubAsync(args[1], int.Parse(args[2]));
+        break;
     default:
-        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt");
+        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI");
         return 2;
 }
 return 0;
@@ -87,6 +116,134 @@ async Task SetupFederationAsync(string ofPath, string seasonName)
     foreach (var g in i.AddedGoalkeepers) Console.WriteLine($"  thêm GK {g.PlayerName} ({g.GoalKeeping}) → {g.ClubName} số {g.ShirtNumber}");
     foreach (var g in i.GoalkeeperShortages) Console.WriteLine($"  THIẾU GK: {g.ClubName} ({g.Goalkeepers})");
     Console.WriteLine($"  {i.ShirtChanges.Count} số áo trùng đã đổi");
+}
+
+async Task ImportPes17Async(string jsonPath, string seasonName)
+{
+    await using var db = Db();
+    if (await db.Seasons.AnyAsync(s => s.Status == SeasonStatus.Active)) throw new InvalidOperationException("Đã có mùa đang chạy");
+    var season = await new CompetitionService(db, store, clock).CreateSeasonAsync(seasonName, await db.Seasons.CountAsync() + 1);
+    var i = await new Pes17ImportService(db, store, clock, importOptions: new(ContractMatches: FederationSetupService.FirstSeasonContractMatches))
+        .ImportAsync("PES17 HANO V6", await File.ReadAllBytesAsync(jsonPath), season.Id);
+    season.PatchVersionId = i.PatchVersionId;   // như setup-federation: mùa gắn patch ngay khi nhập
+    await db.SaveChangesAsync();
+    Console.WriteLine($"Mùa {seasonName}: {i.Clubs} CLB, {i.SquadPlayers} cầu thủ trong đội, {i.FreeAgents} tự do, {i.ShirtChanges} số áo đổi, {i.DuplicatePlayers.Count} cầu thủ trùng CLB");
+    foreach (var g in i.AddedGoalkeepers) Console.WriteLine($"  thêm GK {g.PlayerName} ({g.GoalKeeping}) → {g.ClubName} số {g.ShirtNumber}");
+    foreach (var g in i.GoalkeeperShortages) Console.WriteLine($"  THIẾU GK: {g.ClubName} ({g.Goalkeepers})");
+}
+
+async Task ExportPes17SquadsAsync(string outPath)
+{
+    await using var db = Db();
+    var patch = await db.PatchVersions.Where(p => p.Name.StartsWith("PES17")).OrderByDescending(p => p.ImportedAt).FirstAsync();
+    var squads = await new Pes17SquadExportService(db).ExportAsync(patch.Id);
+    await File.WriteAllTextAsync(outPath, System.Text.Json.JsonSerializer.Serialize(squads));
+    Console.WriteLine($"{patch.Name}: {squads.Count} CLB, {squads.Values.Sum(s => s.Count)} cầu thủ → {outPath}");
+}
+
+async Task<Season> OpenSeasonAsync(ClubsDbContext db) =>
+    await db.Seasons.Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).FirstAsync();
+
+// PO chọn 18/11/2026: 5 giải lớn châu Âu, 1 hạng (không lên/xuống, chưa có cúp), vòng tròn 2 lượt 3/1/0.
+async Task SetupPes17LeaguesAsync(string leaguesPath, int humanPesClub)
+{
+    await using var db = Db();
+    var season = await OpenSeasonAsync(db);
+    var clubOf = await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId).ToDictionaryAsync(m => m.PesClubIndex, m => m.ClubId);
+    var admin = new CompetitionAdminService(db, clock);
+    using var doc = System.Text.Json.JsonDocument.Parse(await File.ReadAllBytesAsync(leaguesPath));
+    foreach (var l in doc.RootElement.EnumerateObject())
+    {
+        var name = l.Value.GetProperty("name").GetString()!;
+        var comp = await db.Competitions.SingleOrDefaultAsync(c => c.Name == name && c.Status == CompetitionStatus.Active)
+            ?? await admin.CreateAsync(new CompetitionInput(name, $"{l.Name} 1", l.Name, 1, CompetitionType.DomesticLeague, null, new CompetitionRules(), null, null), "cli");
+        var edition = await db.Editions.SingleOrDefaultAsync(e => e.CompetitionId == comp.Id && e.SeasonId == season.Id)
+            ?? await admin.CreateEditionAsync(comp.Id, season.Id, "cli");
+        var teams = l.Value.GetProperty("teams").EnumerateArray().Select(t => t.GetInt32()).ToList();
+        var missing = teams.Where(t => !clubOf.ContainsKey(t)).ToList();
+        if (missing.Count > 0) throw new InvalidOperationException($"{name}: đội chưa nhập {string.Join(",", missing)}");
+        foreach (var t in teams) await admin.SetEditionClubAsync(edition.Id, clubOf[t], null, "cli");
+        Console.WriteLine($"{name}: {teams.Count} CLB");
+    }
+    await new ClubAdminService(db, clock, store).SetHumanClubAsync(clubOf[humanPesClub], "cli");
+    Console.WriteLine($"PO cầm: {(await db.Clubs.FindAsync(clubOf[humanPesClub]))!.Name}");
+}
+
+async Task SchedulePreviewAsync(int seed)
+{
+    await using var db = Db();
+    var season = await OpenSeasonAsync(db);
+    var plan = await new SeasonScheduleService(db, clock).PreviewAsync(season.Id, seed);
+    Console.WriteLine($"{plan.SeasonName}: {plan.Slots.Count} khung ngày, {plan.Slots.Sum(s => s.Matches.Count)} trận (xem trước, chưa ghi)");
+    foreach (var s in plan.Slots.Take(3).Concat(plan.Slots.TakeLast(2)))
+        Console.WriteLine($"  khung {s.Number} ({s.Slot}): {s.Matches.Count} trận");
+}
+
+// PO giao 18/11/2026 ("tự cài đặt để bắt đầu mùa giải"), kinh tế như PES6 (Alpha 1) trừ lương 4‰/khung (PO chọn: 38 khung): quỹ = 20% giá trị đội hình 96 CLB dự giải,
+// k = 0,5, trần mềm = quỹ lương/khung của CLB đứng thứ 2. Rồi ghi lịch (mã SEED) → Bắt đầu mùa → mở chợ tự do.
+async Task StartPes17SeasonAsync(int seed, bool dry)
+{
+    await using var db = Db();
+    var season = await OpenSeasonAsync(db);
+    if (season.Status != SeasonStatus.Planned) { Console.Error.WriteLine($"{season.Name} không ở trạng thái chưa bắt đầu"); return; }
+    var econ = new EconomyAdminService(db, clock);
+    var pv = await econ.PreviewAsync(season.Id, new(WagePermille: 4, BudgetExponent: 0.5));
+    var total = pv.Clubs.Sum(c => c.SquadValue);
+    var fund = (long)Math.Round(total * 0.20 / 1e6) * 1_000_000;
+    var pays = pv.Clubs.Select(c => c.Payroll).OrderByDescending(x => x).ToList();
+    var soft = pays.Count > 1 ? pays[1] / 1000 * 1000 : 0;
+    var change = new SeasonEconomyChange(SoftWageCap: soft, WagePermille: 4, InitialBudgetFund: fund, BudgetExponent: 0.5);
+    pv = await econ.PreviewAsync(season.Id, change);
+    var budgets = pv.Clubs.Select(c => c.Budget).OrderBy(x => x).ToList();
+    Console.WriteLine($"{season.Name}: {pv.Clubs.Count} CLB, tổng giá trị {total / 1e6:N1} tr → quỹ {fund / 1e6:N0} tr (20%), trần mềm {soft / 1e6:N3} tr/khung, lương 4‰, k 0,5");
+    Console.WriteLine($"  ngân sách: thấp nhất {budgets[0] / 1e6:N2} · trung vị {budgets[budgets.Count / 2] / 1e6:N2} · cao nhất {budgets[^1] / 1e6:N2} tr");
+    foreach (var name in new[] { "Arsenal" })
+        foreach (var c in pv.Clubs.Where(c => c.Name.Contains(name)))
+            Console.WriteLine($"  {c.Name}: giá trị {c.SquadValue / 1e6:N1} tr, lương {c.Payroll / 1e6:N3} tr/khung, ngân sách {c.Budget / 1e6:N2} tr, đủ {c.Khung:0.#} khung");
+    var plan = await new SeasonScheduleService(db, clock).PreviewAsync(season.Id, seed);
+    Console.WriteLine($"  lịch mã {seed}: {plan.Slots.Count} khung ngày, {plan.Slots.Sum(s => s.Matches.Count)} trận");
+    if (dry) { Console.WriteLine("(chạy thử, chưa ghi gì)"); return; }
+
+    await econ.SetAsync(season.Id, change, "cli");
+    await new SeasonScheduleService(db, clock).ApplyAsync(season.Id, seed, "cli");
+    var r = await new CompetitionService(db, store, clock).StartScheduledSeasonAsync(season.Id, "cli");
+    Console.WriteLine($"  đã bắt đầu mùa: {r}");
+    var m = await new FreeMarketService(db, clock).OpenAsync(season.Id, "cli");
+    Console.WriteLine($"  chợ tự do mở: {m.Prices} giá, {m.Wages} lương, ngân sách {m.Budgets} CLB");
+}
+
+async Task OpenMarketAsync()
+{
+    await using var db = Db();
+    var season = await OpenSeasonAsync(db);
+    var r = await new FreeMarketService(db, clock).OpenAsync(season.Id, "cli");
+    Console.WriteLine($"{season.Name}: chợ tự do mở — {r.Prices} giá, {r.Wages} lương, ngân sách {r.Budgets} CLB");
+}
+
+async Task MovePlayerAsync(int pesPlayer, int? pesClub)
+{
+    await using var db = Db();
+    var season = await OpenSeasonAsync(db);
+    var player = await db.PlayerPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && m.PesPlayerId == pesPlayer).Select(m => m.PlayerId).SingleAsync();
+    Guid? club = pesClub is { } pc
+        ? await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && m.PesClubIndex == pc).Select(m => m.ClubId).SingleAsync()
+        : null;
+    var r = await new FreeMarketService(db, clock).AdminMoveAsync(season.Id, player, club, "cli");
+    Console.WriteLine(r.Ok ? $"OK, giao dịch {r.TransferId}" : $"LỖI: {r.Error}");
+}
+
+/// <summary>PO 18/11: giao CLB cho tài khoản người chơi (admin không cầm CLB). CLB đang do admin cầm (ParticipantId null) → trả admin về không cầm trước.</summary>
+async Task AssignClubAsync(string username, int pesClub)
+{
+    await using var db = Db();
+    var season = await OpenSeasonAsync(db);
+    var manager = await db.Managers.SingleAsync(m => m.Username == username);
+    var club = await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && m.PesClubIndex == pesClub).Select(m => m.ClubId).SingleAsync();
+    var svc = new ClubAdminService(db, clock);
+    if (await db.TeamAssignments.AnyAsync(a => a.ClubId == club && a.To == null && a.ControllerType == ControllerType.Human && a.ParticipantId == null))
+        await svc.SetHumanClubAsync(null, "cli");
+    await svc.SetHumanClubAsync(club, "cli", manager.Id);
+    Console.WriteLine($"OK: {username} cầm CLB PES {pesClub}");
 }
 
 async Task SetContractsAsync(int matches)

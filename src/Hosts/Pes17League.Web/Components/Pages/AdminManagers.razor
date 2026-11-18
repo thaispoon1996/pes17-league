@@ -9,11 +9,42 @@
 @* Lộ trình FM đợt 2 (PO ok 12/11): admin tạo tài khoản HLV, giao CLB; HLV đăng nhập bằng tài khoản riêng, chỉ điều hành CLB của mình.
    Vắng thì trợ lý (máy) đá thay; vắng lâu admin xem "Lần cuối vào" để thu hồi CLB. *@
 <h1>Quản trị</h1>
-<AdminNav />
 @if (msg is not null) { <p class="msg">@msg</p> }
 @if (newPassword is not null)
 {
     <p class="warn">Mật khẩu của <b>@newPasswordFor</b>: <code>@newPassword</code> — chỉ hiện 1 lần, gửi riêng cho HLV.</p>
+}
+
+@if (apps.Count > 0)
+{
+    <div class="panel">
+        <div class="panel-head"><h2>Đơn đăng ký đá giải (@apps.Count)</h2></div>
+        <p class="muted">Người chơi xin cầm CLB ở <code>/dang-ky-giai</code>. Duyệt = giao CLB đã chọn (mặc định CLB họ muốn).</p>
+        <table class="table">
+            <thead><tr><th class="left">Người chơi</th><th class="left">Muốn CLB</th><th class="left">Ghi chú</th><th>Nộp lúc</th><th class="left">Giao CLB</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var a in apps)
+                {
+                    <tr>
+                        <td class="left"><b>@a.Username</b> · @a.Name</td>
+                        <td class="left">@(a.Preferred ?? "bất kỳ")</td>
+                        <td class="left">@a.Note</td>
+                        <td>@a.At.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                        <td class="left">
+                            <select value="@(pick.GetValueOrDefault(a.Id)?.ToString() ?? "")" @onchange="e => pick[a.Id] = Guid.TryParse(e.Value as string, out var g) ? g : null">
+                                <option value="">— Chọn CLB —</option>
+                                @foreach (var c in clubs.Where(c => !holders.ContainsKey(c.Id))) { <option value="@c.Id">@c.Name</option> }
+                            </select>
+                        </td>
+                        <td>
+                            <button class="primary" disabled="@(busy || Jobs.Running || pick.GetValueOrDefault(a.Id) is null)" @onclick="() => Approve(a.Id)">✅ Duyệt</button>
+                            <button disabled="@busy" @onclick="() => Reject(a)">✖ Từ chối</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 
 <div class="panel">
@@ -41,8 +72,8 @@
                     </td>
                     <td>@(m.LastSeenAt?.ToLocalTime().ToString("dd/MM HH:mm") ?? "chưa vào")</td>
                     <td>
-                        <button disabled="@busy" @onclick="() => Reset(m)">Đặt lại mật khẩu</button>
-                        <button disabled="@busy" class="@(m.Disabled ? "" : "danger")" @onclick="() => Toggle(m)">@(m.Disabled ? "Mở khoá" : "Khoá")</button>
+                        <button disabled="@busy" data-confirm="@($"Đặt lại mật khẩu của {m.DisplayName}?")" @onclick="() => Reset(m)">Đặt lại mật khẩu</button>
+                        <button disabled="@busy" class="@(m.Disabled ? "" : "danger")" data-confirm="@(m.Disabled ? $"Mở khoá {m.DisplayName}?" : $"Khoá tài khoản {m.DisplayName}? Người này sẽ không đăng nhập được.")" @onclick="() => Toggle(m)">@(m.Disabled ? "Mở khoá" : "Khoá")</button>
                     </td>
                 </tr>
             }
@@ -53,13 +84,46 @@
 
 <div class="panel">
     <div class="panel-head"><h2>Thêm HLV</h2></div>
-    <p class="muted">Tên đăng nhập a-z, 0-9, dấu . _ -. Mật khẩu sinh tự động.</p>
+    <p class="muted">Tên đăng nhập a-z, 0-9, dấu . _ -. Mật khẩu mặc định <code>@ManagerService.DefaultPassword</code> (giai đoạn test).</p>
     <input placeholder="tên đăng nhập" @bind="username" autocapitalize="none" />
     <input placeholder="Tên hiển thị" @bind="displayName" />
     <button class="primary" disabled="@busy" @onclick="Create">+ Tạo tài khoản</button>
 </div>
 
+<div class="panel">
+    <div class="panel-head"><h2>Mã mời đăng ký</h2></div>
+    <p class="muted">Giai đoạn test: ai cũng tự đăng ký ở <code>/dang-ky</code>, mã mời không bắt buộc (bật bắt buộc bằng env <code>PES17_SIGNUP_INVITE=on</code>). Mỗi mã dùng 1 lần. Tài khoản mới chưa có CLB (vẫn đá giao hữu tự do); giao CLB ở bảng trên.</p>
+    <input type="number" min="1" max="20" style="width:80px" @bind="inviteCount" />
+    <input placeholder="Ghi chú (vd: tên người được mời)" @bind="inviteNote" />
+    <button class="primary" disabled="@busy" @onclick="CreateInvites">+ Tạo mã</button>
+    @if (invites.Count > 0)
+    {
+        <table class="table">
+            <thead><tr><th class="left">Mã</th><th class="left">Ghi chú</th><th class="left">Trạng thái</th><th>Tạo lúc</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var i in invites)
+                {
+                    <tr class="@(i.Revoked ? "muted" : "")">
+                        <td class="left"><code>@i.Code</code></td>
+                        <td class="left">@i.Note</td>
+                        <td class="left">@(i.UsedBy is not null ? $"đã dùng: {i.UsedBy}" : i.Revoked ? "đã huỷ" : "chưa dùng")</td>
+                        <td>@i.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                        <td>@if (i.UsedBy is null && !i.Revoked) { <button disabled="@busy" data-confirm="Huỷ mã mời này?" @onclick="() => Revoke(i.Id)">Huỷ</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
 @code {
+    sealed record AppRow(Guid Id, string Username, string Name, string? Preferred, Guid? PreferredId, string? Note, DateTimeOffset At);
+    List<AppRow> apps = [];
+    Dictionary<Guid, Guid?> pick = [];
+    sealed record InviteRow(Guid Id, string Code, string? Note, string? UsedBy, bool Revoked, DateTimeOffset CreatedAt);
+    List<InviteRow> invites = [];
+    int inviteCount = 1;
+    string inviteNote = "";
     List<ManagerRow> rows = [];
     List<(Guid Id, string Name)> clubs = [];
     Dictionary<Guid, Guid?> holders = [];   // CLB → HLV đang cầm (null = admin)
@@ -73,6 +137,13 @@
     {
         await using var db = await Dbs.CreateDbContextAsync();
         rows = await new ManagerService(db, Clock).ListAsync();
+        invites = await (from i in db.InviteCodes join m in db.Managers on i.UsedByManagerId equals m.Id into mm from m in mm.DefaultIfEmpty()
+                         orderby i.CreatedAt descending select new InviteRow(i.Id, i.Code, i.Note, m == null ? null : m.Username, i.Revoked, i.CreatedAt)).Take(100).ToListAsync();
+        apps = await (from a in db.LeagueApplications join m in db.Managers on a.ManagerId equals m.Id
+                      join c in db.Clubs on a.PreferredClubId equals c.Id into cc from c in cc.DefaultIfEmpty()
+                      where a.Status == LeagueApplicationStatus.Pending orderby a.CreatedAt
+                      select new AppRow(a.Id, m.Username, m.DisplayName, c == null ? null : c.Name, a.PreferredClubId, a.Note, a.CreatedAt)).ToListAsync();
+        foreach (var a in apps) if (!pick.ContainsKey(a.Id)) pick[a.Id] = a.PreferredId;
         holders = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human)
             .ToDictionaryAsync(a => a.ClubId, a => a.ParticipantId);
         var season = await db.Seasons.Where(s => s.Status != SeasonStatus.Finished).OrderBy(s => s.Number).FirstOrDefaultAsync();
@@ -104,6 +175,28 @@
         msg = $"Đã tạo tài khoản {newPasswordFor}. Giao CLB ở bảng trên.";
         username = displayName = "";
     });
+
+    Task CreateInvites() => Run(async db =>
+    {
+        var codes = await new ManagerService(db, Clock).CreateInvitesAsync(inviteCount, inviteNote, AdminText.Actor);
+        msg = $"Đã tạo {codes.Count} mã: {string.Join(", ", codes)}";
+        inviteNote = "";
+    });
+
+    Task Approve(Guid id) => Run(async db =>
+    {
+        await new LeagueApplicationService(db, Clock).ApproveAsync(id, pick[id]!.Value, AdminText.Actor);
+        msg = "Đã duyệt và giao CLB.";
+    });
+
+    async Task Reject(AppRow a)
+    {
+        var reason = await JS.InvokeAsync<string?>("prompt", $"Lý do từ chối đơn của {a.Username}:", "");
+        if (reason is null) return;
+        await Run(db => new LeagueApplicationService(db, Clock).RejectAsync(a.Id, reason, AdminText.Actor));
+    }
+
+    Task Revoke(Guid id) => Run(db => new ManagerService(db, Clock).RevokeInviteAsync(id));
 
     async Task Reset(ManagerRow m)
     {

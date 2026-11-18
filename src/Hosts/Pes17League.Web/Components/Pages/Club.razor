@@ -11,7 +11,7 @@
 @* Trang CLB kiểu Football Manager (PO 11/11): đầu trang tối + dải thông tin + tab Tổng quan / Đội hình / Chiến thuật (chỉ CLB của tôi) / Tài chính.
    ?tab=doi-hinh|chien-thuat|tai-chinh mở thẳng tab. *@
 @if (season is null) { return; }
-@if (clubId == Guid.Empty) { <p>Chưa chọn CLB của tôi. <a href="admin/lich">Chọn ở Quản trị → Lịch mùa →</a></p> return; }
+@if (clubId == Guid.Empty) { <NoClubNote /> return; }
 @{ var name = season.Clubs.GetValueOrDefault(clubId, "?"); }
 <div class="fm">
     <header class="fm-head">
@@ -20,6 +20,7 @@
             <h1>@name</h1>
             <p>@season.Name · @(mine ? "CLB của tôi" : "BOT điều khiển") · @squad.Count cầu thủ</p>
         </div>
+        @if (!mine && coach) { <a class="btn" href="thu?soan=1&clb=@clubId">✉ Gửi thư HLV</a> }
         @if (glance?.Rank is { } rank) { <span class="fm-badge"><b>#@rank</b>@glance.Points điểm</span> }
     </header>
     <nav class="fm-tabs" role="tablist">
@@ -93,11 +94,11 @@
                                         <div class="row">
                                             <label>Gia hạn <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="renewMatches" /> trận</label>
                                             <label>Phí <input type="number" min="0" @bind="renewFeeM" step="0.1" /> tr</label>
-                                            <button @onclick="() => Renew(p)">Gia hạn</button>
+                                            <button data-confirm="@($"Gia hạn hợp đồng {p.Name}?")" @onclick="() => Renew(p)">Gia hạn</button>
                                             @if (p.Renewal is { } rs) { <small>(lần gần nhất: @rs)</small> }
                                         </div>
                                         <div class="row">
-                                            <button class="danger" disabled="@(window is null)" @onclick="() => Release(p)">Thanh lý (thành tự do)</button>
+                                            <button class="danger" disabled="@(window is null)" data-confirm="@($"Thanh lý {p.Name}? Cầu thủ thành tự do, không hoàn tác được.")" data-confirm-ok="Thanh lý" @onclick="() => Release(p)">Thanh lý (thành tự do)</button>
                                             @if (window is null) { <small>chỉ khi đang mở kỳ CN</small> }
                                         </div>
                                     </td></tr>
@@ -224,6 +225,8 @@
 
     int expiring => squad.Count(p => p.MatchesTotal - p.MatchesPlayed <= ContractRules.RenewalReminderMatches);
 
+    bool coach;   // CLB có HLV người (gửi thư được)
+
     protected override async Task OnParametersSetAsync()
     {
         tab = Tab ?? "tong-quan";
@@ -240,6 +243,8 @@
         if (mine) hidden = [];
         else { await using var hdb = await Dbs.CreateDbContextAsync(); hidden = await new YouthService(hdb, Clock).HiddenAsync(season.HumanClubId); }
         if (clubId == Guid.Empty) return;   // chưa chọn CLB của tôi
+        await using (var cdb = await Dbs.CreateDbContextAsync())
+            coach = await cdb.TeamAssignments.AnyAsync(a => a.ClubId == clubId && a.To == null && a.ControllerType == ControllerType.Human);
         window = await Q.OpenWindowAsync(season.Id);
         squad = await Q.SquadAsync(season.Id, clubId);
         stats = await Q.SquadStatsAsync(season, clubId, [.. squad.Select(p => p.PlayerId)]);

@@ -11,7 +11,6 @@
 
 @* Key = Id CLB (thêm CLB ở AdminClubNew, route "moi" ưu tiên hơn). Xoá khi chưa có lịch sử, có thì lưu trữ (PO chọn 05/11), không có khôi phục. *@
 <h1>@(club?.Name ?? "CLB")</h1>
-<AdminNav />
 @if (club is null) { if (loaded) { <p>Không tìm thấy CLB.</p> } return; }
 <p><a href="admin/clb">← Danh sách CLB</a> · <a href="clb/@club.Id">Trang CLB</a></p>
 @if (club.Status != ClubStatus.Active) { <p class="warn">CLB đã lưu trữ: cầu thủ đã thành tự do, không dự giải, không tính ngân sách/lương.</p> }
@@ -29,7 +28,7 @@
     <p class="muted">Tên và logo ở đây chỉ đổi trên web.</p>
     <div class="actions">
         <button class="primary" @onclick="Save">Lưu</button>
-        @if (club.Status == ClubStatus.Active) { <button class="danger" @onclick="DeleteOrArchive">@(history ? "Lưu trữ" : "Xoá")</button> }
+        @if (club.Status == ClubStatus.Active) { <button class="danger" data-confirm="@(history ? "Lưu trữ CLB này?" : "Xoá CLB này? Không hoàn tác được.")" @onclick="DeleteOrArchive">@(history ? "Lưu trữ" : "Xoá")</button> }
     </div>
 </div>
 

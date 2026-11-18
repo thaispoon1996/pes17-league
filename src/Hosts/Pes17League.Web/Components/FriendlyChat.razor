@@ -1,0 +1,82 @@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject FriendlyHub Hub
+@inject TimeProvider Clock
+
+@* Chat giao hữu (PO 16/11): MatchId null = sảnh chung, có = phòng trận. Cập nhật khi Hub báo đổi + mỗi 5 s. *@
+<div class="fr-chat">
+    <div class="fr-log">
+        @foreach (var c in log)
+        {
+            <p class="@(c.ManagerId == Me ? "mine" : "")"><b>@Names.GetValueOrDefault(c.ManagerId, "?")</b> <small>@c.At.ToOffset(TimeSpan.FromHours(7)).ToString("HH:mm")</small><br />@c.Text</p>
+        }
+        @if (log.Count == 0) { <p class="muted">Chưa có tin nhắn.</p> }
+    </div>
+    @if (Quick.Length > 0)
+    {
+        <div class="fr-quick">@foreach (var q in Quick) { <button type="button" @onclick="() => SendText(q)">@q</button> }</div>
+    }
+    <form @onsubmit="Send" class="fr-send">
+        <input @bind="text" maxlength="@FriendlyRules.ChatMax" placeholder="Nhắn gì đó…" autocomplete="off" />
+        <button class="primary" type="submit">Gửi</button>
+    </form>
+    @if (error is not null) { <small class="muted">@error</small> }
+</div>
+
+@code {
+    [Parameter] public Guid? MatchId { get; set; }
+    [Parameter, EditorRequired] public Guid Me { get; set; }
+    /// <summary>Tên hiển thị theo Id (trang cha nạp); thiếu tên thì tự nạp.</summary>
+    [Parameter] public Dictionary<Guid, string> Names { get; set; } = [];
+    /// <summary>Câu chat nhanh (Stitch v2, phòng trận) — bấm là gửi.</summary>
+    [Parameter] public string[] Quick { get; set; } = [];
+    List<FriendlyChatMessage> log = [];
+    string text = "";
+    string? error;
+    Timer? tick;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Hub.Changed += OnChanged;
+        await LoadAsync();
+        tick = new Timer(_ => InvokeAsync(LoadAsync), null, 5000, 5000);
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        log = await new FriendlyService(db, Clock).ChatLogAsync(MatchId);
+        var missing = log.Select(c => c.ManagerId).Where(id => !Names.ContainsKey(id)).Distinct().ToList();
+        if (missing.Count > 0)
+            foreach (var p in await db.Managers.AsNoTracking().Where(m => missing.Contains(m.Id)).Select(m => new { m.Id, m.DisplayName }).ToListAsync())
+                Names[p.Id] = p.DisplayName;
+        StateHasChanged();
+    }
+
+    Task SendText(string q) { text = q; return Send(); }
+
+    async Task Send()
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(text)) return;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new FriendlyService(db, Clock).ChatAsync(MatchId, Me, text);
+            text = "";
+            Hub.Notify();
+        }
+        catch (AdminRuleException e) { error = e.Message; }
+        await LoadAsync();
+    }
+
+    void OnChanged() => InvokeAsync(LoadAsync);
+
+    public void Dispose()
+    {
+        Hub.Changed -= OnChanged;
+        tick?.Dispose();
+    }
+}

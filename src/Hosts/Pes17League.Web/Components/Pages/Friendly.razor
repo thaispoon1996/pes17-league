@@ -1,0 +1,342 @@
+@page "/giao-huu"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject FriendlyHub Hub
+@inject NavigationManager Nav
+@inject TimeProvider Clock
+
+@* Sảnh giao hữu (PO 16/11): Tự do / Xếp hạng, "Tìm trận" (hàng chờ), người online + Thách đấu, chat sảnh, bảng điểm Xếp hạng
+   (mùa + mọi thời gian). Ghép xong tự sang phòng /giao-huu/{id}. *@
+<div class="fr">
+    <div class="fr-bar">
+        <span class="h-chip live">Sảnh trực tiếp</span>
+        <span><b>@online.Count</b> online</span>
+        <span><span class="ms">sports_soccer</span> <b>@live.Count</b> trận đang đá</span>
+    </div>
+    <section class="h-card fr-hero">
+        <small class="fr-kicker"><span class="ms">stadium</span> Đấu trường PES 17 League</small>
+        <h1>Sảnh giao hữu</h1>
+        <p>Người vs người — ghép trận, chọn đội, chat ngay tại đây. Vào game chỉ việc đá.</p>
+    </section>
+    @* PO 17/11: khách + admin (Ban tổ chức) chỉ xem sảnh: người online, bảng xếp hạng; không tìm trận / thách đấu / chat. *@
+    @if (me is null && loaded)
+    {
+        <p class="msg">@(admin ? "Ban tổ chức chỉ xem giao hữu, không thi đấu." : "Bạn đang xem. Đăng nhập (hoặc đăng ký) tài khoản người chơi để đá giao hữu.")</p>
+    }
+    <div class="fr-modes">
+        <button class="@(mode == FriendlyMode.Free ? "on" : "")" @onclick="() => SetMode(FriendlyMode.Free)"><span class="ms">bolt</span> Cá nhân</button>
+        <button class="@(mode == FriendlyMode.Ranked ? "on" : "")" @onclick="() => SetMode(FriendlyMode.Ranked)"><span class="ms">shield</span> Bằng CLB @if (!hasClub && me is not null) { <span class="ms">lock</span> }</button>
+    </div>
+    <p class="fr-hint"><span class="ms">info</span> @(mode == FriendlyMode.Free
+        ? "Cá nhân: chọn bất kỳ đội nào của patch (2 người chọn trùng được), tính Elo xếp hạng người chơi."
+        : "Bằng CLB: HLV đá giải thách đấu bằng CLB của mình, tính Elo, có tiền thưởng cho CLB và bảng điểm theo mùa.")@(me is null ? "" : $" Elo của bạn: {myElo:N0}.")
+        @if (mode == FriendlyMode.Ranked && me is not null && !hasClub) { <a href="dang-ky-giai">Đăng ký đá giải →</a> }</p>
+    @if (error is not null) { <p class="msg">@error</p> }
+
+    @if (me is not null && open is null)
+    {
+        @if (ticket is not null && ticket.Mode == mode)
+        {
+            <button class="h-cta ghost" disabled><span class="ms">radar</span> Đang tìm trận…</button>
+            <div class="fr-scan"><span class="dot"></span> Đang quét đối thủ ngang Elo… <b>@Waited()</b> <button class="link" @onclick="CancelFind" title="Huỷ tìm"><span class="ms">close</span></button></div>
+        }
+        else
+        {
+            <button class="h-cta" disabled="@(mode == FriendlyMode.Ranked && !hasClub)" @onclick="Find"><span class="ms">radar</span> Tìm trận ngay</button>
+            @if (mode == FriendlyMode.Ranked && !hasClub) { <p class="h-note">Chưa có CLB nên chỉ đá được giao hữu Cá nhân.</p> }
+        }
+    }
+
+    @if (open is not null)
+    {
+        <section class="h-card fr-invite">
+            @if (open.Status == FriendlyStatus.Invited && open.AwayManagerId == me)
+            {
+                <div class="h-sec"><h2><span class="ms">swords</span> Lời mời thách đấu đến</h2><span class="h-chip warn">@ModeName(open.Mode)</span></div>
+                @Versus(open.HomeManagerId, open.AwayManagerId, InviteLeft())
+                <div class="fr-2btn">
+                    <button @onclick="() => Respond(false)"><span class="ms">close</span> Từ chối</button>
+                    <button class="primary" @onclick="() => Respond(true)"><span class="ms">check_circle</span> Nhận lời</button>
+                </div>
+            }
+            else if (open.Status == FriendlyStatus.Invited)
+            {
+                <div class="h-sec"><h2><span class="ms">send</span> Lời mời đã gửi</h2><span class="h-chip warn">@ModeName(open.Mode)</span></div>
+                @Versus(open.HomeManagerId, open.AwayManagerId, InviteLeft())
+                <div class="fr-scan"><span class="dot warn"></span> Đang chờ <b>@Name(open.AwayManagerId)</b> nhận lời… <button class="link" @onclick="CancelOpen">Huỷ</button></div>
+            }
+            else
+            {
+                <div class="h-sec"><h2><span class="ms">sports_esports</span> Bạn đang có trận</h2></div>
+                @Versus(open.HomeManagerId, open.AwayManagerId, null)
+                <a class="h-cta" href="giao-huu/@open.Id"><span class="ms">login</span> Vào phòng trận</a>
+            }
+        </section>
+    }
+
+    <div class="h-cols">
+        <div>
+            @if (live.Count > 0)
+            {
+                <section class="h-card">
+                    <div class="h-sec"><h2><span class="ms">sensors</span> Trận đang diễn ra</h2><small>@live.Count trận</small></div>
+                    <div class="fr-live">
+                        @foreach (var x in live)
+                        {
+                            <div class="fr-live__card">
+                                <span class="h-chip @(x.Status == FriendlyStatus.Playing ? "live" : "dim")">@(x.Status == FriendlyStatus.Playing ? "Đang đá" : "Chờ máy")</span>
+                                <div class="fr-live__vs">
+                                    <span><i class="fr-av sm">@Ini(x.HomeTeamName ?? Name(x.HomeManagerId))</i> @(x.HomeTeamName ?? Name(x.HomeManagerId))</span>
+                                    <b>VS</b>
+                                    <span>@(x.AwayTeamName ?? Name(x.AwayManagerId)) <i class="fr-av sm">@Ini(x.AwayTeamName ?? Name(x.AwayManagerId))</i></span>
+                                </div>
+                                <small>@Name(x.HomeManagerId) – @Name(x.AwayManagerId) · @ModeName(x.Mode)</small>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+
+            <section class="h-card">
+                <div class="h-sec">
+                    <h2><span class="ms">military_tech</span> @(mode == FriendlyMode.Free ? "BXH giao hữu" : "Bảng điểm CLB")</h2>
+                    @if (mode == FriendlyMode.Ranked)
+                    {
+                        <div class="fr-seg">
+                            <button class="@(allTime ? "" : "on")" @onclick="() => SetAllTime(false)">Mùa này</button>
+                            <button class="@(allTime ? "on" : "")" @onclick="() => SetAllTime(true)">Tất cả</button>
+                        </div>
+                    }
+                </div>
+                @if (table.Count == 0) { <p class="muted">Chưa có trận nào.</p> }
+                else
+                {
+                    <div class="fr-podium">
+                        @foreach (var (r, i) in table.Take(3).Select((r, i) => (r, i + 1)).OrderBy(x => x.Item2 == 1 ? 2 : x.Item2 == 2 ? 1 : 3))
+                        {
+                            <a class="fr-pod p@(i)" href="nguoi-choi/@users.GetValueOrDefault(r.ManagerId)">
+                                @if (i == 1) { <span class="ms fill crown">workspace_premium</span> }
+                                <i class="fr-av lg">@Ini(r.Name)<em>@i</em></i>
+                                <b>@r.Name</b>
+                                <strong>@r.Elo.ToString("N0")</strong>
+                                <small>@(i == 1 ? "Vô địch" : i == 2 ? "Bạc" : "Đồng") · @WinPct(r)% thắng</small>
+                            </a>
+                        }
+                    </div>
+                    <div class="fr-rows">
+                        @foreach (var (r, i) in table.Select((r, i) => (r, i + 1)).Where(x => x.Item2 > 3 || x.r.ManagerId == me))
+                        {
+                            <a class="fr-row @(r.ManagerId == me ? "mine" : "")" href="nguoi-choi/@users.GetValueOrDefault(r.ManagerId)">
+                                <span class="n">@i</span><i class="fr-av">@Ini(r.Name)</i>
+                                <span class="who"><b>@r.Name @(r.ManagerId == me ? "(Bạn)" : "")</b><small>@r.Played trận · @r.Won-@r.Drawn-@r.Lost · tỷ lệ thắng @WinPct(r)%@(mode == FriendlyMode.Ranked ? $" · {r.Points} đ" : "")</small></span>
+                                <span class="elo">@r.Elo.ToString("N0")<small>Elo</small></span>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+        <div>
+            <section class="h-card">
+                <div class="h-sec"><h2><span class="ms">group</span> Người chơi trực tuyến</h2><small>@online.Count online</small></div>
+                <div class="fr-rows">
+                    @foreach (var (id, name) in online)
+                    {
+                        var isBusy = busyIds.Contains(id);
+                        <div class="fr-row @(id == me ? "mine" : "")">
+                            <i class="fr-av">@Ini(name)<span class="st @(isBusy ? "busy" : "")"></span></i>
+                            <span class="who"><a href="nguoi-choi/@users.GetValueOrDefault(id)"><b>@name @(id == me ? "(Bạn)" : "")</b></a><small>Elo @elos.GetValueOrDefault(id, FriendlyRules.StartElo).ToString("N0") · @(isBusy ? "Đang trong trận" : "Rảnh")</small></span>
+                            @if (id != me && me is not null)
+                            {
+                                if (isBusy) { <span class="h-chip dim"><span class="ms">hourglass_top</span> Bận</span> }
+                                else if (open is null && (mode == FriendlyMode.Free || hasClub)) { <button class="fr-chal" @onclick="() => Challenge(id)"><span class="ms">swords</span> Thách</button> }
+                            }
+                        </div>
+                    }
+                    @if (online.Count == 0) { <p class="muted">Chưa có ai online.</p> }
+                </div>
+            </section>
+
+            @if (me is not null)
+            {
+                <section class="h-card">
+                    <div class="h-sec"><h2><span class="ms">history</span> Lịch sử đấu gần đây</h2></div>
+                    @if (history.Count == 0) { <p class="muted">Bạn chưa đá trận giao hữu nào.</p> }
+                    @foreach (var x in history)
+                    {
+                        var home = x.HomeManagerId == me;
+                        var (gf, ga) = home ? (x.HomeGoals, x.AwayGoals) : (x.AwayGoals, x.HomeGoals);
+                        var d = home ? x.EloHomeDelta : x.EloAwayDelta;
+                        var res = x.Status == FriendlyStatus.Voided || gf is null ? "dim" : gf > ga ? "W" : gf < ga ? "L" : "D";
+                        <a class="fr-hist @res" href="giao-huu/@x.Id">
+                            <span><b>@(res switch { "W" => "Thắng", "L" => "Thua", "D" => "Hoà", _ => "Huỷ" }) @(gf is null ? "" : $"{gf} - {ga}")</b> <small>vs @Name(home ? x.AwayManagerId : x.HomeManagerId)</small><br />
+                                <small>@((x.EndedAt ?? x.CreatedAt).ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM HH:mm")) · @ModeName(x.Mode)</small></span>
+                            <span class="elo">@(d is null ? "" : $"{Signed(d)} Elo")</span>
+                        </a>
+                    }
+                </section>
+            }
+
+            <section class="h-card">
+                <div class="h-sec"><h2><span class="ms">forum</span> Kênh chat sảnh</h2></div>
+                @if (me is { } myId) { <FriendlyChat MatchId="null" Me="myId" Names="names" /> }
+                else { <p class="muted">Đăng nhập tài khoản người chơi để chat.</p> }
+            </section>
+        </div>
+    </div>
+</div>
+
+@code {
+    Guid? me;
+    string myName = "";
+    bool loaded, hasClub, allTime, admin;
+    int myElo;
+    FriendlyMode mode = FriendlyMode.Free;
+    FriendlyMatch? open;
+    MatchmakingTicket? ticket;
+    List<(Guid Id, string Name)> online = [];
+    Dictionary<Guid, string> names = [], users = [];
+    List<FriendlyStandingRow> table = [];
+    List<FriendlyMatch> live = [], history = [];
+    HashSet<Guid> busyIds = [];
+    Dictionary<Guid, int> elos = [];
+    string? error;
+    Timer? tick;
+    int busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync();
+        admin = await Me.IsAdminAsync();
+        myName = await Me.NameAsync();
+        Hub.Changed += OnChanged;
+        await LoadAsync();
+        var n = 0;   // nạp lại mỗi 4 s, giữa chừng chỉ vẽ lại đồng hồ (tìm trận / lời mời)
+        tick = new Timer(_ => InvokeAsync(() => ++n % 4 == 0 ? LoadAsync() : Redraw()), null, 1000, 1000);
+        loaded = true;
+    }
+
+    async Task LoadAsync()
+    {
+        if (Interlocked.Exchange(ref busy, 1) == 1) return;
+        try
+        {
+            var id = me ?? Guid.Empty;   // khách/admin: chỉ xem
+            if (me is not null) Hub.Touch(id, myName);
+            await using var db = await Dbs.CreateDbContextAsync();
+            var svc = new FriendlyService(db, Clock);
+            var wasOpen = open?.Id; var wasInvited = open?.Status == FriendlyStatus.Invited;
+            if (me is not null)
+            {
+                open = await svc.OpenMatchAsync(id);
+                ticket = await svc.TicketAsync(id);
+                hasClub = await svc.ClubOfAsync(id) is not null;
+            }
+            online = Hub.Online();
+            history = me is null ? [] : (await svc.RecentAsync(id, 5));
+            live = await db.FriendlyMatches.AsNoTracking().Where(x => x.Status == FriendlyStatus.Queued || x.Status == FriendlyStatus.Playing).OrderBy(x => x.CreatedAt).ToListAsync();
+            busyIds = (await db.FriendlyMatches.AsNoTracking().Where(x => x.Status == FriendlyStatus.Picking || x.Status == FriendlyStatus.Queued || x.Status == FriendlyStatus.Playing)
+                .Select(x => new[] { x.HomeManagerId, x.AwayManagerId }).ToListAsync()).SelectMany(x => x).ToHashSet();
+            var ids = online.Select(o => o.Id).Append(id).ToHashSet();
+            foreach (var x in live.Concat(history)) { ids.Add(x.HomeManagerId); ids.Add(x.AwayManagerId); }
+            if (open is not null) { ids.Add(open.HomeManagerId); ids.Add(open.AwayManagerId); }
+            if (mode == FriendlyMode.Ranked)
+            {
+                var season = allTime ? null : await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderByDescending(s => s.Number).Select(s => (Guid?)s.Id).FirstOrDefaultAsync();
+                table = allTime || season is not null ? await svc.StandingsAsync(season) : [];
+            }
+            else table = await svc.StandingsAsync(null, mode: FriendlyMode.Free);   // PO 17/11: giao hữu cá nhân tính xếp hạng, mọi thời gian
+            ids.UnionWith(table.Select(r => r.ManagerId));
+            ids.UnionWith(await db.FriendlyChat.Where(c => c.MatchId == null).OrderByDescending(c => c.At).Take(50).Select(c => c.ManagerId).ToListAsync());
+            var people = await db.Managers.AsNoTracking().Where(m => ids.Contains(m.Id)).Select(m => new { m.Id, m.DisplayName, m.Username, m.Elo }).ToListAsync();
+            names = people.ToDictionary(p => p.Id, p => p.DisplayName);
+            users = people.ToDictionary(p => p.Id, p => p.Username);
+            elos = people.ToDictionary(p => p.Id, p => p.Elo);
+            myElo = people.FirstOrDefault(p => p.Id == id)?.Elo ?? FriendlyRules.StartElo;
+            // ghép xong / đối thủ nhận lời → sang phòng ngay (cả người mời: lời mời vừa chuyển Invited → Picking)
+            if (open is { Status: FriendlyStatus.Picking or FriendlyStatus.Queued or FriendlyStatus.Playing } && (wasOpen != open.Id || wasInvited)) { Nav.NavigateTo($"giao-huu/{open.Id}"); return; }
+            StateHasChanged();
+        }
+        finally { busy = 0; }
+    }
+
+    async Task Do(Func<FriendlyService, Task> act)
+    {
+        error = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await act(new FriendlyService(db, Clock));
+            Hub.Notify();
+        }
+        catch (AdminRuleException e) { error = e.Message; }
+        await LoadAsync();
+    }
+
+    Task Find() => Do(async s =>
+    {
+        if (await s.FindAsync(me!.Value, mode) is { } m) Nav.NavigateTo($"giao-huu/{m.Id}");
+    });
+    Task CancelFind() => Do(s => s.CancelFindAsync(me!.Value));
+    Task Challenge(Guid who) => Do(s => s.ChallengeAsync(me!.Value, who, mode));
+    Task Respond(bool yes) => Do(async s =>
+    {
+        var m = await s.RespondAsync(open!.Id, me!.Value, yes);
+        if (yes) Nav.NavigateTo($"giao-huu/{m.Id}");
+    });
+    Task CancelOpen() => Do(s => s.CancelAsync(open!.Id, me!.Value));
+    Task SetMode(FriendlyMode m) { mode = m; return LoadAsync(); }
+    Task SetAllTime(bool v) { allTime = v; return LoadAsync(); }
+
+    string Name(Guid id) => names.GetValueOrDefault(id, "?");
+    static string Ini(string? n)
+    {
+        var w = (n ?? "?").Split(' ', '_', '-', '.').Where(x => x.Length > 0).ToArray();
+        return (w.Length >= 2 ? $"{w[0][0]}{w[^1][0]}" : (n ?? "?").Length >= 2 ? (n ?? "?")[..2] : n ?? "?").ToUpperInvariant();
+    }
+    static int WinPct(FriendlyStandingRow r) => r.Played == 0 ? 0 : (int)Math.Round(100.0 * r.Won / r.Played);
+    static string Signed(int? d) => d is > 0 ? $"+{d}" : $"{d}";
+    string? InviteLeft()
+    {
+        var s = Math.Max(0, (int)(open!.CreatedAt + FriendlyRules.InviteTtl - Clock.GetUtcNow()).TotalSeconds);
+        return $"{s / 60:00}:{s % 60:00}";
+    }
+
+    RenderFragment Versus(Guid home, Guid away, string? clock) => __builder =>
+    {
+        <div class="fr-vs">
+            @foreach (var (who, tag) in new[] { (home, "Thách"), (away, "Nhận") })
+            {
+                if (tag == "Nhận")
+                {
+                    <div class="fr-vs__mid"><span class="ring">VS</span>@if (clock is not null) { <small>@clock</small> }</div>
+                }
+                <div class="fr-vs__p">
+                    <i class="fr-av lg">@Ini(Name(who))@if (who == me) { <em class="me">Bạn</em> }</i>
+                    <b>@Name(who)</b>
+                    <small>Elo @elos.GetValueOrDefault(who, FriendlyRules.StartElo).ToString("N0")</small>
+                </div>
+            }
+        </div>
+    };
+
+    static string ModeName(FriendlyMode m) => m == FriendlyMode.Free ? "Cá nhân" : "Bằng CLB";
+    string Waited()
+    {
+        var s = (int)(Clock.GetUtcNow() - ticket!.CreatedAt).TotalSeconds;
+        return $"{s / 60}:{s % 60:00}";
+    }
+
+    Task Redraw() { if (ticket is not null || open is { Status: FriendlyStatus.Invited }) StateHasChanged(); return Task.CompletedTask; }
+
+    void OnChanged() => InvokeAsync(LoadAsync);
+
+    public void Dispose()
+    {
+        Hub.Changed -= OnChanged;
+        tick?.Dispose();
+    }
+}

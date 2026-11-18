@@ -11,7 +11,6 @@
    Giải nghệ = rời CLB, hợp đồng kết thúc không tiền, ẩn khỏi thị trường; "Còn đá" hiện lại.
    Phần 2: cầu thủ admin tạo (ô 32768+) xoá hẳn được khi chưa từng ra sân/thuộc CLB (tạo ở /admin/cau-thu/moi). *@
 <h1>@(d?.Player.Name ?? "Cầu thủ")</h1>
-<AdminNav />
 @if (d is null) { if (loaded) { <p>@(msg ?? "Không tìm thấy cầu thủ.")</p> } return; }
 <p><a href="admin/cau-thu">← Danh sách cầu thủ</a>@if (d.ClubId is { } cid) { <span> · <a href="clb/@cid">@d.ClubName</a></span> }</p>
 @if (msg is not null) { <p class="msg">@msg</p> }
@@ -50,10 +49,27 @@
         <button class="primary" @onclick="SaveInfo">Lưu thông tin</button>
         @if (d.ClubId is not null || d.Visible) { <button class="danger" @onclick="Retire">Giải nghệ</button> }
         @if (!d.Visible) { <button @onclick="Unretire">Còn đá (hiện lên chợ)</button> }
-        @if (Created && deleteBlock is null) { <button class="danger" @onclick="Delete">Xoá hẳn</button> }
+        @if (Created && deleteBlock is null) { <button class="danger" data-confirm="Xoá hẳn cầu thủ này? Không hoàn tác được." data-confirm-ok="Xoá" @onclick="Delete">Xoá hẳn</button> }
     </div>
     @if (Created && deleteBlock is not null) { <p class="muted">Không xoá hẳn được: @deleteBlock.</p> }
 </div>
+
+@if (freeWindow is not null)
+{
+    <div class="panel">
+        <h2>Chuyển nhượng (chợ tự do)</h2>
+        <p class="muted">Đúng luật PES6: CLB mua trả đúng giá@(d.Price is { } fp ? $" ({Fmt.Money(fp.Price)})" : "") từ ngân sách, hợp đồng mặc định của mùa, lương = giá × ‰.
+            Đội hình đổi tự đóng gói vào game (game mở lại khi không đang đá).</p>
+        <div class="fields">
+            <label>Sang CLB <input @bind="toClub" @bind:event="oninput" list="clubs" placeholder="gõ tên CLB" style="width: 260px" /></label>
+            <datalist id="clubs">@foreach (var c in clubs) { <option value="@c.Name" /> }</datalist>
+        </div>
+        <div class="actions">
+            <button class="primary" disabled="@busy" @onclick="Move">Chuyển</button>
+            @if (d.ClubId is not null) { <button disabled="@busy" @onclick="Release">Thả tự do</button> }
+        </div>
+    </div>
+}
 
 <div class="panel">
     <h2>Chỉ số @d.Season.Name</h2>
@@ -65,7 +81,8 @@
             có hiệu lực từ OF vòng sau; mùa đã có giá thì giá gốc tính lại.
         </p>
         <div class="attrs">
-            @foreach (var f in PlayerField.Verified)
+            @* PES17: chỉ hiện chỉ số có trong dữ liệu (tên trùng PES6); chỉ số riêng PES17 chưa sửa ở đây. *@
+            @foreach (var f in PlayerField.Verified.Where(f => d.Current.ContainsKey(f.Name) && d.Start.ContainsKey(f.Name)))
             {
                 var (min, max) = PlayerAdminService.Range(f);
                 <label class="@(values[f.Name] != d.Current[f.Name] ? "changed" : "")">
@@ -92,6 +109,40 @@
     readonly PriceModel price = new();
 
     bool Created => d?.PesId >= OptionFileImage.FirstEditId;
+    TransferWindow? freeWindow;
+    List<(Guid Id, string Name)> clubs = [];
+    string? toClub;
+    bool busy;
+
+    async Task Move()
+    {
+        var matches = clubs.Where(c => string.Equals(c.Name, toClub?.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count != 1) { msg = matches.Count == 0 ? "Chọn CLB trong danh sách." : "Trùng tên CLB, liên hệ dev."; return; }
+        if (!await JS.InvokeAsync<bool>("confirm", $"Chuyển {d!.Player.Name} sang {matches[0].Name}?")) return;
+        await TransferAsync(matches[0].Id);
+    }
+
+    async Task Release()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Thả {d!.Player.Name} thành cầu thủ tự do?")) return;
+        await TransferAsync(null);
+    }
+
+    async Task TransferAsync(Guid? to)
+    {
+        busy = true;
+        try
+        {
+            TransferResult r;
+            await using (var db = await Dbs.CreateDbContextAsync())
+                r = await new FreeMarketService(db, Clock).AdminMoveAsync(d!.Season.Id, Id, to, AdminText.Actor);
+            var done = r.Ok ? $"Đã {(to is null ? "thả tự do" : "chuyển")}." + (r.NeedsLineupReview ? " CLB cũ nên xếp lại đội hình." : "") : $"Không được: {r.Error}";
+            await LoadAsync();
+            (msg, toClub) = (done, r.Ok ? null : toClub);
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -113,6 +164,10 @@
         if (d is null) return;
         form = Form.From(d.Player);
         Reset();
+        freeWindow = await new FreeMarketService(db, Clock).WindowAsync(d.Season.Id);
+        if (freeWindow is not null && clubs.Count == 0)
+            clubs = (await db.Clubs.Where(c => c.Status == ClubStatus.Active).OrderBy(c => c.Name).Select(c => new { c.Id, c.Name }).ToListAsync())
+                .Select(c => (c.Id, c.Name)).ToList();
     }
 
     void Reset() => values = d?.Current is { } c ? new(c) : [];

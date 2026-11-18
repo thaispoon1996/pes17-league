@@ -257,7 +257,7 @@ public sealed class RoundReelService(IDbContextFactory<ClubsDbContext> dbs, Matc
         {
             title = job.Title,
             subtitle = $"Vòng {job.Round} · {job.Goals} bàn",
-            outro = new[] { "Hẹn gặp lại ở vòng sau", "PES League" },
+            outro = new[] { "Hẹn gặp lại ở vòng sau", "PES 17 League" },
             items = job.Items.Select(i => new { src = $"{goals}/{i.GoalId:N}.mp4", at = job.At[i.GoalId], no = i.No, who = i.Who, score = i.Score }),
         }, ct);
         var r = JsonDocument.Parse(output).RootElement;

@@ -1,0 +1,41 @@
+@page "/ky-luat"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* Trang kỷ luật công khai (PO 17/11): mọi quyết định thưởng/phạt của Ban tổ chức trong mùa, ai cũng xem được. *@
+<section class="hero">
+    <span class="pill">Ban tổ chức</span>
+    <h1>Thưởng &amp; kỷ luật</h1>
+    <p>Quyết định của Ban tổ chức mùa này. HLV bị xử lý có thể khiếu nại qua <a href="thu">hòm thư</a> (mẫu "Khiếu nại BTC") trong @SanctionRules.AppealWindow.TotalHours.ToString("0") giờ kể từ quyết định.</p>
+</section>
+@if (rows is null) { return; }
+@if (rows.Count == 0) { <p class="muted">Chưa có quyết định nào trong mùa.</p> }
+else
+{
+    <div class="table-wrap"><table class="table">
+        <thead><tr><th class="left">Ngày</th><th class="left">CLB</th><th class="left">Quyết định</th><th class="left">Lý do</th></tr></thead>
+        <tbody>
+            @foreach (var r in rows)
+            {
+                <tr class="@(r.S.Active ? "" : "muted")">
+                    <td class="left">@r.S.At.ToLocalTime().ToString("dd/MM")</td>
+                    <td class="left"><a href="clb/@r.S.ClubId">@r.Club</a>@if (r.Manager is not null) { <small> · HLV @r.Manager</small> }</td>
+                    <td class="left">@(r.S.Kind == SanctionKind.Bonus ? "🏅 " : r.S.Kind == SanctionKind.Warning ? "⚠ " : "🟥 ")@SanctionService.Describe(r.S)@if (r.Edition is not null) { <small> · @r.Edition</small> }
+                        @if (!r.S.Active) { <br /><small>Đã huỷ@(r.S.RevokeReason is null ? "" : $": {r.S.RevokeReason}")</small> }</td>
+                    <td class="left">@r.S.Reason</td>
+                </tr>
+            }
+        </tbody>
+    </table></div>
+}
+
+@code {
+    IReadOnlyList<SanctionView>? rows;
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        rows = await new SanctionService(db, Clock).ListAsync();
+    }
+}

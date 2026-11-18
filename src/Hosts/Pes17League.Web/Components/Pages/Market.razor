@@ -40,7 +40,7 @@
             <span>@string.Join(" · ", Groups.Select(g => $"{g.Short} {squad.Count(p => p.Position.Group() == g.Group)}"))</span>
         </div>
     </div>
-    @if (me == Guid.Empty) { <p class="msg">Chưa chọn CLB của tôi nên chưa mua được. <a href="admin/lich">Chọn CLB →</a></p> }
+    @if (me == Guid.Empty) { <NoClubNote Suffix=" nên chưa mua được" /> }
     @if (message is not null) { <p class="msg">@message</p> }
 
     <div class="fm-body">
@@ -143,6 +143,7 @@
                     </tbody>
                 </table>
                 </div>
+                @if (rows.Count > Shown) { <button class="wide" @onclick="() => Shown += 30">Xem thêm 30 cầu thủ (còn @(rows.Count - Shown))</button> }
             </section>
             <aside class="fm-panel fm-scout">
                 @if (market.FirstOrDefault(p => p.PlayerId == sel) is { } picked) { @Scout(picked) }
@@ -168,7 +169,8 @@
 @code {
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
 
-    const int Shown = 100, TransferTake = 100;
+    const int TransferTake = 100;
+    int Shown = 30;   // PO 17/11: hiện 30 dòng đầu, bấm "Xem thêm" (danh sách dài trên điện thoại)
     static readonly (PositionGroup Group, string Name, string Short)[] Groups =
         [(PositionGroup.Goalkeeper, "Thủ môn", "TM"), (PositionGroup.Defender, "Hậu vệ", "HV"), (PositionGroup.Midfielder, "Tiền vệ", "TV"), (PositionGroup.Forward, "Tiền đạo", "TĐ")];
     static readonly (string Key, string Label)[] Sorts =
@@ -319,7 +321,7 @@
             {
                 <div class="sc-buy">
                     <label>Hợp đồng <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="matches" /> trận</label>
-                    <button class="primary" @onclick="() => Buy(p)">Mua · @Fmt.Money(p.Price)</button>
+                    <button class="primary" data-confirm="@($"Mua {p.Name} với giá {Fmt.Money(p.Price)}?")" data-confirm-ok="Mua" @onclick="() => Buy(p)">Mua · @Fmt.Money(p.Price)</button>
                 </div>
                 @if (p.Price > balance) { <p class="fm-note neg">Không đủ tiền — thiếu @Fmt.Money(p.Price - balance).</p> }
                 else if (OverCap(payroll + wage)) { <p class="fm-note warn">Quỹ lương sẽ vượt trần mềm.</p> }

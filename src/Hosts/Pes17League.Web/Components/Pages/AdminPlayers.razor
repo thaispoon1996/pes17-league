@@ -7,7 +7,6 @@
 @inject NavigationManager Nav
 
 <h1>Quản trị</h1>
-<AdminNav />
 @if (msg is not null) { <p class="msg">@msg</p> }
 @if (rows is null) { return; }
 @{ var shown = Shown().ToList(); }

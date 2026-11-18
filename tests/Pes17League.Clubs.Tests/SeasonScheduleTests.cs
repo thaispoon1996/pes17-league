@@ -100,7 +100,7 @@ public class SeasonScheduleTests
             db.ChangeTracker.Clear();
             var md = await db.Matchdays.SingleAsync(m => m.SeasonId == seasonId && m.Number == number);
             Assert.Equal(MatchdayStatus.WindowOpen, md.Status);
-            Assert.Equal(number <= 5 || number is 18 or 19, md.TransferWindowId is not null);   // kỳ CN chỉ ở khung 1–5, 18–19 (PO 06/11)
+            Assert.NotNull(md.TransferWindowId);   // PO 17/11: chuyển nhượng tự do cả mùa
             if (md.TransferWindowId is not null) (await db.TransferWindows.SingleAsync(w => w.Id == md.TransferWindowId)).Status = TransferWindowStatus.Closed;
             md.Status = MatchdayStatus.Locked;
             await db.SaveChangesAsync();

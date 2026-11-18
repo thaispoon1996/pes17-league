@@ -45,28 +45,11 @@ public static partial class MatchReportText
         if (title.Length > 180) title = head + pen;
         if (title.Length > 180) title = title[..180];
 
-        var where = b.Competition is { } c ? $"{c}, vòng {b.Round}" : $"Vòng {b.Round}";
-        var lead = $"{where}: {b.Home} tiếp {b.Away}. Trận đấu kết thúc {b.Score}.";
-        if (b.HomePenalties is { } h && b.AwayPenalties is { } a)
-            lead += $" Hai đội hoà sau 120 phút. {(h > a ? b.Home : b.Away)} thắng {Dash(h, a)} ở loạt penalty.";
-        else if (b.HomeGoals == b.AwayGoals) lead += " Hai đội chia điểm.";
-        else lead += $" {(b.HomeGoals > b.AwayGoals ? b.Home : b.Away)} thắng.";
-
-        var parts = new List<string> { lead };
-        parts.Add(b.Goals.Count == 0
-            ? "Trận không có bàn thắng."
-            : "Các bàn thắng: " + string.Join(" ", b.Goals.Select(g => $"phút {g.Minute}, {g.Scorer ?? "không rõ người ghi"} ({g.Club}).")));
-        if (b.Players.FirstOrDefault() is { } top)
-        {
-            var line = $"{top.Name} ({top.Club}) có điểm cao nhất, {top.Rating.ToString("0.0", CultureInfo.InvariantCulture)}.";
-            if (top.Goals is > 0) line += $" Ghi {top.Goals} bàn.";
-            if (b.Players.Count > 1)
-                line += " Tiếp theo: " + string.Join(", ", b.Players.Skip(1).Select(p => $"{p.Name} {p.Rating.ToString("0.0", CultureInfo.InvariantCulture)}")) + ".";
-            parts.Add(line);
-        }
-        if (b.HomeSide is { } hs && b.AwaySide is { } aw)
-            parts.Add($"{b.Home} giữ bóng {hs.PossessionPct}%, sút {hs.Shots} ({hs.ShotsOnTarget} trúng đích), {hs.Corners} phạt góc. "
-                      + $"{b.Away} giữ bóng {aw.PossessionPct}%, sút {aw.Shots} ({aw.ShotsOnTarget} trúng đích), {aw.Corners} phạt góc.");
+        var parts = new List<string> { Lead(b) };
+        parts.Add(GoalsStory(b));
+        if (PlayersStory(b) is { } players) parts.Add(players);
+        if (StatsStory(b) is { } stats) parts.Add(stats);
+        parts.Add(Closing(b));
         return (title, string.Join("\n\n", parts));
     }
 
@@ -122,15 +105,108 @@ public static partial class MatchReportText
         return true;
     }
 
+    static string Where(MatchBrief b) => b.Competition is { } c ? $"{c}, vòng {b.Round}" : $"Vòng {b.Round}";
+
+    static string Winner(MatchBrief b) => b.HomeGoals > b.AwayGoals ? b.Home : b.Away;
+    static string Loser(MatchBrief b) => b.HomeGoals > b.AwayGoals ? b.Away : b.Home;
+    static int Margin(MatchBrief b) => Math.Abs(b.HomeGoals - b.AwayGoals);
+
     static string Clause(MatchBrief b)
     {
         var top = b.Goals.Where(g => g.Scorer is not null).GroupBy(g => g.Scorer!).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).FirstOrDefault();
         if (top?.Count() >= 3) return $": {top.Key} lập hat-trick";
         if (top?.Count() == 2) return $": {top.Key} lập cú đúp";
-        if (b.HomePenalties is { } ph && b.AwayPenalties is { } pa) return ph > pa ? $": {b.Home} thắng loạt penalty" : $": {b.Away} thắng loạt penalty";
+        if (b.HomePenalties is { } ph && b.AwayPenalties is { } pa)
+            return ph > pa ? $": {b.Home} thắng loạt penalty" : $": {b.Away} thắng loạt penalty";
         if (b.Goals.Count == 1 && b.Goals[0].Scorer is { } s) return $": {s} ghi bàn duy nhất";
         if (b.HomeGoals == b.AwayGoals) return ": hai đội chia điểm";
-        return $": {(b.HomeGoals > b.AwayGoals ? b.Home : b.Away)} thắng";
+        var m = Margin(b);
+        if (m >= 3) return $": {Winner(b)} hủy diệt";
+        if (m == 1 && b.Goals.Count > 0 && b.Goals[^1].Minute >= 80) return $": {Winner(b)} thắng sát nút";
+        if (m == 1) return $": {Winner(b)} thắng sát nút";
+        return $": {Winner(b)} thắng thuyết phục";
+    }
+
+    static string Lead(MatchBrief b)
+    {
+        var where = Where(b);
+        if (b.HomePenalties is { } h && b.AwayPenalties is { } a)
+        {
+            var penWinner = h > a ? b.Home : b.Away;
+            return $"{where}: {b.Home} và {b.Away} không phân thắng bại sau 120 phút ({b.Score}). Loạt penalty căng như dây đàn — {penWinner} thắng {Dash(h, a)}, niềm vui vỡ òa.";
+        }
+        if (b.HomeGoals == b.AwayGoals && b.Goals.Count == 0)
+            return $"{where}: {b.Home} tiếp {b.Away} trong một buổi chiều khó chịu. Hai đội chia điểm {b.Score} — không bàn thắng, cũng chẳng có tiếng thở phào.";
+        if (b.HomeGoals == b.AwayGoals)
+            return $"{where}: {b.Home} và {b.Away} đá nhau tới {b.Score}. Hai đội chia điểm sau trận đầy cảm xúc, chẳng bên nào chịu nhường.";
+        var m = Margin(b);
+        if (m >= 3)
+            return $"{where}: {Winner(b)} đè bẹp {Loser(b)} với tỷ số {b.Score}. Một buổi chiều chỉ còn tiếng reo của một phía sân.";
+        if (m == 1)
+            return $"{where}: {b.Home} tiếp {b.Away} và kết thúc {b.Score}. {Winner(b)} thắng sát nút — nhịp thở cả trận đều nghẹt.";
+        return $"{where}: {b.Home} tiếp {b.Away}. Trận đấu kết thúc {b.Score}; {Winner(b)} thắng thuyết phục, {Loser(b)} còn nhiều điều phải nghĩ lại.";
+    }
+
+    static string GoalsStory(MatchBrief b)
+    {
+        if (b.Goals.Count == 0) return "Trận không có bàn thắng. Hai hàng công đều bất lực, khung thành gần như vô sự suốt 90 phút.";
+        if (b.Goals.Count == 1)
+        {
+            var g = b.Goals[0];
+            var who = g.Scorer ?? "không rõ người ghi";
+            return $"Bàn duy nhất đến ở phút {g.Minute}: {who} ({g.Club}) mở khóa trận đấu. Một khoảnh khắc đủ để định đoạt cả cuộc chơi.";
+        }
+
+        var lines = new List<string>();
+        for (var i = 0; i < b.Goals.Count; i++)
+        {
+            var g = b.Goals[i];
+            var who = g.Scorer ?? "không rõ người ghi";
+            var bit = $"phút {g.Minute}, {who} ({g.Club})";
+            if (i == 0) lines.Add($"Mở tỷ số: {bit}.");
+            else if (i == b.Goals.Count - 1 && g.Minute >= 80) lines.Add($"Phút cuối đầy cảm xúc: {bit}.");
+            else lines.Add($"Tiếp theo: {bit}.");
+        }
+
+        var top = b.Goals.Where(g => g.Scorer is not null).GroupBy(g => g.Scorer!).OrderByDescending(g => g.Count()).FirstOrDefault();
+        var tail = top?.Count() >= 3 ? $" {top.Key} lập hat-trick — đêm thuộc về một người."
+            : top?.Count() == 2 ? $" {top.Key} lập cú đúp, dấu ấn khó quên."
+            : "";
+        return "Các bàn thắng nối tiếp nhau. " + string.Join(" ", lines) + tail;
+    }
+
+    static string? PlayersStory(MatchBrief b)
+    {
+        if (b.Players.FirstOrDefault() is not { } top) return null;
+        var line = $"{top.Name} ({top.Club}) có điểm cao nhất trận, {top.Rating.ToString("0.0", CultureInfo.InvariantCulture)} — xứng đáng là ngôi sao đêm nay.";
+        if (top.Goals is > 0) line += $" Ghi {top.Goals} bàn.";
+        if (b.Players.Count > 1)
+            line += " Theo sát phía sau: " + string.Join(", ", b.Players.Skip(1).Select(p => $"{p.Name} {p.Rating.ToString("0.0", CultureInfo.InvariantCulture)}")) + ".";
+        return line;
+    }
+
+    static string? StatsStory(MatchBrief b)
+    {
+        if (b.HomeSide is not { } hs || b.AwaySide is not { } aw) return null;
+        var tone = hs.Shots + aw.Shots >= 20 ? "Trận đấu mở và giàu cơ hội."
+            : hs.PossessionPct >= aw.PossessionPct + 15 ? $"{b.Home} nắm thế trận rõ rệt."
+            : aw.PossessionPct >= hs.PossessionPct + 15 ? $"{b.Away} kiểm soát bóng tốt hơn."
+            : "Hai đội chia sẻ thế trận khá cân bằng.";
+        return $"{tone} {b.Home} giữ bóng {hs.PossessionPct}%, sút {hs.Shots} ({hs.ShotsOnTarget} trúng đích), {hs.Corners} phạt góc. "
+               + $"{b.Away} giữ bóng {aw.PossessionPct}%, sút {aw.Shots} ({aw.ShotsOnTarget} trúng đích), {aw.Corners} phạt góc.";
+    }
+
+    static string Closing(MatchBrief b)
+    {
+        if (b.HomePenalties is not null)
+            return "Sau đêm penalty, cảm xúc vỡ òa một bên, nuối tiếc nặng trĩu bên còn lại — bóng đá đôi khi chỉ cách nhau một cú đá.";
+        if (b.HomeGoals == b.AwayGoals)
+            return "Một điểm mỗi đội. Họ sẽ mang theo cả hụt hẫng lẫn sự thở phào vào vòng kế tiếp.";
+        if (Margin(b) >= 3)
+            return $"{Winner(b)} ra về trong tiếng reo; {Loser(b)} còn nguyên vết đau của một đêm dài.";
+        if (Margin(b) == 1)
+            return $"Chiến thắng sát nút của {Winner(b)} đủ làm CĐV vỡ òa. {Loser(b)} chỉ thiếu một khoảnh khắc — và đó là cả sự khác biệt.";
+        return $"{Winner(b)} giữ trọn ba điểm. Bài học cho {Loser(b)}: ở cấp độ này, lơi lỏng một nhịp là đủ trả giá.";
     }
 
     [GeneratedRegex(@"(?:phút\s+(\d+)|(?<!\d)(\d+)')")]

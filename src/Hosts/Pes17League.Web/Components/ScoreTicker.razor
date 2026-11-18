@@ -8,6 +8,7 @@
     <div class="ticker" aria-label="Tỉ số vòng @d.Matchday">
         <div class="in">
             <a class="ticker-head" href="lich?khung=@d.Matchday"><b>Vòng @d.Matchday</b><small>@d.Status</small></a>
+            <button type="button" class="ticker-nav prev" data-tk-nav="-1" aria-label="Lùi">‹</button>
             <div class="ticker-track">
                 @{ Guid? edition = null; }
                 @foreach (var f in d.Fixtures)
@@ -25,6 +26,7 @@
                     </a>
                 }
             </div>
+            <button type="button" class="ticker-nav next" data-tk-nav="1" aria-label="Tiến">›</button>
         </div>
     </div>
 }

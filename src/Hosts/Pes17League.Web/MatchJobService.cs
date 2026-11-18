@@ -53,7 +53,7 @@ public sealed record LiveStore(string Dir)
 /// Nhật ký sống từ sự kiện JSON của pesmatch.py; trang đăng ký <see cref="Changed"/> để vẽ lại.
 /// </summary>
 public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOptionFileStore store, TimeProvider clock, MatchJobOptions o, ILogger<MatchJobService> log,
-    IArticleWriter articles, IFrameGrabber frames, NewsStore news)
+    IArticleWriter articles, IFrameGrabber frames, NewsStore news, StreamPass pass)
 {
     private readonly object _gate = new();
     private readonly List<string> _log = [];
@@ -68,6 +68,8 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     public static readonly TimeSpan PrepareTimeout = TimeSpan.FromMinutes(30);
 
     public MatchJobOptions Options => o;
+    /// <summary>Link stream cho PO ở trận của mình: máy chế độ token (18/11) → link có vé riêng trận (P1, ô 1); máy chưa bật token → <see cref="MatchJobOptions.StreamUrl"/>.</summary>
+    public string PlayLink => HumanFixture is { } h && pass.Link(h.FixtureId, true) is { } l ? l : o.StreamUrl;
     public string? Title { get; private set; }
     public bool Running { get; private set; }
     /// <summary>Bước vào trận của việc đang chạy: boot / menu / teams / ready (chuẩn bị sẵn) / loading (pesmatch.py "stage") → kickoff (màn chờ /vao-tran).</summary>
@@ -84,11 +86,14 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
 
     // Giây còn lại tới giao bóng tính từ lúc vào mỗi bước. Mặc định đo 05/11 (4 trận BOT: boot→menu ~28 s, menu→chọn đội ~50,
     // chọn đội→tải ~35–50, tải→giao bóng ~21); sau mỗi trận PO vào được tới giao bóng thì chỉnh dần theo thực đo (chỉ trong bộ nhớ).
-    private static readonly Dictionary<string, double> Eta = new() { [""] = 140, ["boot"] = 135, ["menu"] = 105, ["teams"] = 55, ["ready"] = 21, ["loading"] = 21 };
+    // "warm" (vào trận nhanh, PO 16/11): tính từ lúc bấm Sẵn sàng; thử pestest-1 16/11: go → chọn xong 2 đội 39 s (ghi bộ nhớ 2 s).
+    private static readonly Dictionary<string, double> Eta = new() { [""] = 140, ["boot"] = 135, ["menu"] = 105, ["warm"] = 95, ["teams"] = 55, ["ready"] = 21, ["loading"] = 21 };
     private readonly Dictionary<string, DateTimeOffset> _stageTimes = [];
 
     /// <summary>Ước lượng giây từ lúc bấm Sẵn sàng tới giao bóng.</summary>
     public int SecondsToKickoffEstimate { get { lock (_gate) return (int)Math.Round(Eta[""]); } }
+    /// <summary>Ước lượng giây từ lúc bấm Sẵn sàng tới giao bóng khi game đã dựng sẵn ("warm").</summary>
+    public int SecondsToKickoffEstimateWarm { get { lock (_gate) return (int)Math.Round(Eta["warm"]); } }
 
     /// <summary>Đếm ngược vào trận PO (màn chờ /vao-tran): giây ước lượng tới giao bóng; null = không trong lúc vào trận.</summary>
     public int? SecondsToKickoff
@@ -101,10 +106,11 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     }
     /// <summary>Trận PO đang chuẩn bị sẵn (game đi menu / chờ ở màn Thiết lập), chưa bấm Đá.</summary>
     public bool Preparing => Running && _go is { Task.IsCompleted: false };
-    /// <summary>Game đã chờ ở màn Thiết lập: bấm Đá → ~15 s tới giao bóng.</summary>
-    public bool Ready => Preparing && Stage == "ready";
-    /// <summary>Đội hình đã chốt: OF trận PO dựng lúc bắt đầu (chuẩn bị hoặc đang đá) → khoá sửa đội hình trên web.</summary>
-    public bool LineupLocked => Running && Title == "Trận của tôi";
+    /// <summary>Game đã dựng sẵn, chờ ở màn Chọn đội ("warm"): bấm Sẵn sàng → ghi đội hình vào bộ nhớ, ~95 s tới giao bóng.</summary>
+    public bool Ready => Preparing && Stage is "warm" or "ready";
+    /// <summary>Đội hình đã chốt: đã bấm Sẵn sàng (hoặc vào thẳng không chuẩn bị) → khoá sửa đội hình trên web.
+    /// Lúc game đang dựng sẵn (PO 16/11) vẫn sửa được: bấm Sẵn sàng mới dựng OF và ghi vào game.</summary>
+    public bool LineupLocked => Running && Title == "Trận của tôi" && !Preparing;
     /// <summary>Trận PO đã huỷ chuẩn bị / quá hạn / lỗi lúc chuẩn bị → trang vòng không tự chuẩn bị lại (tránh lặp).</summary>
     public bool Declined(Guid fixtureId) => _declined == fixtureId;
 
@@ -178,7 +184,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
         if (CanPreemptBots)
         {
             resume = _botMatchday;
-            Write("Admin vào trận của mình: ngắt trận BOT đang đá (trận đó về lịch, đá lại sau).");
+            Write("Admin vào trận: ngắt trận BOT đang đá (trận đó về lịch, đá lại sau).");
             Cancel();
             for (var i = 0; i < 240 && Running; i++) await Task.Delay(250);   // chờ script BOT thoát (tối đa 60s)
             if (Running) return false;
@@ -209,7 +215,10 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
                 _ = ExpireAsync(go.Task, ct);
                 Write($"Đang chuẩn bị trận — game tự đi menu và chờ sẵn, bấm Đá là vào (tự huỷ sau {PrepareTimeout.TotalMinutes:0} phút).");
             }
-            else Write($"Mở stream {o.StreamUrl} — game đang tự vào trận, PO điều khiển đội {(side == MatchSide.Home ? "nhà" : "khách")}.");
+            if (pass.Enabled)
+                try { await pass.OpenAsync(fixtureId, ct); }
+                catch (Exception e) when (e is not OperationCanceledException) { Write($"Cấp vé stream lỗi: {e.Message}"); }
+            if (go is null) Write($"Mở stream — game đang tự vào trận, PO điều khiển đội {(side == MatchSide.Home ? "nhà" : "khách")}.");
             try
             {
                 var r = await Orchestrator().PlayFixtureAsync(fixtureId, side, ct: ct, go: go?.Task);
@@ -218,13 +227,24 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
                 if (r.StatsError is not null) Write($"Thống kê lỗi: {r.StatsError}");
                 if (r.PressError is not null) Write($"Bài tường thuật lỗi: {r.PressError}");
             }
-            finally { if (go is { Task.IsCompleted: false }) _declined = fixtureId; }
+            finally
+            {
+                if (go is { Task.IsCompleted: false }) _declined = fixtureId;
+                if (pass.Enabled) await pass.CloseAsync(fixtureId);
+            }
         }, () => { _go = go; _declined = null; }, then);
     }
 
     /// <summary>Bấm Đá khi đã chuẩn bị: game vào trận ngay (chưa tới màn Thiết lập thì đi tiếp vào thẳng).</summary>
     public void Go()
     {
+        lock (_gate)
+            if (_go is { Task.IsCompleted: false } && Stage == "warm")   // đếm ngược + học ETA "warm" tính từ lúc bấm (bỏ thời gian chờ)
+            {
+                StageAt = clock.GetUtcNow();
+                _stageTimes.Clear();
+                _stageTimes["warm"] = StageAt;
+            }
         _go?.TrySetResult();
         Changed?.Invoke();
     }
@@ -253,7 +273,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
         {
             await using var db = await dbs.CreateDbContextAsync(ct);
             var r = await new CompetitionService(db, store, clock).CloseTransferWindowAsync(matchdayId, ct);
-            if (r.Ok) Write("Đã đóng kỳ CN, sinh option file cho vòng.");
+            if (r.Ok) Write("Đã khoá vòng, chốt đội hình cho vòng.");
             else Write($"Lỗi: {r.Error} {string.Join("; ", r.Issues?.Select(i => i.ToString()) ?? [])}");
             locked = r.Ok;
         }, then: () => { if (locked) PlayBots(matchdayId); });
@@ -266,6 +286,14 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
             new MatchOrchestratorOptions { FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null, MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
             null,   // PO 12/11: bỏ highlight từng trận; bàn thắng cắt từ bản ghi trong RoundReelService (đoạn từng bàn + clip vòng)
             new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));
+
+    /// <summary>Trận giải người vs người trên máy 2 người (FriendlyWorker, PO 17/11): ghi hình + bài báo như trận giải, không phát trực tiếp,
+    /// chỉ dùng <paramref name="container"/> (lượt Running sót chỉ dọn trên máy đó).</summary>
+    public MatchOrchestrator DuelOrchestrator(string container, Action<MatchRunRequest, JsonElement> onEvent) =>
+        new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, onEvent, o.RecordingDir),
+            new MatchOrchestratorOptions { Containers = [container], FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null,
+                MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
+            null, new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));
 
     /// <summary>Số byte trống của ổ chứa <paramref name="dir"/> (thư mục chưa tạo → thư mục cha gần nhất).</summary>
     private static long FreeBytes(string dir)

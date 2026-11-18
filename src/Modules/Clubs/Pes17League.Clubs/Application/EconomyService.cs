@@ -111,11 +111,23 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
         return diff;
     }
 
+    /// <summary>
+    /// CLB được chia ngân sách đầu mùa: mùa có giải (Editions) → chỉ CLB dự giải mùa đó (PES17: 96 CLB 5 giải, PO chọn 18/11/2026;
+    /// CLB ngoài giải không có tiền, chỉ là nơi bán cầu thủ). Mùa chưa có giải → null = mọi CLB Active (như PES6).
+    /// </summary>
+    public static async Task<List<Guid>?> BudgetClubsAsync(ClubsDbContext db, Guid seasonId, CancellationToken ct = default)
+    {
+        var ids = await (from ec in db.EditionClubs join e in db.Editions on ec.EditionId equals e.Id
+                         where e.SeasonId == seasonId select ec.ClubId).Distinct().ToListAsync(ct);
+        return ids.Count > 0 ? ids : null;
+    }
+
     private async Task<IReadOnlyDictionary<Guid, long>> ComputeBudgetsAsync(Guid seasonId, CancellationToken ct)
     {
         var eco = await GetOrCreateAsync(seasonId, ct);
+        var only = await BudgetClubsAsync(db, seasonId, ct);
         var values = await (from club in db.Clubs
-                            where club.Status == ClubStatus.Active
+                            where club.Status == ClubStatus.Active && (only == null || only.Contains(club.Id))
                             select new
                             {
                                 club.Id,

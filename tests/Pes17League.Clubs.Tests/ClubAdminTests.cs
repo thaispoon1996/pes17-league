@@ -231,32 +231,34 @@ public class ClubAdminTests
         var svc = new ClubAdminService(db, t.Clock);
         async Task<string> Open(Club c) => string.Join(",", await db.TeamAssignments.Where(a => a.ClubId == c.Id && a.To == null).Select(a => a.ControllerType).ToListAsync());
 
+        var hlv = Guid.NewGuid();   // PO 17/11: admin không cầm CLB → thử bằng 1 HLV
+        Assert.Contains("Admin không", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(milan.Id, "test"))).Message);
         t.Clock.Advance(TimeSpan.FromHours(1));
-        await svc.SetHumanClubAsync(milan.Id, "test");
+        await svc.SetHumanClubAsync(milan.Id, "test", hlv);
         Assert.Equal(("Human", "Bot"), (await Open(milan), await Open(inter)));
         Assert.Equal(t.Clock.GetUtcNow(), (await db.TeamAssignments.SingleAsync(a => a.ClubId == milan.Id && a.ControllerType == ControllerType.Bot)).To);
 
         t.Clock.Advance(TimeSpan.FromHours(1));
-        await svc.SetHumanClubAsync(inter.Id, "test");   // đổi CLB: CLB cũ về BOT
+        await svc.SetHumanClubAsync(inter.Id, "test", hlv);   // đổi CLB: CLB cũ về BOT
         Assert.Equal(("Bot", "Human"), (await Open(milan), await Open(inter)));
-        await svc.SetHumanClubAsync(inter.Id, "test");   // không đổi → không ghi
+        await svc.SetHumanClubAsync(inter.Id, "test", hlv);   // không đổi → không ghi
         Assert.Equal(3, await db.AdminAudit.CountAsync());
 
-        Assert.Contains("không dự", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(roma.Id, "test"))).Message);
-        Assert.Contains("lưu trữ", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(lazio.Id, "test"))).Message);
-        await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(Guid.NewGuid(), "test"));
+        Assert.Contains("không dự", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(roma.Id, "test", hlv))).Message);
+        Assert.Contains("lưu trữ", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(lazio.Id, "test", hlv))).Message);
+        await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(Guid.NewGuid(), "test", hlv));
 
         var md = new Matchday { SeasonId = season.Id, Number = 1, Status = MatchdayStatus.Playing };
         var f = new Fixture { MatchdayId = md.Id, HomeClubId = roma.Id, AwayClubId = inter.Id, Status = FixtureStatus.Playing, CompetitionEditionId = edition.Id };
         db.AddRange(md, f);
         await db.SaveChangesAsync();
-        Assert.Contains("đang đá", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(null, "test"))).Message);
-        Assert.Contains("đang đá", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(milan.Id, "test"))).Message);
+        Assert.Contains("đang đá", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(null, "test", hlv))).Message);
+        Assert.Contains("đang đá", (await Assert.ThrowsAsync<AdminRuleException>(() => svc.SetHumanClubAsync(milan.Id, "test", hlv))).Message);
 
         f.Status = FixtureStatus.Played;
         await db.SaveChangesAsync();
         t.Clock.Advance(TimeSpan.FromHours(1));
-        await svc.SetHumanClubAsync(null, "test");   // không cầm CLB nào
+        await svc.SetHumanClubAsync(null, "test", hlv);   // không cầm CLB nào
         Assert.Equal(("Bot", "Bot"), (await Open(milan), await Open(inter)));
         Assert.False(await db.TeamAssignments.AnyAsync(a => a.To == null && a.ControllerType == ControllerType.Human));
         var audit = await db.AdminAudit.OrderBy(a => a.At).ThenBy(a => a.Id).ToListAsync();

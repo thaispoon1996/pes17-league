@@ -9,6 +9,8 @@
 @* FM đợt 3 (PO 12/11 duyệt mặc định): đề nghị chuyển nhượng giữa CLB có HLV — mua đứt/trao đổi/mượn, trả giá, % bán lại, trả góp,
    phí giải phóng. ?cau-thu={id} mở form gửi đề nghị. Luật ở TransferOfferService/OfferRules. *@
 @if (season is null) { return; }
+@* PO 17/11: chưa có CLB → chỉ hiện lời nhắc (không còn return giữa thẻ mở → lỗi render) *@
+@if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }
 @{ var me = season.HumanClubId; }
 <div class="fm">
     <ManagerNav />
@@ -20,7 +22,6 @@
         </div>
         <span class="fm-badge @(window is null ? "" : "open")"><b>@(window is null ? "Đóng" : "Mở")</b>Kỳ CN</span>
     </header>
-    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> return; }
     @if (message is not null) { <p class="msg">@message</p> }
 
     @if (target is not null)
@@ -165,7 +166,7 @@
                         <td class="offer-actions">
                             @if (incoming && o.Status == OfferStatus.Pending)
                             {
-                                <button class="primary" disabled="@busy" @onclick="() => Reply(o, OfferReply.Accept)">Đồng ý</button>
+                                <button class="primary" disabled="@busy" data-confirm="Đồng ý đề nghị này? Thương vụ được chốt ngay." data-confirm-ok="Đồng ý" @onclick="() => Reply(o, OfferReply.Accept)">Đồng ý</button>
                                 <button disabled="@busy" @onclick="() => Reply(o, OfferReply.Reject)">Từ chối</button>
                                 <span class="offer-counter">
                                     <input type="number" min="0" step="1000" placeholder="giá trả" value="@(counter.TryGetValue(o.Id, out var cv) ? cv : null)"
@@ -175,7 +176,7 @@
                             }
                             @if (!incoming && o.Status == OfferStatus.Countered)
                             {
-                                <button class="primary" disabled="@busy" @onclick="() => Buyer(o, true)">Đồng ý @Fmt.Money(o.CounterFee ?? 0)</button>
+                                <button class="primary" disabled="@busy" data-confirm="@($"Đồng ý mức {Fmt.Money(o.CounterFee ?? 0)}? Thương vụ được chốt ngay.")" data-confirm-ok="Đồng ý" @onclick="() => Buyer(o, true)">Đồng ý @Fmt.Money(o.CounterFee ?? 0)</button>
                             }
                             @if (!incoming && o.Status is OfferStatus.Pending or OfferStatus.Countered)
                             {

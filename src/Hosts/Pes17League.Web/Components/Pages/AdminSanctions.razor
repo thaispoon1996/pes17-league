@@ -1,0 +1,144 @@
+@page "/admin/ky-luat"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* Thưởng / phạt của Ban tổ chức (PO duyệt 17/11). Công khai ở /ky-luat; HLV nhận thư, khiếu nại qua hòm thư trong 24 h. *@
+<h1>Quản trị</h1>
+@if (clubs is null) { return; }
+<div class="panel">
+    <h2>Ra quyết định thưởng / phạt</h2>
+    <div class="form-grid">
+        <label>Loại
+            <select @bind="kind">
+                @foreach (var k in Enum.GetValues<SanctionKind>()) { <option value="@k">@SanctionRules.Name(k)</option> }
+            </select>
+        </label>
+        <label>CLB
+            <select @bind="clubId" @bind:after="OnClub">
+                <option value="@Guid.Empty">— chọn —</option>
+                @foreach (var c in clubs) { <option value="@c.Id">@c.Name@(c.Hlv is null ? "" : $" ({c.Hlv})")</option> }
+            </select>
+        </label>
+        @if (kind != SanctionKind.Warning)
+        {
+            <label>@(kind switch { SanctionKind.Ban => "Số trận cấm", SanctionKind.PointsDeduction => "Số điểm trừ", _ => "Số tiền" })
+                <input type="number" min="1" @bind="amount" />
+            </label>
+        }
+        @if (kind == SanctionKind.PointsDeduction)
+        {
+            <label>Trừ ở BXH giải
+                <select @bind="editionId">
+                    @foreach (var e in editions) { <option value="@e.Id">@e.Name</option> }
+                </select>
+            </label>
+        }
+        <label class="wide">Lý do (công khai)
+            <input @bind="reason" maxlength="500" placeholder="VD: bỏ trận không báo trước, phát ngôn thiếu fair-play…" />
+        </label>
+    </div>
+    @if (kind == SanctionKind.Ban) { <p class="muted">Cấm HLV chỉ đạo N trận chưa đá tới của CLB: trợ lý đá thay (trận người vs người: cả trận do trợ lý đá), không tính vắng. Huỷ quyết định → trận chưa đá trả lại HLV.</p> }
+    @if (kind is SanctionKind.Fine or SanctionKind.Bonus) { <p class="muted">Ghi vào sổ tài chính CLB (lý do "Kỷ luật"); huỷ quyết định = bút toán đảo. Không có mức trần.</p> }
+    <button class="primary" disabled="@busy" @onclick="Issue">Ra quyết định</button>
+    @if (msg is not null) { <p class="msg">@msg</p> }
+</div>
+
+<div class="panel">
+    <h2>Quyết định mùa này</h2>
+    @if (rows is { Count: 0 }) { <p class="muted">Chưa có quyết định nào.</p> }
+    else if (rows is not null)
+    {
+        <div class="table-wrap"><table class="table">
+            <thead><tr><th class="left">Lúc</th><th class="left">CLB / HLV</th><th class="left">Quyết định</th><th class="left">Lý do</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var r in rows)
+                {
+                    <tr class="@(r.S.Active ? "" : "muted")">
+                        <td class="left">@r.S.At.ToLocalTime().ToString("dd/MM HH:mm")</td>
+                        <td class="left"><b>@r.Club</b>@if (r.Manager is not null) { <small> · @r.Manager</small> }</td>
+                        <td class="left">@SanctionService.Describe(r.S)@if (r.Edition is not null) { <small> · @r.Edition</small> }</td>
+                        <td class="left">@r.S.Reason@if (!r.S.Active) { <br /><small>Đã huỷ @r.S.RevokedAt!.Value.ToLocalTime().ToString("dd/MM HH:mm")@(r.S.RevokeReason is null ? "" : $": {r.S.RevokeReason}")</small> }</td>
+                        <td>@if (r.S.Active) { <button disabled="@busy" @onclick="() => Revoke(r.S.Id)">Huỷ</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table></div>
+        <p class="muted">Huỷ = giữ lại lịch sử, đảo tác động (hoàn tiền, cộng lại điểm, trả trận). Lý do huỷ lấy từ ô "Lý do" ở trên (có thể để trống).</p>
+    }
+</div>
+
+@code {
+    sealed record ClubOpt(Guid Id, string Name, string? Hlv);
+    List<ClubOpt>? clubs;
+    List<(Guid Id, string Name)> editions = [];
+    IReadOnlyList<SanctionView>? rows;
+    SanctionKind kind = SanctionKind.Fine;
+    Guid clubId, editionId;
+    long amount = 1;
+    string reason = "";
+    string? msg;
+    bool busy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderByDescending(s => s.Number).Select(s => (Guid?)s.Id).FirstOrDefaultAsync();
+        var ids = season is null ? [] : await db.SeasonClubs.Where(x => x.SeasonId == season).Select(x => x.ClubId).ToListAsync();
+        clubs = await (from c in db.Clubs
+                       where ids.Contains(c.Id)
+                       join a in db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human && a.ParticipantId != null) on c.Id equals a.ClubId into aa
+                       from a in aa.DefaultIfEmpty()
+                       join m in db.Managers on a.ParticipantId equals m.Id into ms
+                       from m in ms.DefaultIfEmpty()
+                       orderby m == null, c.Name
+                       select new ClubOpt(c.Id, c.Name, m == null ? null : m.DisplayName)).ToListAsync();
+        rows = await new SanctionService(db, Clock).ListAsync();
+    }
+
+    async Task OnClub()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        editions = (await (from x in db.EditionClubs where x.ClubId == clubId
+                           join e in db.Editions on x.EditionId equals e.Id
+                           join s in db.Seasons on e.SeasonId equals s.Id where s.Status == SeasonStatus.Active
+                           join c in db.Competitions on e.CompetitionId equals c.Id
+                           orderby c.Type select new { e.Id, c.Name }).ToListAsync()).Select(x => (x.Id, x.Name)).ToList();
+        editionId = editions.Count > 0 ? editions[0].Id : Guid.Empty;
+    }
+
+    async Task Issue()
+    {
+        if (clubId == Guid.Empty) { msg = "Chọn CLB"; return; }
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var s = await new SanctionService(db, Clock).IssueAsync(kind, clubId, amount, reason, AdminText.Actor,
+                kind == SanctionKind.PointsDeduction && editionId != Guid.Empty ? editionId : null);
+            msg = $"Đã ra quyết định: {SanctionService.Describe(s)}. Đã gửi thư cho HLV (nếu có).";
+            reason = "";
+            await LoadAsync();
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
+
+    async Task Revoke(Guid id)
+    {
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new SanctionService(db, Clock).RevokeAsync(id, reason, AdminText.Actor);
+            msg = "Đã huỷ quyết định.";
+            reason = "";
+            await LoadAsync();
+        }
+        catch (AdminRuleException e) { msg = e.Message; }
+        finally { busy = false; }
+    }
+}

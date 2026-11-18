@@ -26,10 +26,10 @@ public static class AdminText
     public static string Action(string action) => action switch
     {
         "Create" => "Tạo", "Update" => "Sửa", "Delete" => "Xoá", "Archive" => "Lưu trữ", "Restore" => "Khôi phục",
-        "AddClub" => "Thêm CLB", "SetSeed" => "Đổi hạt giống", "RemoveClub" => "Bỏ CLB",
+        "AddClub" => "Thêm CLB", "Issue" => "Ra quyết định kỷ luật", "Revoke" => "Huỷ quyết định kỷ luật", "SetSeed" => "Đổi hạt giống", "RemoveClub" => "Bỏ CLB",
         "FederationSetup" => "Dựng liên đoàn", "SetImportedContractLength" => "Đổi số trận hợp đồng nhập",
         "Retire" => "Giải nghệ", "SetAttributes" => "Sửa chỉ số", "SetVisibility" => "Ẩn/hiện thị trường",
-        "SetPenalties" => "Nhập tỷ số penalty", ClubAdminService.SetControllerAction => "Đổi CLB của tôi (Human/BOT)",
+        "SetPenalties" => "Nhập tỷ số penalty", ClubAdminService.SetControllerAction => "Đổi người điều khiển CLB (HLV/BOT)",
         SeasonScheduleService.ScheduleAction => "Ghi lịch mùa", "StartSeason" => "Bắt đầu mùa", SeasonScheduleService.DrawAction => "Bốc thăm vòng loại trực tiếp",
         EconomyAdminService.SetAction => "Đổi tham số kinh tế", EconomyAdminService.TopUpAction => "Bù ngân sách đầu mùa",
         _ => action,

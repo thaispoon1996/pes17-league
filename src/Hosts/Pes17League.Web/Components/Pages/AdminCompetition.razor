@@ -8,7 +8,6 @@
 
 @* Key = "moi" (thêm giải) hoặc Id giải. Một route để Blazor luôn truyền Key khi chuyển giữa thêm ↔ sửa trên cùng component. *@
 <h1>@(comp?.Name ?? (isNew ? "Thêm giải" : "Giải đấu"))</h1>
-<AdminNav />
 @if (!found) { if (loaded) { <p>Không tìm thấy giải.</p> } return; }
 <p><a href="admin/giai">← Danh sách giải</a></p>
 @foreach (var w in CompetitionAdminService.Warnings(all).Where(w => comp is not null && w.Contains(comp.Name))) { <p class="warn">⚠ @w</p> }
@@ -104,7 +103,7 @@
         <button class="primary" @onclick="Save">@(comp is null ? "Tạo giải" : "Lưu")</button>
         @if (comp is not null && (comp.Status == CompetitionStatus.Active || editions.Count == 0))
         {
-            <button class="danger" @onclick="DeleteOrArchive">@(editions.Count > 0 ? "Lưu trữ" : "Xoá")</button>
+            <button class="danger" data-confirm="@(editions.Count > 0 ? "Lưu trữ giải này?" : "Xoá giải này? Không hoàn tác được.")" @onclick="DeleteOrArchive">@(editions.Count > 0 ? "Lưu trữ" : "Xoá")</button>
         }
         @if (comp?.Status == CompetitionStatus.Archived) { <button @onclick="Restore">Khôi phục</button> }
     </div>
@@ -135,7 +134,7 @@
             <div class="actions">
                 @foreach (var s in openSeasons.Where(s => editions.All(e => e.SeasonId != s.Id)))
                 {
-                    <button @onclick="() => CreateEdition(s)">Tạo mùa giải @s.Name</button>
+                    <button data-confirm="@($"Tạo mùa giải {s.Name}?")" @onclick="() => CreateEdition(s)">Tạo mùa giải @s.Name</button>
                 }
             </div>
         }

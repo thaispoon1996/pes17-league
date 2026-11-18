@@ -8,7 +8,6 @@
 @inject IJSRuntime JS
 
 <h1>Quản trị</h1>
-<AdminNav />
 @if (all is null) { return; }
 @foreach (var w in CompetitionAdminService.Warnings(all)) { <p class="warn">⚠ @w</p> }
 @if (msg is not null) { <p class="msg">@msg</p> }

@@ -7,6 +7,7 @@
 
 @* FM đợt 7 (PO 12/11 duyệt mặc định): mục tiêu mùa + độ tin cậy ban lãnh đạo (thấp → admin xem xét), nhân sự cấp 1–5. Luật BoardRules, StaffRules. *@
 @if (season is null) { return; }
+@if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }   @* PO 17/11: chưa có CLB → chỉ lời nhắc, ẩn tab Quản lý *@
 @{ var me = season.HumanClubId; }
 <div class="fm">
     <ManagerNav />
@@ -14,10 +15,12 @@
         @if (me != Guid.Empty) { <Crest Name="@season.Clubs.GetValueOrDefault(me, "")" Logo="@season.Logo(me)" Large="true" /> }
         <div class="fm-title">
             <h1>Ban lãnh đạo &amp; nhân sự</h1>
-            <p>@season.Name · độ tin cậy cập nhật mỗi khi khoá vòng</p>
+            <p>@season.Name · độ tin cậy cập nhật mỗi khi vòng đá xong</p>
         </div>
     </header>
-    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> return; }
+    @if (me == Guid.Empty) { <p class="msg">Bạn chưa có CLB.</p> }
+    else
+    {
     @if (message is not null) { <p class="msg">@message</p> }
 
     @if (board is { } b)
@@ -53,8 +56,9 @@
                 }
             </tbody>
         </table>
-        <p class="fm-note">Phí ký trả ngay; lương trừ mỗi vòng khi khoá vòng (= (cấp−1)² × 25k). Hạ cấp không hoàn phí.</p>
+        <p class="fm-note">Phí ký trả ngay; lương trừ mỗi vòng khi vòng đá xong (= (cấp−1)² × 25k). Hạ cấp không hoàn phí.</p>
     </section>
+    }
 </div>
 
 @code {

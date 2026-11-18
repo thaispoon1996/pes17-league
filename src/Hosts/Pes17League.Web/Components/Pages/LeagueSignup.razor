@@ -1,0 +1,113 @@
+@page "/dang-ky-giai"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject TimeProvider Clock
+
+@* Đăng ký đá giải (PO 16/11): người chơi chưa có CLB nộp đơn xin cầm 1 CLB trống (đang do BOT cầm) của mùa sắp/đang đá;
+   admin duyệt ở /admin/hlv → CLB chuyển sang người. Có CLB rồi thì quản lý CLB, đá giải và giao hữu xếp hạng. *@
+<section class="hero">
+    <span class="pill">Đá giải</span>
+    <h1>Đăng ký đá giải</h1>
+    <p>Xin cầm một CLB đang do máy (BOT) điều khiển. Admin duyệt xong là CLB thuộc về bạn: quản lý đội hình, chuyển nhượng, tài chính và tự đá các trận giải.</p>
+</section>
+@if (!loaded) { return; }
+@if (me is null)
+{
+    <p class="msg">@(admin ? "Admin không cần đăng ký — giao CLB ở Quản trị › HLV." : "Cần đăng nhập tài khoản người chơi.")</p>
+    return;
+}
+@if (error is not null) { <p class="msg">@error</p> }
+<section class="panel">
+    @if (club is not null)
+    {
+        <h2>✅ Bạn đang cầm @club</h2>
+        <p><a class="btn primary" href="clb">CLB của tôi →</a> <a class="btn" href="hop-thu">Quản lý</a></p>
+    }
+    else if (latest is { Status: LeagueApplicationStatus.Pending })
+    {
+        <h2>⏳ Đơn đang chờ admin duyệt</h2>
+        <p>CLB muốn cầm: <b>@(ClubName(latest.PreferredClubId) ?? "bất kỳ")</b>@(latest.Note is null ? "" : $" · Ghi chú: {latest.Note}")</p>
+        <p class="muted">Nộp lúc @latest.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm"). Trong lúc chờ bạn vẫn đá giao hữu tự do được.</p>
+        <button @onclick="Withdraw">↩ Rút đơn</button>
+    }
+    else
+    {
+        @if (latest is { Status: LeagueApplicationStatus.Rejected })
+        {
+            <p class="warn">Đơn trước bị từ chối@(latest.Reason is null ? "" : $": {latest.Reason}"). Bạn có thể nộp lại.</p>
+        }
+        <h2>Nộp đơn</h2>
+        @if (open.Count == 0) { <p class="muted">Hiện không còn CLB trống. Nộp đơn "bất kỳ" để admin xếp khi có chỗ.</p> }
+        <label>CLB muốn cầm
+            <select @bind="pick">
+                <option value="">— Bất kỳ (admin xếp) —</option>
+                @foreach (var c in open) { <option value="@c.Id">@c.Name</option> }
+            </select>
+        </label>
+        <label>Ghi chú cho admin (không bắt buộc)
+            <input @bind="note" maxlength="300" placeholder="vd: fan Inter, đá được tối thứ 7" />
+        </label>
+        <div class="actions"><button class="primary" @onclick="Apply">📝 Nộp đơn</button></div>
+    }
+</section>
+<section class="panel">
+    <h2>Quy trình</h2>
+    <ol>
+        <li>Đăng ký tài khoản ở <a href="dang-ky">Đăng ký</a> (mật khẩu tối thiểu 3 ký tự).</li>
+        <li>Nộp đơn tại trang này, chọn CLB trống mình muốn.</li>
+        <li>Admin duyệt → CLB chuyển từ BOT sang bạn. Bị từ chối thì nộp lại.</li>
+        <li>Trước mỗi trận: chỉnh đội hình ở <b>Chuẩn bị trận</b>, đến giờ bấm <b>Vào trận</b>. Vắng thì trợ lý (máy) đá thay.</li>
+    </ol>
+    <p class="muted">Chưa có CLB vẫn đá <b>giao hữu tự do</b> được; giao hữu <b>xếp hạng</b> cần có CLB. Xem <a href="vai-tro">Vai trò &amp; quyền</a>.</p>
+</section>
+
+@code {
+    Guid? me;
+    bool loaded, admin;
+    string? club, error, note;
+    string pick = "";
+    LeagueApplication? latest;
+    List<OpenClub> open = [];
+    Dictionary<Guid, string> clubNames = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync();
+        admin = await Me.IsAdminAsync();
+        await LoadAsync();
+        loaded = true;
+    }
+
+    async Task LoadAsync()
+    {
+        if (me is not { } id) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new LeagueApplicationService(db, Clock);
+        club = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
+                      where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select c.Name).FirstOrDefaultAsync();
+        latest = await svc.LatestAsync(id);
+        open = await svc.OpenClubsAsync();
+        if (latest?.PreferredClubId is { } p && open.All(c => c.Id != p))
+            clubNames[p] = await db.Clubs.Where(c => c.Id == p).Select(c => c.Name).FirstAsync();
+        foreach (var c in open) clubNames[c.Id] = c.Name;
+    }
+
+    string? ClubName(Guid? id) => id is { } x ? clubNames.GetValueOrDefault(x) : null;
+
+    async Task Do(Func<LeagueApplicationService, Task> act)
+    {
+        error = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await act(new LeagueApplicationService(db, Clock));
+        }
+        catch (AdminRuleException e) { error = e.Message; }
+        await LoadAsync();
+    }
+
+    Task Apply() => Do(s => s.ApplyAsync(me!.Value, Guid.TryParse(pick, out var g) ? g : null, note));
+    Task Withdraw() => Do(s => s.WithdrawAsync(me!.Value));
+}

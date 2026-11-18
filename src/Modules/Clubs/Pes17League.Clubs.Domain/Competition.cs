@@ -65,6 +65,12 @@ public class Fixture
     public int? AwayPenalties { get; set; }
     /// <summary>HLV người chọn để trợ lý đá thay (COM vs COM, giữ chiến thuật của HLV) — lộ trình FM đợt 2.</summary>
     public bool AssistantPlays { get; set; }
+    /// <summary>Trận giải người vs người (PO 17/11): HLV bấm Sẵn sàng (điểm danh); 2 bên sẵn sàng → máy 2 người nhận trận.</summary>
+    public DateTimeOffset? HomeReadyAt { get; set; }
+    public DateTimeOffset? AwayReadyAt { get; set; }
+    /// <summary>Quá hạn đá vòng mà HLV người bên này chưa đá (cũng chưa giao trợ lý / chưa Sẵn sàng) → vắng, trợ lý đá thay, kết quả tính.</summary>
+    public bool HomeAbsent { get; set; }
+    public bool AwayAbsent { get; set; }
 
     /// <summary>Tỷ số loạt penalty ghi được: chỉ khi hoà sau 120', không âm, không hoà (loạt penalty luôn có đội thắng).</summary>
     public static bool PenaltiesValid(int homeGoals, int awayGoals, int home, int away) =>
@@ -218,7 +224,9 @@ public static class RoundRobin
 
 public sealed record StandingRow<TId>(TId Club, int Played, int Won, int Drawn, int Lost, int GoalsFor, int GoalsAgainst)
 {
-    public int Points => Won * 3 + Drawn;
+    /// <summary>Điểm bị Ban tổ chức trừ (kỷ luật, PO 17/11).</summary>
+    public int Deducted { get; init; }
+    public int Points => Won * 3 + Drawn - Deducted;
     public int GoalDifference => GoalsFor - GoalsAgainst;
 }
 
@@ -227,10 +235,13 @@ public sealed record PlayedFixture<TId>(TId Home, TId Away, int HomeGoals, int A
 /// <summary>Bảng xếp hạng: 3/1/0; bằng điểm → hiệu số → bàn thắng → đối đầu (điểm, hiệu số, bàn thắng giữa các đội bằng nhau) → tên (PO chọn 01/11).</summary>
 public static class Standings
 {
-    public static IReadOnlyList<StandingRow<TId>> Compute<TId>(IReadOnlyCollection<TId> clubs, IReadOnlyCollection<PlayedFixture<TId>> fixtures, Func<TId, string> name)
+    public static IReadOnlyList<StandingRow<TId>> Compute<TId>(IReadOnlyCollection<TId> clubs, IReadOnlyCollection<PlayedFixture<TId>> fixtures, Func<TId, string> name,
+        IReadOnlyDictionary<TId, int>? deducted = null)
         where TId : notnull
     {
         var table = Table(clubs, fixtures);
+        if (deducted is not null)   // trừ điểm kỷ luật: tính vào điểm xếp hạng, không tính vào đối đầu
+            foreach (var (c, n) in deducted) if (table.TryGetValue(c, out var r)) table[c] = r with { Deducted = r.Deducted + n };
         return table.Values
             .GroupBy(r => (r.Points, r.GoalDifference, r.GoalsFor))
             .OrderByDescending(g => g.Key.Points).ThenByDescending(g => g.Key.GoalDifference).ThenByDescending(g => g.Key.GoalsFor)

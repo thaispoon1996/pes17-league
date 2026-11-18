@@ -9,7 +9,6 @@
 @* Bước 3c phần 2 (A8, PO chọn 06/11): tạo cầu thủ ở ô 32768–32951 của patch mùa đang mở → cầu thủ tự do trên thị trường.
    Chỉ số gợi ý = trung vị cầu thủ patch cùng vị trí; đổi vị trí thì gợi ý lại các ô chưa sửa tay. Vào game từ OF vòng sau, không có ảnh mặt. *@
 <h1>Tạo cầu thủ</h1>
-<AdminNav />
 <p><a href="admin/cau-thu">← Danh sách cầu thủ</a></p>
 @if (msg is not null) { <p class="msg">@msg</p> }
 @if (free is null || template is null) { return; }
@@ -17,7 +16,9 @@
 <div class="panel">
     <h2>Cầu thủ mới</h2>
     <p class="muted">Còn <b>@free</b>/@OptionFileImage.EditCount ô tạo cầu thủ (ô PES @OptionFileImage.FirstEditId–@(OptionFileImage.FirstEditId + OptionFileImage.EditCount - 1)) trong patch của mùa đang mở.</p>
-    @if (free == 0) { <p class="warn">Hết ô: xoá hẳn cầu thủ tạo mới chưa từng ra sân/thuộc CLB để lấy lại ô.</p> return; }
+    @if (free == 0) { <p class="warn">Hết ô: xoá hẳn cầu thủ tạo mới chưa từng ra sân/thuộc CLB để lấy lại ô.</p> }
+    else
+    {
     <div class="fields">
         <label>Tên (web + trong game) <input @bind="form.Name" @bind:event="oninput" maxlength="40" /></label>
         <label>Vị trí <select @bind="form.Position" @bind:after="PositionChanged">@foreach (var p in Enum.GetValues<Position>()) { <option value="@p">@p</option> }</select></label>
@@ -25,12 +26,13 @@
         <label>Quốc tịch (mã trong game) <input @bind="form.Nationality" maxlength="3" placeholder="VIE" list="nations" /></label>
         <datalist id="nations">@foreach (var n in GameText.Nations.Distinct()) { <option value="@n" /> }</datalist>
     </div>
-    @{ var game = GameText.ToDisplayable(form.Name ?? ""); }
+    var game = GameText.ToDisplayable(form.Name ?? "");
     <p class="muted">
         Tên trong game: <b class="@(game.Length > OptionFileImage.MaxNameLength ? "warn" : "")">@game</b> (@game.Length/@OptionFileImage.MaxNameLength ký tự),
         tên in áo: <b>@GameText.ShirtName(form.Name ?? "")</b>. Thành cầu thủ tự do trên thị trường, CLB mua theo giá.
         Trong game từ OF vòng sau: vị trí đá được = vị trí đăng ký; quốc tịch theo mã (không có trong game → Tự do); có năm sinh thì tuổi = năm hiện tại − năm sinh (thay AGE); chân thuận, kỹ năng đặc biệt, ngoại hình như ô mẫu của game; không có ảnh mặt.
     </p>
+    }
 </div>
 
 <div class="panel">

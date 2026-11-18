@@ -119,7 +119,7 @@ public sealed class SeasonScheduleService(ClubsDbContext db, TimeProvider clock,
         var names = await db.Clubs.Where(c => clubs.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
         var played = own.Where(f => f.Stage == FixtureStage.LeaguePhase)
             .Select(f => new PlayedFixture<Guid>(f.HomeClubId, f.AwayClubId, f.HomeGoals!.Value, f.AwayGoals!.Value)).ToList();
-        var ranking = Standings.Compute(clubs, played, id => names[id]).Select(r => r.Club).ToList();
+        var ranking = Standings.Compute(clubs, played, id => names[id], SanctionService.For(await SanctionService.DeductionsAsync(db, ct), e.Id)).Select(r => r.Club).ToList();
         Guid Winner(KnockoutTie<Guid> t)
         {
             var leg1 = own.SingleOrDefault(f => f.Stage == t.Stage && f.Leg == 1 && f.HomeClubId == t.Lower && f.AwayClubId == t.Higher);

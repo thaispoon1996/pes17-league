@@ -7,6 +7,9 @@
 
 @* FM đợt 8 (PO 12/11 duyệt mặc định): đôn cầu thủ trẻ (tối đa YouthRules.PerSeason/mùa, dùng ô tạo cầu thủ 184/OF), danh sách báo cáo trinh sát. *@
 @if (season is null) { return; }
+@* PO 17/11: chưa có CLB → chỉ hiện lời nhắc (không còn return giữa thẻ mở → lỗi render) *@
+@if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }
+@if (youth is null) { return; }
 @{ var me = season.HumanClubId; }
 <div class="fm">
     <ManagerNav />
@@ -17,7 +20,6 @@
             <p>@season.Name · cầu thủ trẻ vào game từ file game vòng sau</p>
         </div>
     </header>
-    @if (me == Guid.Empty || youth is null) { <p class="msg">Bạn chưa có CLB.</p> return; }
     @if (message is not null) { <p class="msg">@message</p> }
 
     <div class="fm-cards">
@@ -36,7 +38,7 @@
             </label>
         </div>
         <p class="fm-note">16–17 tuổi, chỉ số thấp hơn mặt bằng vị trí 8–17 điểm nhưng tiềm năng cao (tăng qua tập luyện). HĐ @YouthRules.ContractMatches trận, lương @Fmt.Money(YouthRules.Wage)/vòng.</p>
-        <button class="primary" disabled="@(busy || youth.UsedThisSeason >= youth.PerSeason)" @onclick="Promote">Đôn lên đội một</button>
+        <button class="primary" disabled="@(busy || youth.UsedThisSeason >= youth.PerSeason)" data-confirm="Đôn cầu thủ này lên đội một? Mỗi mùa có giới hạn số lượt." @onclick="Promote">Đôn lên đội một</button>
         @if (youth.Players.Count > 0)
         {
             <ul class="facts">

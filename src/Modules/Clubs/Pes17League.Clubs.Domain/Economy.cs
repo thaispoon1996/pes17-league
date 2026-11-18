@@ -18,6 +18,9 @@ public class SeasonEconomy
     public double BudgetExponent { get; set; } = 0.5;
     /// <summary>Số trận hợp đồng nhập từ patch / tự gia hạn tại CLB gốc / về CLB gốc (PO chọn 10).</summary>
     public int DefaultContractMatches { get; set; } = ContractRules.MinMatches;
+    /// <summary>Thưởng giao hữu xếp hạng (PO 16/11: mặc định 25% thưởng trận giải), vào sổ CLB với <see cref="LedgerReason.FriendlyPrize"/>.</summary>
+    public long FriendlyWinPrize { get; set; } = FriendlyRules.DefaultWinPrize;
+    public long FriendlyDrawPrize { get; set; } = FriendlyRules.DefaultDrawPrize;
     public DateTimeOffset UpdatedAt { get; set; }
 }
 

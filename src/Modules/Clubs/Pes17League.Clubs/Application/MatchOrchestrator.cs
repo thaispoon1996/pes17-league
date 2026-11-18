@@ -6,10 +6,13 @@ namespace Pes17League.Clubs.Application;
 public enum MatchSide { Home, Away }
 
 /// <param name="HumanSide">Bên do người điều khiển (trận PO); null = COM vs COM.</param>
+/// <param name="BothHuman">Giao hữu: 2 người chung máy (pesmatch "both": bàn phím/cảm ứng = nhà, tay cầm ô 2 = khách).</param>
 /// <param name="Go">Chuẩn bị trận sẵn (PO 05/11): có → game đi menu tới màn Thiết lập rồi chờ, Go xong mới vào trận.</param>
 /// <param name="ExtraTime">Chung kết (PO 06/11): hoà sau 90' → game tự đá hiệp phụ rồi loạt penalty.</param>
+/// <param name="Refresh">Vào trận nhanh (PO 16/11, cần <paramref name="Go"/>): game dựng sẵn tới màn Chọn đội ("warm"), lúc Go dựng lại OF
+/// (đội hình mới nhất) và ghi squad + đội hình 2 đội vào bộ nhớ game rồi mới chọn đội.</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
-    bool ExtraTime = false);
+    bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false);
 
 /// <param name="Half">1 = hiệp 1, 2 = hiệp 2, 3/4 = hiệp phụ 1/2 (phút 91–120).</param>
 /// <param name="Slot">Ô cầu thủ ghi bàn (cùng thứ tự ô với RunRating); null = không xác định.</param>
@@ -30,7 +33,7 @@ public sealed record MatchRunOutcome(bool Finished, int HomeGoals, int AwayGoals
 /// <param name="VideoOffsetSec">Vị trí pha bóng trong bản ghi hình.</param>
 /// <param name="Caption">Chữ trên video, vd "MCI 0–1 MUN · 11' Sesko — Bàn thắng".</param>
 /// <param name="Pre">Số giây lấy trước mốc; <paramref name="Post"/>: sau mốc (bàn thắng 15/5, sút trúng đích 8/4 — B3).</param>
-public sealed record HighlightClip(double VideoOffsetSec, string Caption, double Pre = 15, double Post = 5);
+public sealed record HighlightClip(double VideoOffsetSec, string Caption, double Pre = 8, double Post = 3);   // PO 17/11: cắt gọn (trước 15/5)
 
 /// <summary>Cắt highlight sau trận (C7): ghép clip quanh các bàn từ bản ghi hình. Bản thật: Infrastructure.ScriptHighlightRenderer.</summary>
 public interface IHighlightRenderer
@@ -138,15 +141,19 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
     }
 
     /// <summary>Đá 1 trận (vd trận của PO: humanSide = bên của PO).</summary>
-    /// <param name="go">Chuẩn bị sẵn: game chờ ở màn Thiết lập tới khi go xong (<see cref="MatchRunRequest.Go"/>).</param>
-    public async Task<FixtureRunReport> PlayFixtureAsync(Guid fixtureId, MatchSide? humanSide, string? container = null, CancellationToken ct = default, Task? go = null) =>
-        (await RunFixtureAsync(fixtureId, container ?? _o.Containers[0], humanSide, ct, go)).Report;
+    /// <param name="go">Chuẩn bị sẵn: trận có người → game chờ ở màn Chọn đội, đội hình vẫn sửa được tới khi go xong (<see cref="MatchRunRequest.Refresh"/>);
+/// BOT → chờ ở màn Thiết lập (<see cref="MatchRunRequest.Go"/>).</param>
+    /// <param name="both">Trận giải người vs người (PO 17/11): 2 HLV chung máy 2 người (pesmatch "both"), không thử lại khi lỗi (người chơi bấm Sẵn sàng lại).</param>
+    public async Task<FixtureRunReport> PlayFixtureAsync(Guid fixtureId, MatchSide? humanSide, string? container = null, CancellationToken ct = default, Task? go = null,
+        bool both = false) =>
+        (await RunFixtureAsync(fixtureId, container ?? _o.Containers[0], humanSide, ct, go, both: both)).Report;
 
     private async Task<(FixtureRunReport Report, RecordResult? Result)> RunFixtureAsync(Guid fixtureId, string container, MatchSide? humanSide, CancellationToken ct, Task? go = null,
-        CancellationToken stop = default)
+        CancellationToken stop = default, bool both = false)
     {
         string? error = null;
-        for (var attempt = 1; attempt <= _o.MaxAttempts; attempt++)
+        var max = both ? 1 : _o.MaxAttempts;
+        for (var attempt = 1; attempt <= max; attempt++)
         {
             if (attempt > 1 && stop.IsCancellationRequested) return (new FixtureRunReport(fixtureId, false, attempt - 1, error), null);   // xin dừng: không đá lại, trận giữ Scheduled
             await using var db = dbFactory();
@@ -157,7 +164,10 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             MatchRunOutcome outcome;
             try
             {
-                outcome = await runner.RunAsync(await RequestAsync(db, fixtureId, container, humanSide, ct) with { Go = go }, ct);
+                var req = await RequestAsync(db, fixtureId, container, humanSide, ct) with { Go = go, BothHuman = both };
+                if (go is not null && humanSide is not null)
+                    req = req with { Refresh = async c => { await using var db2 = dbFactory(); return (await RequestAsync(db2, fixtureId, container, humanSide, c)).OptionFile; } };
+                outcome = await runner.RunAsync(req, ct);
             }
             catch (OperationCanceledException)
             {
@@ -204,13 +214,13 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             error = outcome.Error ?? "Không rõ lỗi";
             await svc.EndAttemptAsync(start.AttemptId!.Value, MatchAttemptOutcome.Crashed, outcome.RecordingPath, ct);
         }
-        return (new FixtureRunReport(fixtureId, false, _o.MaxAttempts, error), null);
+        return (new FixtureRunReport(fixtureId, false, max, error), null);
     }
 
     public const int MaxHighlightClips = 12;
 
     /// <summary>
-    /// Highlight trận vừa ghi kết quả: chỉ bàn thắng (15 s trước, 5 s sau), tối đa <see cref="MaxHighlightClips"/> clip.
+    /// Highlight trận vừa ghi kết quả: chỉ bàn thắng (8 s trước, 3 s sau), tối đa <see cref="MaxHighlightClips"/> clip.
     /// Không có bản ghi hình hoặc không có bàn có mốc video → bỏ qua. Trả lỗi thay vì ném.
     /// </summary>
     private async Task<string?> HighlightAsync(ClubsDbContext db, Fixture f, MatchRunOutcome outcome, IReadOnlyList<GoalInput> goals, IReadOnlyList<RatingInput> ratings,
@@ -298,10 +308,14 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         var f = (await db.Fixtures.FindAsync([fixtureId], ct))!;
         var md = (await db.Matchdays.FindAsync([f.MatchdayId], ct))!;
         var season = (await db.Seasons.FindAsync([md.SeasonId], ct))!;
-        var buildId = md.OptionFileBuildId!.Value;
-        if (humanSide is { } side)   // trận có người: đội hình chốt lúc vào trận (PO đổi chỗ trên web sau khi khoá vòng vẫn có hiệu lực)
+        // PO 17/11 bỏ khoá vòng: đội hình lúc vào trận (chuyển nhượng tới lúc này đều có hiệu lực); HLV BOT xếp đội trước.
+        if (md.OptionFileBuildId is null) await new BotCoachService(db, clock).ApplyAsync(md.Id, ct);
+        Guid buildId;
+        if (await new Pes17RoundService(db, store, clock).IsPes17SeasonAsync(season.Id, ct))   // PES17: ảnh chụp đội hình JSON cả liên đoàn
+            buildId = (await new Pes17RoundService(db, store, clock).SnapshotAsync(season.PatchVersionId!.Value, md.Id, ct)).Id;
+        else
         {
-            var mine = await new RoundOptionFileService(db, store, clock).BuildForMatchAsync(md.Id, [side == MatchSide.Home ? f.HomeClubId : f.AwayClubId], ct);
+            var mine = await new RoundOptionFileService(db, store, clock).BuildForFixtureAsync(md.Id, [f.HomeClubId, f.AwayClubId], ct);
             if (!mine.Ok) throw new InvalidOperationException($"Đội hình không hợp lệ: {string.Join("; ", mine.Issues.Select(i => i.Message))}");
             buildId = mine.BuildId;
         }
@@ -333,10 +347,12 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         return list;
     }
 
-    /// <summary>Trận chờ HLV người tự đá qua stream: đúng 1 bên Human và HLV chưa giao trợ lý. Người vs người (lộ trình FM đợt 2, PO ok 12/11)
-    /// = COM vs COM theo chiến thuật 2 HLV, vào hàng BOT như trận trợ lý đá thay.</summary>
+    /// <summary>Trận chờ HLV người tự đá: có bên Human và chưa giao trợ lý. PO 17/11: người vs người cũng chờ 2 HLV đá trên máy 2 người
+    /// (trước đây = COM vs COM); quá hạn vòng thì trợ lý đá thay (<see cref="AbsenceService"/>).</summary>
     public static bool NeedsHuman(Fixture f, IReadOnlySet<Guid> humans) =>
-        !f.AssistantPlays && humans.Contains(f.HomeClubId) != humans.Contains(f.AwayClubId);
+        !f.AssistantPlays && (humans.Contains(f.HomeClubId) || humans.Contains(f.AwayClubId));
+
+    public static bool BothHuman(Fixture f, IReadOnlySet<Guid> humans) => humans.Contains(f.HomeClubId) && humans.Contains(f.AwayClubId);
 
     public static async Task<HashSet<Guid>> HumanClubsAsync(ClubsDbContext db, IEnumerable<Guid> clubs, CancellationToken ct)
     {

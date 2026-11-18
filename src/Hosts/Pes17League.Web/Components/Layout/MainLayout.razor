@@ -1,58 +1,105 @@
 @inherits LayoutComponentBase
-@inject IConfiguration Config
 @inject CurrentUser Me
+@inject NavigationManager Nav
+@inject MailHub Mail
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<Pes17League.Clubs.Infrastructure.ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@implements IDisposable
 <header class="site-header">
     <div class="top-nav">
         <div class="in">
             <nav>
-                <a href="">PES League</a>
+                <a href="">PES 17 League</a>
                 <a href="mua">Các mùa</a>
-                <a href="ban-thang">Bàn thắng</a>
-                <a href="thong-ke">Thống kê</a>
-                <a href="vinh-danh">Vinh danh</a>
                 <a href="tim-kiem">🔍 Tìm kiếm</a>
             </nav>
-            @if (Config["PES17_WEB_AUTH"] != "off" || who is not null)
+            @if (admin) { <a class="to-admin" href="admin">⚙ Quản trị</a> }
+            @if (guest)
             {
-                <form method="post" action="/logout" data-enhance="false">@if (who is not null) { <small class="who">@who</small> }<button class="link">Thoát</button></form>
+                <a class="to-login" href="login">Đăng nhập</a> <a class="to-login" href="dang-ky">Đăng ký</a>
             }
-            @* PO 12/11: tắt đăng nhập (PES17_WEB_AUTH=off) → ẩn link đăng nhập HLV; /login vẫn vào được bằng tay. *@
+            else
+            {
+                <a class="to-mail" href="thu" title="Hòm thư">✉ Thư @if (unread > 0) { <span class="badge">@unread</span> }</a>
+                <form method="post" action="/logout" data-enhance="false">@if (profile is not null) { <a class="who" href="@profile">@who</a> } else { <small class="who">@who</small> }<button class="link">Thoát</button></form>
+            }
+            @* PO 16/11: khách chỉ xem (không còn là admin khi tắt đăng nhập) → hiện link Đăng nhập; admin có lối vào khu quản trị riêng. *@
         </div>
     </div>
     <div class="main-nav">
         <div class="in">
-            <a class="brand" href="" aria-label="PES League">
+            <a class="brand" href="" aria-label="PES 17 League">
                 <svg class="shield" viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--accent)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="var(--brand)"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--accent)"/></svg>
-                <span>PES<b>League</b></span></a>
+                <span>PES 17<b>League</b></span></a>
             <nav>
                 <NavLink href="" Match="NavLinkMatch.All">Vòng đấu</NavLink>
                 <NavLink href="truc-tiep">Trực tiếp</NavLink>
                 <NavLink href="tin">Tin tức</NavLink>
-                <NavLink href="lich">Lịch thi đấu</NavLink>
+                <NavLink href="lich">Lịch</NavLink>
                 <NavLink href="giai">Giải đấu</NavLink>
                 <NavLink href="bxh">BXH</NavLink>
-                <NavLink href="thong-ke">Thống kê</NavLink>
-                <NavLink href="clb">CLB của tôi</NavLink>
-                <NavLink href="hop-thu">Quản lý</NavLink>
-                <NavLink href="chuyen-nhuong">Chuyển nhượng</NavLink>
+                @if (coach)
+                {
+                    <NavLink href="clb">CLB của tôi</NavLink>
+                    <NavLink href="hop-thu">Quản lý</NavLink>
+                    <NavLink href="chuyen-nhuong">Chuyển nhượng</NavLink>
+                }
+                <NavLink href="giao-huu">Giao hữu</NavLink>
                 <details class="nav-more">
                     <summary>Thêm</summary>
                     <div class="nav-more__menu">
+                        <NavLink href="thong-ke">Thống kê</NavLink>
+                        @if (player) { <NavLink href="dieu-khien">Điều khiển</NavLink> }
                         <NavLink href="tong-ket">Tổng kết vòng</NavLink>
                         <NavLink href="thi-truong">Thị trường</NavLink>
                         <NavLink href="vinh-danh">Vinh danh</NavLink>
                         <NavLink href="ban-thang">Bàn thắng</NavLink>
-                        <NavLink href="tim-kiem">Tìm kiếm</NavLink>
                         <NavLink href="so-sanh">So sánh cầu thủ</NavLink>
-                        @if (admin)
-                        {
-                            <NavLink href="an-hien">Ẩn/hiện</NavLink>
-                            <NavLink href="dieu-khien">Điều khiển</NavLink>
-                            <NavLink href="admin">Quản trị</NavLink>
-                        }
+                        @if (player) { <NavLink href="dang-ky-giai">Đăng ký đá giải</NavLink> }
+                        <NavLink href="ky-luat">Thưởng &amp; kỷ luật</NavLink>
+                        <NavLink href="vai-tro">Vai trò &amp; quyền</NavLink>
                     </div>
                 </details>
             </nav>
+            @* Điện thoại (PO 17/11): đầu trang 1 tầng — thư + menu ☰ gom mọi mục ngoài thanh đáy. *@
+            <div class="m-actions">
+                <a class="m-icon" href="tim-kiem" aria-label="Tìm kiếm">🔍</a>
+                @if (!guest) { <a class="m-icon" href="thu" aria-label="Hòm thư">✉️ @if (unread > 0) { <span class="badge">@unread</span> }</a> }
+                <details class="m-menu">
+                    <summary aria-label="Mở menu"><span></span><span></span><span></span></summary>
+                    <div class="m-menu__panel">
+                        @if (guest) { <div class="m-menu__auth"><a class="btn primary" href="login">Đăng nhập</a><a class="btn" href="dang-ky">Đăng ký</a></div> }
+                        else { <div class="m-menu__who">@if (profile is not null) { <a href="@profile">👤 @who</a> } else { <span>👤 @who</span> }</div> }
+                        <p>Giải đấu</p>
+                        @if (!guest) { <NavLink href="truc-tiep">🔴 Trực tiếp</NavLink><NavLink href="bxh">🏆 Bảng xếp hạng</NavLink> }
+                        <NavLink href="tin">📰 Tin tức</NavLink>
+                        <NavLink href="giai">🏟️ Giải đấu</NavLink>
+                        <NavLink href="thong-ke">📊 Thống kê</NavLink>
+                        <NavLink href="tong-ket">📝 Tổng kết vòng</NavLink>
+                        <NavLink href="ban-thang">⚽ Bàn thắng</NavLink>
+                        <NavLink href="vinh-danh">🏅 Vinh danh</NavLink>
+                        <NavLink href="mua">🗂️ Các mùa</NavLink>
+                        <NavLink href="thi-truong">💹 Thị trường</NavLink>
+                        <NavLink href="so-sanh">⚖️ So sánh cầu thủ</NavLink>
+                        <NavLink href="giao-huu">⚽ Giao hữu</NavLink>
+                        @if (!guest)
+                        {
+                            <p>Của tôi</p>
+                            <NavLink href="thu">✉️ Hòm thư @if (unread > 0) { <span class="badge">@unread</span> }</NavLink>
+                            @if (player)
+                            {
+                                @if (coach) { <NavLink href="chuyen-nhuong">🔁 Chuyển nhượng</NavLink> }
+                                <NavLink href="dieu-khien">🎮 Điều khiển</NavLink>
+                                <NavLink href="dang-ky-giai">✍️ Đăng ký đá giải</NavLink>
+                            }
+                        }
+                        <NavLink href="ky-luat">🟥 Thưởng &amp; kỷ luật</NavLink>
+                        <NavLink href="vai-tro">ℹ️ Vai trò &amp; quyền</NavLink>
+                        @if (admin) { <a class="m-menu__admin" href="admin">⚙ Quản trị</a> }
+                        @if (!guest) { <form method="post" action="/logout" data-enhance="false"><button class="link">Đăng xuất</button></form> }
+                    </div>
+                </details>
+            </div>
         </div>
     </div>
     <ScoreTicker />
@@ -60,22 +107,86 @@
 </header>
 <main>@Body</main>
 <nav class="bottom-nav" aria-label="Điều hướng nhanh">
-    <NavLink href="" Match="NavLinkMatch.All"><i>🏠</i>Trang chủ</NavLink>
-    <NavLink href="truc-tiep"><i>🔴</i>Trực tiếp</NavLink>
-    <NavLink href="lich"><i>📅</i>Lịch</NavLink>
-    <NavLink href="bxh"><i>🏆</i>BXH</NavLink>
-    <NavLink href="hop-thu"><i>📋</i>Quản lý</NavLink>
-    <NavLink href="clb"><i>🛡️</i>CLB</NavLink>
+    <NavLink href="" Match="NavLinkMatch.All"><i class="ms">home</i>Trang chủ</NavLink>
+    @if (guest)
+    {
+        <NavLink href="truc-tiep"><i class="ms">sensors</i>Trực tiếp</NavLink>
+        <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
+        <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
+        <a href="login"><i class="ms">person</i>Đăng nhập</a>
+    }
+    else if (admin)
+    {
+        @* PO 17/11: admin = Ban tổ chức, không có CLB/giao hữu để chơi *@
+        <NavLink href="truc-tiep"><i class="ms">sensors</i>Trực tiếp</NavLink>
+        <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
+        <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
+        <a href="admin"><i class="ms">settings</i>Quản trị</a>
+    }
+    else
+    {
+        @* PO 17/11: tối đa 5 mục cho dễ bấm; Trực tiếp/BXH/Thư lên đầu trang + menu ☰ *@
+        @if (coach)
+        {
+            <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
+            <NavLink href="hop-thu"><i class="ms">assignment</i>Quản lý</NavLink>
+            <NavLink href="clb"><i class="ms">shield</i>CLB</NavLink>
+        }
+        else
+        {
+            @* PO 17/11: chưa có CLB → ẩn Quản lý/CLB (không có quyền), thay bằng mục xem được *@
+            <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
+            <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
+            <NavLink href="dang-ky-giai"><i class="ms">how_to_reg</i>Đá giải</NavLink>
+        }
+        <NavLink href="giao-huu"><i class="ms">sports_soccer</i>Giao hữu</NavLink>
+    }
 </nav>
 <div id="blazor-error-ui">Có lỗi xảy ra. <a href="" class="reload">Tải lại</a></div>
 
 @code {
-    bool admin = true;
-    string? who;
+    bool admin, guest, coach;   // coach = người chơi đang cầm CLB (PO 17/11: chưa có CLB thì ẩn CLB/Quản lý/Chuyển nhượng)
+    bool player => !guest && !admin;   // PO 17/11: admin không có mục của người chơi (CLB, chuyển nhượng, điều khiển, đăng ký giải)
+    string? who, profile;
+    Guid? me;
+    int unread;
 
     protected override async Task OnInitializedAsync()
     {
         admin = await Me.IsAdminAsync();
-        who = admin ? null : await Me.NameAsync();   // HLV (đợt 2): tên hiển thị cạnh nút Thoát
+        guest = await Me.IsGuestAsync();
+        who = await Me.NameAsync();   // tên hiển thị cạnh nút Thoát (admin/HLV)
+        me = await Me.ManagerIdAsync();
+        if (!guest && (me is not null || admin)) { Mail.Changed += OnMail; await CountAsync(); }
+        if (me is { } mid)
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            coach = await new FriendlyService(db, Clock).ClubOfAsync(mid) is not null;
+        }
+        if (me is not null) profile = "nguoi-choi/" + await Me.UsernameAsync();   // hồ sơ người chơi (16/11)
+        // Phân quyền (PO 16/11): điều hướng trong Blazor không qua middleware → khách bấm link trang người chơi thì đưa sang đăng nhập
+        if (guest) { Nav.LocationChanged += OnLocation; Guard(Nav.Uri); }
+    }
+
+    void OnLocation(object? _, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => Guard(e.Location);
+
+    void Guard(string uri)
+    {
+        var path = "/" + Nav.ToBaseRelativePath(uri).Split('?', '#')[0];
+        if (CurrentUser.PlayerOnly(path)) Nav.NavigateTo("/login?ve=" + Uri.EscapeDataString(path), forceLoad: true);
+    }
+
+    async Task CountAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        unread = await new MailService(db, Clock).UnreadAsync(me);
+    }
+
+    void OnMail() => InvokeAsync(async () => { await CountAsync(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocation;
+        Mail.Changed -= OnMail;
     }
 }
