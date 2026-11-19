@@ -1,0 +1,14 @@
+@* Logo giải/cúp trong career (lấy từ game, tools/pes17db/assets.py --comp): khung kính vuông; chưa có logo → 2 chữ đầu trên nền vàng. *@
+<span class="cx-lglogo @(Big ? "big" : Small ? "small" : "")" title="@Name">
+    @if (Logo is not null) { <img src="@Logo" alt="" loading="lazy" /> }
+    else { <span class="cx-mono">@Initials</span> }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string? Logo { get; set; }
+    [Parameter] public bool Big { get; set; }
+    [Parameter] public bool Small { get; set; }
+
+    string Initials => string.Concat(Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => char.IsLetter(w[0])).Take(2).Select(w => char.ToUpperInvariant(w[0])));
+}

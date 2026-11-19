@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lấy ảnh có sẵn trong game PES17 (HANO V6) đưa lên web (PO 18/11): mặt cầu thủ, logo CLB, logo giải.
 
-  assets.py <thư mục download> <$DATA> [--dry]  → in lệnh SQL cập nhật LogoPath ra stdout (pipe vào psql)
+  assets.py <thư mục download> <$DATA> [--dry] [--comp]  → in lệnh SQL cập nhật LogoPath ra stdout (pipe vào psql); --comp = chỉ logo giải
 
 - Mặt: common/render/symbol/player/player_<pesId>.dds → $DATA/faces/{PlayerId:N}.jpg (FaceStore, /img/mat).
 - CLB: common/render/symbol/flag/emblem_<pesClub:04d>_r_ll.png (dự phòng _r_l, _r) → $DATA/logos/club-<pes>.png (256 px).
@@ -19,7 +19,15 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cpk import Cpk  # noqa: E402
 
-COMP_EMB = {"Premier League": 9, "La Liga": 11, "Serie A": 10, "Ligue 1": 12, "Bundesliga": 39}   # đo 18/11 qua ảnh ghép emblemLc
+# Ánh xạ tên giải → emblemLc (đo qua ảnh ghép 58 logo: 18/11 5 giải, 19/11 thêm phần còn lại). Không có trong game: Botola Pro, Coupe du Trône, U.S. Open Cup.
+COMP_EMB = {
+    "Champions League": 2, "Europa League": 3,
+    "Premier League": 9, "Serie A": 10, "La Liga": 11, "Ligue 1": 12, "Eredivisie": 13, "Liga Portugal": 14,
+    "FA Cup": 15, "Coppa Italia": 16, "Copa del Rey": 17, "Coupe de France": 18, "KNVB Beker": 19, "Taça de Portugal": 20,
+    "Brasileirão": 21, "Liga Profesional": 22, "Primera División Chile": 23, "Copa do Brasil": 24,
+    "Bundesliga": 39, "MLS": 40, "Egyptian Premier League": 41, "DFB-Pokal": 42, "Egypt Cup": 44, "Copa Argentina": 49, "Copa Chile": 56,
+    "Championship": 66, "LaLiga 2": 67, "Ligue 2": 68, "Serie B": 69,
+}
 PSQL = ["docker", "exec", "-i", "pes17league-pg-dev", "psql", "-U", "postgres", "-d", "pes17league", "-tA", "-F", "|", "-c"]
 
 
@@ -62,13 +70,13 @@ def png(data: bytes, size: int) -> bytes:
 
 
 def main(argv: list[str]) -> int:
-    download, data, dry = Path(argv[0]), Path(argv[1]), "--dry" in argv
+    download, data, dry, only_comp = Path(argv[0]), Path(argv[1]), "--dry" in argv, "--comp" in argv
     idx = index(download)
     faces, logos = data / "faces", data / "logos"
     sql, n = [], {"face": 0, "face_miss": 0, "club": 0, "club_miss": 0, "comp": 0}
 
     sym = "common/render/symbol"
-    for pid, pes in q('select "PlayerId","PesPlayerId" from clubs."PlayerPesMappings"'):
+    for pid, pes in [] if only_comp else q('select "PlayerId","PesPlayerId" from clubs."PlayerPesMappings"'):
         raw = get(idx, f"{sym}/player/player_{pes}.dds", f"{sym}/player/player{pes}.dds")
         if raw is None:
             n["face_miss"] += 1
@@ -80,7 +88,7 @@ def main(argv: list[str]) -> int:
             bg.paste(im, mask=im.getchannel("A"))
             bg.save(faces / f"{pid.replace('-', '')}.jpg", "JPEG", quality=90)
 
-    for cid, pes in q('select "ClubId","PesClubIndex" from clubs."ClubPesMappings"'):
+    for cid, pes in [] if only_comp else q('select "ClubId","PesClubIndex" from clubs."ClubPesMappings"'):
         f = f"{sym}/flag/emblem_{int(pes):04d}"
         raw = get(idx, f + "_r_ll.png", f + "_r_l.png", f + "_r.png")
         if raw is None:

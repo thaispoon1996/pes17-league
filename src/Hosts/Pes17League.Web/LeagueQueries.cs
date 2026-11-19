@@ -397,7 +397,8 @@ public static class Fmt
 
     public static string Country(string? code) => code switch
     {
-        null => "Cúp châu Âu", "ENG" => "Anh", "ESP" => "Tây Ban Nha", "GER" => "Đức", "ITA" => "Ý", _ => code,
+        null => "Cúp châu Âu", "ENG" => "Anh", "ESP" => "Tây Ban Nha", "GER" => "Đức", "ITA" => "Ý", "FRA" => "Pháp", "NED" => "Hà Lan", "POR" => "Bồ Đào Nha",
+        "BRA" => "Brazil", "ARG" => "Argentina", "CHI" => "Chile", "EGY" => "Ai Cập", "MAR" => "Maroc", "USA" => "Mỹ", _ => code,
     };
 
     /// <summary>"Anh · hạng 1", "Anh · cúp", "Cúp châu Âu · C1".</summary>
