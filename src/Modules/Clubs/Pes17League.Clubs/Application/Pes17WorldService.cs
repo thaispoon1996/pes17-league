@@ -62,6 +62,10 @@ public sealed class Pes17WorldService(ClubsDbContext db, TimeProvider clock)
         if (season.PatchVersionId is not { } patch) throw new AdminRuleException($"{season.Name} chưa nhập patch");
         var reset = season.Status == SeasonStatus.Active;
         if (reset) await ResetSeasonAsync(season, ct);
+        // Mùa chưa bắt đầu: hợp đồng nhập từ game chưa có lương (chợ mở mới tính theo ‰ của mùa) — xoá lương lần bắt đầu trước để lại.
+        // Chỉ mùa đầu (chưa có mùa nào xong): mùa sau hợp đồng đang chạy giữ lương đã ký.
+        if (!await db.Seasons.AnyAsync(s => s.Status == SeasonStatus.Finished, ct))
+            await db.Contracts.Where(c => c.Status == ContractStatus.Active && c.Wage != null).ExecuteUpdateAsync(x => x.SetProperty(c => c.Wage, (long?)null), ct);
 
         // CLB người → BOT (PO tự chọn CLB khi bắt đầu mùa)
         var humans = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human).Select(a => a.ParticipantId).ToListAsync(ct);
@@ -148,13 +152,16 @@ public sealed class Pes17WorldService(ClubsDbContext db, TimeProvider clock)
         return result;
     }
 
-    /// <summary>Mùa đã bắt đầu nhưng chưa đá trận nào → về chưa bắt đầu: xoá khung ngày + trận + lần chạy trận, kỳ CN, CLB của mùa, ngân sách đầu mùa.</summary>
+    /// <summary>Mùa đã bắt đầu nhưng chưa đá trận nào, chưa có chuyển nhượng → về chưa bắt đầu: xoá khung ngày + trận + lần chạy trận, kỳ CN,
+/// CLB của mùa, ngân sách đầu mùa (lương hợp đồng xoá ở <see cref="SetupAsync"/>).</summary>
     private async Task ResetSeasonAsync(Season season, CancellationToken ct)
     {
         var mdIds = await db.Matchdays.Where(m => m.SeasonId == season.Id).Select(m => m.Id).ToListAsync(ct);
         var fixtures = db.Fixtures.Where(f => mdIds.Contains(f.MatchdayId));
         if (await fixtures.AnyAsync(f => f.Status != FixtureStatus.Scheduled, ct))
             throw new AdminRuleException($"{season.Name} đã có trận đá/đang đá: không làm lại được");
+        if (await (from t in db.Transfers join w in db.TransferWindows on t.TransferWindowId equals w.Id where w.SeasonId == season.Id select t.Id).AnyAsync(ct))
+            throw new AdminRuleException($"{season.Name} đã có chuyển nhượng: không làm lại được");
         var fxIds = await fixtures.Select(f => f.Id).ToListAsync(ct);
         await db.MatchAttempts.Where(a => fxIds.Contains(a.FixtureId)).ExecuteDeleteAsync(ct);
         await db.OptionFileBuilds.Where(b => b.MatchdayId != null && mdIds.Contains(b.MatchdayId.Value)).ExecuteDeleteAsync(ct);

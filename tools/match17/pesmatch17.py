@@ -6,7 +6,7 @@
     1. giữ $DATA/pes17-deploy/match.lock (sync.sh không khởi động lại game khi đang đá)
     2. tools/pes17db/deploy.sh --squads SQUADS_JSON --restart (đội hình giống bản đã cài thì không làm gì)
     3. đi menu tới Select Team (chỉ bấm A khi không nhận ra màn chọn đội / Kickoff), chọn giải + CLB bằng mẫu ảnh tên (m17nav)
-    4. trận BOT: Y bật Coach Mode (máy đá cả 2 bên) → Kickoff. Trận có người (home|away): dừng ở màn Kickoff ("ready"),
+    4. Match Time: trận có người 10 phút, trận BOT 5 phút. Trận BOT: Y bật Coach Mode (máy đá cả 2 bên) → Kickoff. Trận có người (home|away): dừng ở màn Kickoff ("ready"),
        PESMATCH_WAIT_GO=1 thì chờ dòng "go" ở stdin rồi bấm Kickoff; người chơi (Selkies, link stream trên web) tự chọn bên và đá.
     5. theo dõi trận bằng OCR (tools/m17ocr.py, RapidOCR): HUD → tỷ số + phút từng bàn; bảng số / menu nghỉ → A;
        tỷ số cuối = số to ở menu hết trận. Khi đang đá không bấm gì (Coach Mode: máy tự đá cả bóng chết).
@@ -187,7 +187,8 @@ def pick(home: int, away: int, both: bool = False) -> None:
     raise NavError("nav_kickoff: không thấy màn Kickoff")
 
 
-MATCH_TIME = 10            # phút cả trận trong game = 5 phút/hiệp (PO 18/11)
+MATCH_TIME = 10            # trận có người: phút cả trận trong game = 5 phút/hiệp (PO 18/11)
+BOT_MATCH_TIME = 5         # trận BOT vs BOT: 2,5 phút/hiệp cho nhanh (PO 19/11)
 MT_VALUE = (780, 345, 970, 372)   # ô giá trị dòng "Match Time" trong GENERAL SETTINGS
 
 
@@ -470,7 +471,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         both = human == "both"
         to_team_select(both)
         pick(home, away, both)
-        match_time()
+        match_time(MATCH_TIME if human else BOT_MATCH_TIME)
         coach_mode(human is None)
         self_started = False
         if human and not both:

@@ -1,0 +1,223 @@
+@page "/su-nghiep"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject CurrentUser Me
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+@inject MatchJobService Jobs
+@implements IDisposable
+
+<PageTitle>Sự nghiệp HLV</PageTitle>
+
+@* Career PES17 (PO 19/11/2026: "chế độ tự chọn, gói gọn thành game"): mùa đã dựng thế giới (setup-pes17-world) mà chưa bắt đầu →
+   chọn giải → chọn CLB → Bắt đầu sự nghiệp (kinh tế, lịch, chợ hè, giao CLB, xem Pes17CareerService). Chế độ riêng: 1 người cầm CLB. *@
+<section class="hero">
+    <span class="pill">Sự nghiệp HLV</span>
+    @if (club is not null)
+    {
+        <h1>@club</h1>
+        <p>@(seasonName ?? "Mùa giải") đang diễn ra. Mọi trận đều đá trong game: trận của bạn 10 phút, trận BOT 5 phút.</p>
+    }
+    else
+    {
+        <h1>Sự nghiệp mới</h1>
+        <p>Chọn một CLB trong @(choices.Select(c => c.League).Distinct().Count()) giải của PES 2017 rồi bắt đầu: lịch cả mùa, cúp quốc gia, Champions League / Europa League, chợ chuyển nhượng hè mở ngay.</p>
+    }
+</section>
+@if (!loaded) { return; }
+@if (error is not null) { <p class="msg">@error</p> }
+
+@if (club is not null)
+{
+    <section class="panel">
+        <h2><span class="ms ic" aria-hidden="true">sports_soccer</span>Trận tiếp theo</h2>
+        @if (next is { } n)
+        {
+            <p><b>@n.Title</b> · @n.Competition · khung @n.Slot</p>
+            <p><a class="btn primary" href="chuan-bi/@n.Id"><span class="ms ic" aria-hidden="true">play_arrow</span>Chuẩn bị &amp; đá</a></p>
+        }
+        else { <p class="muted">Chưa còn trận nào trong lịch.</p> }
+    </section>
+    <section class="panel">
+        <h2><span class="ms ic" aria-hidden="true">fast_forward</span>Tiếp tục mùa giải</h2>
+        @if (current is { } cur)
+        {
+            <p>Khung @cur.Number/@slots: còn <b>@cur.BotLeft</b> trận BOT@(cur.MineLeft ? " + trận của bạn" : "").</p>
+            @if (Jobs.Running)
+            {
+                <p class="muted">Máy trận đang chạy: @Jobs.Title@(Jobs.BotQueueMinutesLeft(Math.Max(0, cur.BotLeft - 1)) is { } m ? $" — xong khung này khoảng {m} phút" : "").</p>
+            }
+            else if (cur.BotLeft > 0)
+            {
+                <button class="primary wide" @onclick="() => Jobs.PlayBots(cur.Id)"><span class="ms ic" aria-hidden="true">smart_toy</span>Tiếp tục — BOT đá @cur.BotLeft trận của khung @cur.Number</button>
+            }
+            else if (cur.MineLeft) { <p class="muted">Các trận BOT của khung đã xong, chờ trận của bạn.</p> }
+            <p class="muted">Trận của bạn được ưu tiên: lúc BOT đang đá, vào Chuẩn bị trận bấm "Đá ngay" để ngắt trận BOT (trận đó đá lại sau).</p>
+        }
+        else { <p class="muted">Không có khung ngày nào đang mở.</p> }
+    </section>
+    <section class="panel">
+        <p><a class="btn" href="clb">CLB của tôi</a> <a class="btn" href="chuyen-nhuong">Chuyển nhượng</a> <a class="btn" href="lich">Lịch</a> <a class="btn" href="bxh">BXH</a> <a class="btn" href="hop-thu">Hộp thư</a></p>
+    </section>
+    return;
+}
+@if (me is null)
+{
+    <p class="msg">Cần đăng nhập tài khoản người chơi để bắt đầu sự nghiệp.</p>
+    return;
+}
+@if (seasonId is null)
+{
+    <p class="msg">Chưa có mùa nào chờ bắt đầu sự nghiệp.</p>
+    return;
+}
+@if (taken)
+{
+    <p class="msg">Sự nghiệp mùa này đã có người cầm CLB.</p>
+    return;
+}
+
+<section class="panel">
+    <h2><span class="ms ic" aria-hidden="true">public</span>1. Chọn giải</h2>
+    <div class="chips">
+        @foreach (var g in Leagues)
+        {
+            <a class="@(g.Name == league ? "on" : "")" href="su-nghiep" @onclick="() => Pick(g.Name)" @onclick:preventDefault>@g.Name <span class="muted">· @g.Count</span></a>
+        }
+    </div>
+</section>
+@if (league is not null)
+{
+    <section class="panel">
+        <h2><span class="ms ic" aria-hidden="true">shield</span>2. Chọn CLB — @league</h2>
+        <table class="table">
+            <thead><tr><th class="left">CLB</th><th>OVR</th><th>Giá trị đội</th><th>Ngân sách</th><th class="left">Cúp mùa này</th></tr></thead>
+            <tbody>
+                @foreach (var c in choices.Where(c => c.League == league))
+                {
+                    <tr class="@(c.ClubId == pick?.ClubId ? "on" : "")" @onclick="() => pick = c">
+                        <td class="left"><Crest Name="@c.Name" Logo="@c.LogoPath" /> @c.Name</td>
+                        <td>@c.Ovr.ToString("0.0")</td>
+                        <td>@Fmt.Money(c.SquadValue)</td>
+                        <td>@Fmt.Money(c.Budget)</td>
+                        <td class="left">@string.Join(", ", c.Cups)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+@if (pick is not null)
+{
+    <section class="panel">
+        <h2><span class="ms ic" aria-hidden="true">flag</span>3. Bắt đầu</h2>
+        <p><Crest Name="@pick.Name" Logo="@pick.LogoPath" Large="true" /> <b>@pick.Name</b> (@pick.League) · OVR @pick.Ovr.ToString("0.0") · ngân sách đầu mùa @Fmt.Money(pick.Budget)</p>
+        <p class="muted">Bấm bắt đầu: hệ thống ghi lịch cả mùa (mất khoảng nửa phút), mở chợ hè, giao CLB cho bạn. Các CLB khác do BOT điều khiển.</p>
+        <button class="primary wide" disabled="@starting" data-confirm="Bắt đầu sự nghiệp với @pick.Name?" @onclick="Start">
+            <span class="ms ic" aria-hidden="true">rocket_launch</span>@(starting ? "Đang dựng mùa…" : $"Bắt đầu sự nghiệp với {pick.Name}")
+        </button>
+    </section>
+}
+
+@code {
+    Guid? me, seasonId;
+    bool loaded, taken, starting;
+    string? club, seasonName, league, error;
+    CareerClubChoice? pick;
+    IReadOnlyList<CareerClubChoice> choices = [];
+    NextMatch? next;
+
+    sealed record NextMatch(Guid Id, string Title, string Competition, int Slot);
+    sealed record Current(Guid Id, int Number, int BotLeft, bool MineLeft);
+    Current? current;
+    int slots;
+
+    IEnumerable<(string Name, int Count)> Leagues => choices.GroupBy(c => (c.League, c.Tier, c.Country))
+        .OrderBy(g => g.Key.Tier).ThenByDescending(g => g.Average(c => c.Ovr)).Select(g => (g.Key.League, g.Count()));
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync();
+        await LoadAsync();
+        loaded = true;
+    }
+
+    async Task LoadAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        if (me is { } id)
+        {
+            var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
+                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name }).FirstOrDefaultAsync();
+            if (mine is not null)
+            {
+                club = mine.Name;
+                var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync();
+                seasonName = season?.Name;
+                if (season is not null)
+                    next = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
+                                  join e in db.Editions on f.CompetitionEditionId equals (Guid?)e.Id join comp in db.Competitions on e.CompetitionId equals comp.Id
+                                  join h in db.Clubs on f.HomeClubId equals h.Id join w in db.Clubs on f.AwayClubId equals w.Id
+                                  where m.SeasonId == season.Id && f.Status != FixtureStatus.Played && (f.HomeClubId == mine.Id || f.AwayClubId == mine.Id)
+                                  orderby m.Number
+                                  select new NextMatch(f.Id, h.Name + " – " + w.Name, comp.Name, m.Number)).FirstOrDefaultAsync();
+                if (season is not null)
+                {
+                    slots = await db.Matchdays.CountAsync(m => m.SeasonId == season.Id);
+                    var md = await db.Matchdays.Where(m => m.SeasonId == season.Id
+                            && (m.Status == MatchdayStatus.WindowOpen || m.Status == MatchdayStatus.Locked || m.Status == MatchdayStatus.Playing))
+                        .OrderBy(m => m.Number).FirstOrDefaultAsync();
+                    if (md is not null)
+                    {
+                        var left = await db.Fixtures.Where(f => f.MatchdayId == md.Id && f.Status != FixtureStatus.Played)
+                            .Select(f => new { Mine = (f.HomeClubId == mine.Id || f.AwayClubId == mine.Id) && !f.AssistantPlays }).ToListAsync();
+                        current = new Current(md.Id, md.Number, left.Count(x => !x.Mine), left.Any(x => x.Mine));
+                    }
+                }
+                return;
+            }
+        }
+        var career = new Pes17CareerService(db, Store, Clock);
+        var pending = await career.PendingSeasonAsync();
+        seasonId = pending?.Id;
+        if (pending is null) return;
+        taken = await career.HasCoachAsync();
+        if (!taken) choices = await career.ChoicesAsync(pending.Id);
+    }
+
+    protected override void OnInitialized() => Jobs.Changed += OnJob;
+
+    bool wasRunning;
+    void OnJob() => InvokeAsync(async () =>
+    {
+        if (wasRunning != Jobs.Running || (Jobs.Log.LastOrDefault() ?? "").Contains("xong")) await LoadAsync();   // trận xong / máy rảnh → đọc lại
+        wasRunning = Jobs.Running;
+        StateHasChanged();
+    });
+
+    public void Dispose() => Jobs.Changed -= OnJob;
+
+    void Pick(string name)
+    {
+        league = name;
+        pick = null;
+    }
+
+    async Task Start()
+    {
+        if (pick is null || me is null || starting) return;
+        starting = true;
+        error = null;
+        StateHasChanged();
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            await new Pes17CareerService(db, Store, Clock).StartAsync(pick.ClubId, me, Random.Shared.Next(1, 10_000), $"career:{me}");
+            Nav.NavigateTo("su-nghiep", forceLoad: true);
+        }
+        catch (AdminRuleException e) { error = e.Message; }
+        finally { starting = false; }
+    }
+}

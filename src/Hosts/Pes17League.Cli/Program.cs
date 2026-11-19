@@ -10,6 +10,7 @@ using Pes17League.Clubs.Infrastructure;
 //   export-pes17-squads RA_JSON           đội hình hiện tại (patch PES17 mới nhất) → JSON cho tools/pes17db/deploy.sh
 //   setup-pes17-leagues LEAGUES_JSON PES_DOI_PO   mùa chưa xong: 5 giải (pesdb.py leagues) + mùa giải + CLB; PO cầm CLB mã PES_DOI_PO
 //   setup-pes17-world WORLD_JSON [--dry]  Career (PO 19/11): mọi giải + cúp quốc gia + C1/C2 thể thức mới (pesdb.py world); mùa chưa đá trận nào thì làm lại; CLB người → BOT
+//   start-pes17-season [SEED [TEN_TK PES_DOI]] [--dry]  bắt đầu mùa Career (kinh tế lương 2‰, lịch, chợ hè), giao CLB cho TEN_TK (web: /su-nghiep)
 //   open-market                           mở chợ tự do PES17 cho mùa chưa xong (cần quỹ ngân sách đã lưu)
 //   move-player PES_CT PES_DOI|free       admin chuyển cầu thủ (mã PES17) sang CLB (mã đội PES17) / thả tự do, qua chợ tự do
 //   set-contracts SO_TRAN                 mùa chưa bắt đầu: hợp đồng nhập từ patch (chưa đá, chưa có lương) + gia hạn mặc định → SO_TRAN trận
@@ -54,7 +55,11 @@ switch (args.FirstOrDefault())
         await SchedulePreviewAsync(args.Length >= 2 ? int.Parse(args[1]) : 1);
         break;
     case "start-pes17-season":
-        await StartPes17SeasonAsync(args.Length >= 2 && int.TryParse(args[1], out var sd) ? sd : 1, args.Contains("--dry"));
+        {
+            var rest = args.Skip(1).Where(a => a != "--dry").ToList();
+            var sd = rest.Count > 0 && int.TryParse(rest[0], out var x) ? x : 1;
+            await StartPes17SeasonAsync(sd, args.Contains("--dry"), rest.Count >= 3 ? rest[1] : null, rest.Count >= 3 ? int.Parse(rest[2]) : null);
+        }
         break;
     case "open-market":
         await OpenMarketAsync();
@@ -204,37 +209,35 @@ async Task SchedulePreviewAsync(int seed)
         Console.WriteLine($"  khung {s.Number} ({s.Slot}): {s.Matches.Count} trận");
 }
 
-// PO giao 18/11/2026 ("tự cài đặt để bắt đầu mùa giải"), kinh tế như PES6 (Alpha 1) trừ lương 4‰/khung (PO chọn: 38 khung): quỹ = 20% giá trị đội hình 96 CLB dự giải,
-// k = 0,5, trần mềm = quỹ lương/khung của CLB đứng thứ 2. Rồi ghi lịch (mã SEED) → Bắt đầu mùa → mở chợ tự do.
-async Task StartPes17SeasonAsync(int seed, bool dry)
+// PO 19/11/2026: kinh tế + ghi lịch (mã SEED) + bắt đầu mùa + mở chợ hè, như nút "Bắt đầu sự nghiệp" trên web (Pes17CareerService);
+// TEN_TK PES_DOI (không bắt buộc) = giao CLB cho tài khoản đó.
+async Task StartPes17SeasonAsync(int seed, bool dry, string? user, int? pesClub)
 {
     await using var db = Db();
-    var season = await OpenSeasonAsync(db);
-    if (season.Status != SeasonStatus.Planned) { Console.Error.WriteLine($"{season.Name} không ở trạng thái chưa bắt đầu"); return; }
-    var econ = new EconomyAdminService(db, clock);
-    var pv = await econ.PreviewAsync(season.Id, new(WagePermille: 4, BudgetExponent: 0.5));
-    var total = pv.Clubs.Sum(c => c.SquadValue);
-    var fund = (long)Math.Round(total * 0.20 / 1e6) * 1_000_000;
-    var pays = pv.Clubs.Select(c => c.Payroll).OrderByDescending(x => x).ToList();
-    var soft = pays.Count > 1 ? pays[1] / 1000 * 1000 : 0;
-    var change = new SeasonEconomyChange(SoftWageCap: soft, WagePermille: 4, InitialBudgetFund: fund, BudgetExponent: 0.5);
-    pv = await econ.PreviewAsync(season.Id, change);
+    var career = new Pes17CareerService(db, store, clock);
+    var season = await career.PendingSeasonAsync();
+    if (season is null) { Console.Error.WriteLine("Không có mùa PES17 nào chờ bắt đầu (cần setup-pes17-world)"); return; }
+    var change = await career.EconomyAsync(season.Id);
+    var pv = await new EconomyAdminService(db, clock).PreviewAsync(season.Id, change);
     var budgets = pv.Clubs.Select(c => c.Budget).OrderBy(x => x).ToList();
-    Console.WriteLine($"{season.Name}: {pv.Clubs.Count} CLB, tổng giá trị {total / 1e6:N1} tr → quỹ {fund / 1e6:N0} tr (20%), trần mềm {soft / 1e6:N3} tr/khung, lương 4‰, k 0,5");
+    Console.WriteLine($"{season.Name}: {pv.Clubs.Count} CLB, quỹ {change.InitialBudgetFund / 1e6:N0} tr ({Pes17CareerService.FundShare:P0}), trần mềm {change.SoftWageCap / 1e6:N3} tr/khung, lương {Pes17CareerService.WagePermille}‰, k {Pes17CareerService.BudgetExponent}");
     Console.WriteLine($"  ngân sách: thấp nhất {budgets[0] / 1e6:N2} · trung vị {budgets[budgets.Count / 2] / 1e6:N2} · cao nhất {budgets[^1] / 1e6:N2} tr");
-    foreach (var name in new[] { "Arsenal" })
-        foreach (var c in pv.Clubs.Where(c => c.Name.Contains(name)))
-            Console.WriteLine($"  {c.Name}: giá trị {c.SquadValue / 1e6:N1} tr, lương {c.Payroll / 1e6:N3} tr/khung, ngân sách {c.Budget / 1e6:N2} tr, đủ {c.Khung:0.#} khung");
-    var plan = await new SeasonScheduleService(db, clock).PreviewAsync(season.Id, seed);
-    Console.WriteLine($"  lịch mã {seed}: {plan.Slots.Count} khung ngày, {plan.Slots.Sum(s => s.Matches.Count)} trận");
-    if (dry) { Console.WriteLine("(chạy thử, chưa ghi gì)"); return; }
-
-    await econ.SetAsync(season.Id, change, "cli");
-    await new SeasonScheduleService(db, clock).ApplyAsync(season.Id, seed, "cli");
-    var r = await new CompetitionService(db, store, clock).StartScheduledSeasonAsync(season.Id, "cli");
-    Console.WriteLine($"  đã bắt đầu mùa: {r}");
-    var m = await new FreeMarketService(db, clock).OpenAsync(season.Id, "cli");
-    Console.WriteLine($"  chợ tự do mở: {m.Prices} giá, {m.Wages} lương, ngân sách {m.Budgets} CLB");
+    foreach (var c in pv.Clubs.OrderByDescending(c => c.SquadValue).Take(3))
+        Console.WriteLine($"  {c.Name}: giá trị {c.SquadValue / 1e6:N1} tr, lương {c.Payroll / 1e6:N3} tr/khung, ngân sách {c.Budget / 1e6:N2} tr, đủ {c.Khung:0.#} khung");
+    Guid? club = null, manager = null;
+    if (user is not null && pesClub is { } pc)
+    {
+        manager = await db.Managers.Where(m => m.Username == user).Select(m => (Guid?)m.Id).SingleOrDefaultAsync() ?? throw new InvalidOperationException($"Không có tài khoản {user}");
+        club = await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && m.PesClubIndex == pc).Select(m => (Guid?)m.ClubId).SingleAsync();
+    }
+    if (dry)
+    {
+        var plan = await new SeasonScheduleService(db, clock).PreviewAsync(season.Id, seed);
+        Console.WriteLine($"  lịch mã {seed}: {plan.Slots.Count} khung ngày, {plan.Slots.Sum(s => s.Matches.Count)} trận (chạy thử, chưa ghi gì)");
+        return;
+    }
+    var r = await career.StartAsync(club, manager, seed, "cli");
+    Console.WriteLine($"  đã bắt đầu {r.Season}: {r.Slots} khung, {r.Matches} trận; CLB người: {r.Club}");
 }
 
 async Task OpenMarketAsync()

@@ -111,7 +111,12 @@
         else if (Jobs.Running)
         {
             <p class="muted">Máy trận đang bận: @Jobs.Title@(Jobs.BotMinutesLeft is { } m ? $" (trận đang đá còn khoảng {m} phút)" : ""). Chờ xong rồi bấm Sẵn sàng.</p>
-            @if (admin && Jobs.CanStopAfterCurrent)
+            @if (!admin && Jobs.CanPreemptBots && fixture.Status == FixtureStatus.Scheduled && !season.BothHuman(fixture))
+            {
+                @* PO 19/11 (Career): trận của tôi được ưu tiên — ngắt trận BOT đang đá (về lịch, đá lại sau), đá xong tự đá tiếp BOT. *@
+                <button class="primary wide" disabled="@starting" @onclick="PlayNow"><span class="ms ic" aria-hidden="true">bolt</span>Đá ngay — ngắt trận BOT đang đá (đá lại sau)</button>
+            }
+            else if (admin && Jobs.CanStopAfterCurrent)
             {
                 <button class="wide" @onclick="Jobs.StopAfterCurrent"><span class="ms ic" aria-hidden="true">pause</span>Dừng BOT sau trận đang đá</button>
             }
@@ -241,6 +246,16 @@
         try
         {
             if (Jobs.PlayHuman(fixture!.Id, side)) Nav.NavigateTo("vao-tran");
+        }
+        finally { starting = false; }
+    }
+
+    async Task PlayNow()
+    {
+        starting = true;
+        try
+        {
+            if (await Jobs.PlayHumanNowAsync(fixture!.Id, side)) Nav.NavigateTo("vao-tran");
         }
         finally { starting = false; }
     }

@@ -49,7 +49,7 @@ public sealed class CurrentUser(AuthenticationStateProvider auth)
     /// <summary>Trang chỉ cho người đã đăng nhập (PO 16/11, phân quyền): quản lý CLB, đá giải, giao hữu, đăng ký đá giải.
     /// Khách (chưa đăng nhập) chỉ xem trang công khai (vòng đấu, lịch, BXH, tin, hồ sơ CLB/cầu thủ/người chơi…).</summary>
     public static readonly string[] PlayerPages = ["/hop-thu", "/thu", "/chuyen-nhuong", "/de-nghi", "/tai-chinh", "/tap-luyen", "/hoc-vien",
-        "/ban-lanh-dao", "/dieu-khien", "/chuan-bi", "/vao-tran", "/dang-ky-giai"];
+        "/ban-lanh-dao", "/dieu-khien", "/chuan-bi", "/vao-tran", "/dang-ky-giai", "/su-nghiep"];
 
     /// <summary>Trang người chơi admin vẫn vào được: hòm thư (admin = hòm Ban tổ chức).</summary>
     public static readonly string[] AdminAllowedPlayerPages = ["/thu"];
