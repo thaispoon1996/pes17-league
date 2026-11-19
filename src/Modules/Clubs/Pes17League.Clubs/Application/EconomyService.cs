@@ -140,7 +140,7 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
     }
 
     /// <summary>
-    /// Chốt vòng: mỗi CLB Active trừ lương (tổng Wage hợp đồng Active) và thuế xa xỉ trên phần vượt trần mềm; mọi hợp đồng Active +1 trận.
+    /// Chốt vòng: mỗi CLB Active trừ lương (tổng Wage hợp đồng Active) và thuế xa xỉ trên phần vượt trần mềm; hợp đồng Active của CLB có trận ở khung này +1 trận.
     /// Hợp đồng còn 3 trận → nhắc gia hạn; hết hạn → xử lý ngay (xem <see cref="ExpiryOutcome"/>), có hiệu lực từ OF vòng kế.
     /// Mỗi (mùa, vòng) chỉ chạy 1 lần (RoundSettlement unique). Gọi trong cùng bước chốt vòng, TRƯỚC khi sinh OF.
     /// </summary>
@@ -177,10 +177,14 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
                 db.Ledger.Add(new ClubLedgerEntry { ClubId = seller, Amount = part, Reason = LedgerReason.TransferOut, RefType = nameof(Transfer), RefId = t.Id, At = now });
             t.InstalmentsPaid++;
         }
+        // PO 19/11: hợp đồng chỉ trừ khi CLB có trận ở khung này (lịch PES17 có khung nghỉ). Khung không có trận nào (vòng admin/test) → trừ mọi hợp đồng như cũ.
+        var playing = (await db.Fixtures.Where(f => f.MatchdayId == matchdayId).Select(f => new { f.HomeClubId, f.AwayClubId }).ToListAsync(ct))
+            .SelectMany(f => new[] { f.HomeClubId, f.AwayClubId }).ToHashSet();
         var reminders = new List<RenewalReminder>();
         var expiring = new List<PlayerContract>();
         foreach (var c in contracts)
         {
+            if (playing.Count > 0 && !playing.Contains(c.ClubId)) continue;
             c.MatchesPlayed++;
             if (c.MatchesTotal is not { } total) continue;
             if (total - c.MatchesPlayed == ContractRules.RenewalReminderMatches) reminders.Add(new(c.Id, c.PlayerId, c.ClubId, ContractRules.RenewalReminderMatches));
