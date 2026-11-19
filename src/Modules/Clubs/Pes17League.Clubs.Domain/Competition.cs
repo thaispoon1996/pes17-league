@@ -40,7 +40,7 @@ public class Matchday
 }
 
 public enum FixtureStatus { Scheduled, Playing, Played }
-public enum ResultSource { Memory, Admin }
+public enum ResultSource { Memory, Admin, Simulated }   // Simulated: career PES17 mô phỏng (PO 19/11)
 
 public class Fixture
 {

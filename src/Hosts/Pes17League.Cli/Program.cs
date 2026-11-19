@@ -11,6 +11,7 @@ using Pes17League.Clubs.Infrastructure;
 //   setup-pes17-leagues LEAGUES_JSON PES_DOI_PO   mùa chưa xong: 5 giải (pesdb.py leagues) + mùa giải + CLB; PO cầm CLB mã PES_DOI_PO
 //   setup-pes17-world WORLD_JSON [--dry]  Career (PO 19/11): mọi giải + cúp quốc gia + C1/C2 thể thức mới (pesdb.py world); mùa chưa đá trận nào thì làm lại; CLB người → BOT
 //   start-pes17-season [SEED [TEN_TK PES_DOI]] [--dry]  bắt đầu mùa Career (kinh tế lương 2‰, lịch, chợ hè), giao CLB cho TEN_TK (web: /su-nghiep)
+//   career-continue [MAX_KHUNG] [--all]  (--all: mô phỏng cả trận người chơi) mô phỏng các trận không có người chơi tới trận kế tiếp của người chơi / hết mùa
 //   open-market                           mở chợ tự do PES17 cho mùa chưa xong (cần quỹ ngân sách đã lưu)
 //   move-player PES_CT PES_DOI|free       admin chuyển cầu thủ (mã PES17) sang CLB (mã đội PES17) / thả tự do, qua chợ tự do
 //   set-contracts SO_TRAN                 mùa chưa bắt đầu: hợp đồng nhập từ patch (chưa đá, chưa có lương) + gia hạn mặc định → SO_TRAN trận
@@ -60,6 +61,9 @@ switch (args.FirstOrDefault())
             var sd = rest.Count > 0 && int.TryParse(rest[0], out var x) ? x : 1;
             await StartPes17SeasonAsync(sd, args.Contains("--dry"), rest.Count >= 3 ? rest[1] : null, rest.Count >= 3 ? int.Parse(rest[2]) : null);
         }
+        break;
+    case "career-continue":
+        await CareerContinueAsync(args.Skip(1).Where(a => a != "--all").Select(int.Parse).FirstOrDefault(500), args.Contains("--all"));
         break;
     case "open-market":
         await OpenMarketAsync();
@@ -238,6 +242,21 @@ async Task StartPes17SeasonAsync(int seed, bool dry, string? user, int? pesClub)
     }
     var r = await career.StartAsync(club, manager, seed, "cli");
     Console.WriteLine($"  đã bắt đầu {r.Season}: {r.Slots} khung, {r.Matches} trận; CLB người: {r.Club}");
+}
+
+async Task CareerContinueAsync(int maxSlots, bool all)
+{
+    await using var db = Db();
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var r = await new Pes17CareerService(db, store, clock).ContinueAsync(maxSlots, line => Console.WriteLine($"  {sw.Elapsed:mm\\:ss} {line}"), all);
+    Console.WriteLine($"Mô phỏng {r.Simulated} trận / {r.Slots.Count} khung trong {sw.Elapsed:mm\\:ss}" + (r.SeasonFinished ? " — HẾT MÙA" : ""));
+    if (r.MyFixtureId is { } f)
+    {
+        var x = await (from fx in db.Fixtures join h in db.Clubs on fx.HomeClubId equals h.Id join w in db.Clubs on fx.AwayClubId equals w.Id
+                       join m in db.Matchdays on fx.MatchdayId equals m.Id where fx.Id == f select new { h.Name, Away = w.Name, m.Number }).SingleAsync();
+        Console.WriteLine($"Dừng ở trận của người chơi: khung {x.Number} {x.Name} – {x.Away} ({f})");
+    }
+    foreach (var e in r.Errors.Take(10)) Console.WriteLine($"  LỖI {e}");
 }
 
 async Task OpenMarketAsync()

@@ -9,7 +9,8 @@ namespace Pes17League.Clubs.Application;
 /// </summary>
 public sealed class BotCoachService(ClubsDbContext db, TimeProvider clock)
 {
-    public async Task ApplyAsync(Guid matchdayId, CancellationToken ct = default)
+    /// <param name="onlyClubs">Chỉ xếp cho các CLB này (mô phỏng 1 khung: CLB có trận); null = mọi CLB BOT của mùa.</param>
+    public async Task ApplyAsync(Guid matchdayId, CancellationToken ct = default, IReadOnlyCollection<Guid>? onlyClubs = null)
     {
         var md = await db.Matchdays.AsNoTracking().SingleOrDefaultAsync(m => m.Id == matchdayId, ct)
             ?? throw new InvalidOperationException($"Matchday {matchdayId} không tồn tại.");
@@ -21,6 +22,7 @@ public sealed class BotCoachService(ClubsDbContext db, TimeProvider clock)
             join a in db.TeamAssignments on sc.ClubId equals a.ClubId
             where a.To == null && a.ControllerType == ControllerType.Bot
             select sc.ClubId).Distinct().ToListAsync(ct);
+        if (onlyClubs is not null) botClubs = [.. botClubs.Where(onlyClubs.Contains)];
         if (botClubs.Count == 0) return;
 
         var memberships = await db.SquadMemberships
@@ -37,6 +39,9 @@ public sealed class BotCoachService(ClubsDbContext db, TimeProvider clock)
         var now = clock.GetUtcNow();
         var tacticsByClub = await db.Tactics.Where(t => botClubs.Contains(t.ClubId)).ToDictionaryAsync(t => t.ClubId, ct);
 
+        // Gộp ghi cho cả khung (mô phỏng career: ~330 CLB/khung — mỗi CLB 3 lần SaveChanges trên ~12k dòng theo dõi mất ~50 s):
+        // bước 1 tạm LeftAt mọi dòng (tránh trùng chỉ mục (ClubId, SlotOrder) lọc LeftAt null — giống LineupService), bước 2 ghi thứ tự mới.
+        var plans = new List<(Guid ClubId, List<SquadMembership> Rows, BotPlan Plan)>();
         foreach (var clubId in botClubs)
         {
             var squadRows = memberships.Where(m => m.ClubId == clubId).ToList();
@@ -47,33 +52,47 @@ public sealed class BotCoachService(ClubsDbContext db, TimeProvider clock)
                 var ovr = ovrs.TryGetValue(m.PlayerId, out var o) ? o : 0;
                 return new BotPlayer(m.PlayerId, pos, ConditionRules.EffectiveOverall(ovr, conditions.GetValueOrDefault(m.PlayerId)));
             }).ToList();
+            plans.Add((clubId, squadRows, BotCoach.Plan(squad)));
+        }
+        if (plans.Count == 0) return;
 
-            var plan = BotCoach.Plan(squad);
-            await WriteLineupAsync(clubId, squadRows, plan, ct);
-            WriteTactics(clubId, plan, tacticsByClub, now);
+        var tx = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            foreach (var (_, rows, _) in plans)
+                foreach (var m in rows) m.LeftAt = m.JoinedAt;
             await db.SaveChangesAsync(ct);
+
+            var planned = plans.Select(p => p.ClubId).ToList();
+            var clubs = await db.Clubs.Where(c => planned.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
+            foreach (var (clubId, rows, plan) in plans)
+            {
+                WriteLineup(rows, plan);
+                clubs[clubId].SquadVersion++;
+                WriteTactics(clubId, plan, tacticsByClub, now);
+            }
+            await db.SaveChangesAsync(ct);
+            if (tx is not null) await tx.CommitAsync(ct);
+        }
+        finally
+        {
+            if (tx is not null) await tx.DisposeAsync();
         }
     }
 
-    /// <summary>Ghi SlotOrder mới: tạm LeftAt để tránh trùng chỉ mục (ClubId, SlotOrder) lọc LeftAt null — giống <see cref="LineupService"/>.</summary>
-    async Task WriteLineupAsync(Guid clubId, List<SquadMembership> rows, BotPlan plan, CancellationToken ct)
+    /// <summary>Ghi SlotOrder mới (11 đá chính, dự bị, còn lại) và bỏ LeftAt tạm.</summary>
+    static void WriteLineup(List<SquadMembership> rows, BotPlan plan)
     {
         var byPlayer = rows.ToDictionary(m => m.PlayerId);
         var order = plan.StarterOrder.Concat(plan.BenchOrder).Where(byPlayer.ContainsKey).Distinct().ToList();
         foreach (var m in rows)
             if (!order.Contains(m.PlayerId)) order.Add(m.PlayerId);
-
-        foreach (var m in rows) m.LeftAt = m.JoinedAt;
-        await db.SaveChangesAsync(ct);
-
         for (var i = 0; i < order.Count; i++)
         {
             var m = byPlayer[order[i]];
             m.SlotOrder = i;
             m.LeftAt = null;
         }
-        (await db.Clubs.FindAsync([clubId], ct))!.SquadVersion++;
-        await db.SaveChangesAsync(ct);
     }
 
     void WriteTactics(Guid clubId, BotPlan plan, Dictionary<Guid, ClubTactics> existing, DateTimeOffset now)

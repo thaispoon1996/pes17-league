@@ -93,4 +93,71 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
         return new CareerStartResult(season.Name, clubName ?? "(BOT)", schedule.Slots.Count, schedule.Slots.Sum(s => s.Matches.Count),
             change.InitialBudgetFund ?? 0, budget);
     }
+
+    /// <summary>
+    /// "Tiếp tục" (PO 19/11: trận không có PO thì mô phỏng): mô phỏng lần lượt từng khung đang mở (chốt khung → khung sau tự mở) tới khi gặp
+    /// trận của người chơi chưa đá (dừng, trả trận đó), hết mùa, hoặc khung không tiến được (trận đang đá dở / lỗi ghi kết quả).
+    /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi (người chơi chọn "mô phỏng trận của tôi" / chạy thử cả mùa).
+    /// </summary>
+    public async Task<CareerContinueResult> ContinueAsync(int maxSlots = 500, Action<string>? progress = null, bool includeMine = false, CancellationToken ct = default)
+    {
+        var sim = new MatchSimService(db, store, clock);
+        var simulated = 0;
+        var slots = new List<int>();
+        var errors = new List<string>();
+        for (var i = 0; i < maxSlots; i++)
+        {
+            var season = await db.Seasons.AsNoTracking().Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync(ct);
+            if (season is null) return new(simulated, slots, null, true, errors);
+            var md = await OpenMatchdayAsync(season.Id, ct);
+            if (md is null) return new(simulated, slots, null, true, errors);
+            var r = await sim.SimulateMatchdayAsync(md.Id, ct: ct);
+            simulated += r.Simulated;
+            errors.AddRange(r.Errors);
+            if (r.Simulated > 0) slots.Add(md.Number);
+            if (r.Simulated > 0) progress?.Invoke($"Khung {md.Number}: mô phỏng {r.Simulated} trận{(r.Settled ? ", đã chốt khung" : "")}");
+            if (r.SeasonFinished) return new(simulated, slots, null, true, errors);
+            var mine = await MyPendingFixtureAsync(md.Id, ct);
+            if (mine is { } myFixture && includeMine)
+            {
+                var m = await sim.SimulateMatchdayAsync(md.Id, myFixture, ct);
+                simulated += m.Simulated;
+                errors.AddRange(m.Errors);
+                if (m.Simulated > 0) progress?.Invoke($"Khung {md.Number}: trận của bạn {await ScoreLineAsync(myFixture, ct)}{(m.Settled ? ", đã chốt khung" : "")}");
+                if (m.SeasonFinished) return new(simulated, slots, null, true, errors);
+                if (m.Simulated == 0) return new(simulated, slots, myFixture, false, errors);
+                continue;
+            }
+            if (mine is not null) return new(simulated, slots, mine, false, errors);
+            if (!r.Settled) return new(simulated, slots, null, false, [.. errors, $"Khung {md.Number} chưa chốt được (còn trận đang đá dở hoặc lỗi ghi kết quả)"]);
+        }
+        return new(simulated, slots, null, false, errors);
+    }
+
+    /// <summary>"Chủ 2–1 Khách" (kèm luân lưu nếu có).</summary>
+    public async Task<string> ScoreLineAsync(Guid fixtureId, CancellationToken ct = default)
+    {
+        var x = await (from f in db.Fixtures.AsNoTracking() join h in db.Clubs on f.HomeClubId equals h.Id join a in db.Clubs on f.AwayClubId equals a.Id
+                       where f.Id == fixtureId select new { Home = h.Name, Away = a.Name, f.HomeGoals, f.AwayGoals, f.HomePenalties, f.AwayPenalties }).SingleAsync(ct);
+        var pens = x.HomePenalties is { } hp && x.AwayPenalties is { } ap ? $" (pen {hp}–{ap})" : "";
+        return x.HomeGoals is { } hg && x.AwayGoals is { } ag ? $"{x.Home} {hg}–{ag} {x.Away}{pens}" : $"{x.Home} – {x.Away}";
+    }
+
+    /// <summary>Khung đang mở sớm nhất của mùa (đá được: WindowOpen / Locked / Playing).</summary>
+    public Task<Matchday?> OpenMatchdayAsync(Guid seasonId, CancellationToken ct = default) =>
+        db.Matchdays.AsNoTracking().Where(m => m.SeasonId == seasonId
+                && (m.Status == MatchdayStatus.WindowOpen || m.Status == MatchdayStatus.Locked || m.Status == MatchdayStatus.Playing))
+            .OrderBy(m => m.Number).FirstOrDefaultAsync(ct);
+
+    /// <summary>Trận chưa đá của CLB người chơi trong khung (chưa giao trợ lý).</summary>
+    public async Task<Guid?> MyPendingFixtureAsync(Guid matchdayId, CancellationToken ct = default)
+    {
+        var fixtures = await db.Fixtures.AsNoTracking().Where(f => f.MatchdayId == matchdayId && f.Status != FixtureStatus.Played).ToListAsync(ct);
+        var humans = await MatchOrchestrator.HumanClubsAsync(db, fixtures.SelectMany(f => new[] { f.HomeClubId, f.AwayClubId }), ct);
+        return fixtures.FirstOrDefault(f => MatchOrchestrator.NeedsHuman(f, humans))?.Id;
+    }
 }
+
+/// <param name="Slots">Số khung đã mô phỏng (có ít nhất 1 trận).</param>
+/// <param name="MyFixtureId">Dừng ở trận này của người chơi (chưa đá); null = không còn trận chờ trong khung đang mở.</param>
+public sealed record CareerContinueResult(int Simulated, IReadOnlyList<int> Slots, Guid? MyFixtureId, bool SeasonFinished, IReadOnlyList<string> Errors);

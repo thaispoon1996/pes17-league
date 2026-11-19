@@ -17,8 +17,13 @@
     <span class="pill">Sự nghiệp HLV</span>
     @if (club is not null)
     {
-        <h1>@club</h1>
-        <p>@(seasonName ?? "Mùa giải") đang diễn ra. Mọi trận đều đá trong game: trận của bạn 10 phút, trận BOT 5 phút.</p>
+        <h1><Crest Name="@club" Logo="@clubLogo" Large="true" /> @club</h1>
+        <p>@(seasonName ?? "Mùa giải")@(current is { } c0 ? $" · khung {c0.Number}/{slots}" : ""). Trận của bạn đá trong game (hoặc mô phỏng); các trận khác mô phỏng ngay.</p>
+        <div class="kpis">
+            @if (myPos is { } pos) { <span><b>@pos/@table.Count</b>@leagueName</span> }
+            <span><b>@Fmt.Money(budget)</b>ngân sách</span>
+            <span><b>@tally.W – @tally.D – @tally.L</b>thắng – hoà – thua</span>
+        </div>
     }
     else
     {
@@ -31,36 +36,117 @@
 
 @if (club is not null)
 {
+    <div class="grid">
+    <div class="stack">
+    <section class="panel">
+        <h2><span class="ms ic" aria-hidden="true">fast_forward</span>Tiếp tục mùa giải</h2>
+        @if (Jobs.Running && Jobs.Title == MatchJobService.SimTitle)
+        {
+            <p><span class="ui-spin" aria-hidden="true"></span> Đang mô phỏng các trận…</p>
+            <pre class="muted">@string.Join("\n", Jobs.Log.TakeLast(6))</pre>
+        }
+        else if (Jobs.Running)
+        {
+            <p class="muted">Máy trận đang chạy: @Jobs.Title. Chờ xong rồi tiếp tục.</p>
+        }
+        else if (current is null)
+        {
+            <p><b>Mùa giải đã kết thúc.</b> Xem <a href="bxh">BXH</a> và <a href="giai">các giải</a>.</p>
+        }
+        else if (current.BotLeft > 0 || current.MineFixture is null)
+        {
+            <p>Khung @current.Number/@slots: còn <b>@current.BotLeft</b> trận khác@(current.MineFixture is not null ? " + trận của bạn" : ""). Bấm để mô phỏng tới trận kế tiếp của bạn.</p>
+            <button class="primary wide" @onclick="() => Simulate(false)"><span class="ms ic" aria-hidden="true">fast_forward</span>Tiếp tục — mô phỏng tới trận của bạn</button>
+        }
+        else
+        {
+            <p>Tới trận của bạn: <b>@next?.Title</b> · @next?.Competition</p>
+            <p>
+                <a class="btn primary" href="chuan-bi/@current.MineFixture"><span class="ms ic" aria-hidden="true">sports_esports</span>Đá trong game</a>
+                <button class="btn" data-confirm="Mô phỏng trận này (không đá trong game)?" @onclick="() => Simulate(true)"><span class="ms ic" aria-hidden="true">casino</span>Mô phỏng trận này</button>
+            </p>
+        }
+        @if (!Jobs.Running && Jobs.Title == MatchJobService.SimTitle && Jobs.Log.Count > 0)
+        {
+            <details><summary class="muted">Lần mô phỏng trước</summary><pre class="muted">@string.Join("\n", Jobs.Log.TakeLast(12))</pre></details>
+        }
+    </section>
     <section class="panel">
         <h2><span class="ms ic" aria-hidden="true">sports_soccer</span>Trận tiếp theo</h2>
         @if (next is { } n)
         {
             <p><b>@n.Title</b> · @n.Competition · khung @n.Slot</p>
-            <p><a class="btn primary" href="chuan-bi/@n.Id"><span class="ms ic" aria-hidden="true">play_arrow</span>Chuẩn bị &amp; đá</a></p>
+            @if (upcoming.Count > 1)
+            {
+                <table class="table">
+                    <tbody>
+                        @foreach (var u in upcoming.Skip(1))
+                        {
+                            <tr><td>khung @u.Slot</td><td class="left">@u.Title</td><td class="left muted">@u.Competition</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
         }
         else { <p class="muted">Chưa còn trận nào trong lịch.</p> }
     </section>
     <section class="panel">
-        <h2><span class="ms ic" aria-hidden="true">fast_forward</span>Tiếp tục mùa giải</h2>
-        @if (current is { } cur)
+        <h2><span class="ms ic" aria-hidden="true">history</span>Kết quả gần đây</h2>
+        <p class="muted">Tỉ số tính theo CLB của bạn trước.</p>
+        @if (recent.Count == 0) { <p class="muted">Chưa đá trận nào mùa này.</p> }
+        else
         {
-            <p>Khung @cur.Number/@slots: còn <b>@cur.BotLeft</b> trận BOT@(cur.MineLeft ? " + trận của bạn" : "").</p>
-            @if (Jobs.Running)
-            {
-                <p class="muted">Máy trận đang chạy: @Jobs.Title@(Jobs.BotQueueMinutesLeft(Math.Max(0, cur.BotLeft - 1)) is { } m ? $" — xong khung này khoảng {m} phút" : "").</p>
-            }
-            else if (cur.BotLeft > 0)
-            {
-                <button class="primary wide" @onclick="() => Jobs.PlayBots(cur.Id)"><span class="ms ic" aria-hidden="true">smart_toy</span>Tiếp tục — BOT đá @cur.BotLeft trận của khung @cur.Number</button>
-            }
-            else if (cur.MineLeft) { <p class="muted">Các trận BOT của khung đã xong, chờ trận của bạn.</p> }
-            <p class="muted">Trận của bạn được ưu tiên: lúc BOT đang đá, vào Chuẩn bị trận bấm "Đá ngay" để ngắt trận BOT (trận đó đá lại sau).</p>
+            <table class="table">
+                <tbody>
+                    @foreach (var x in recent)
+                    {
+                        <tr>
+                            <td><a class="res @x.Result" style="white-space:nowrap" href="tran/@x.Id">@x.Score</a></td>
+                            <td class="left">@(x.Home ? "vs" : "@") <Crest Name="@x.Opponent" Logo="@x.OppLogo" /> @x.Opponent</td>
+                            <td class="left muted">@x.Competition</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
         }
-        else { <p class="muted">Không có khung ngày nào đang mở.</p> }
     </section>
+    </div>
+    <div class="stack">
+    @if (table.Count > 0)
+    {
+        <section class="panel">
+            <h2><span class="ms ic" aria-hidden="true">leaderboard</span>@leagueName</h2>
+            <table class="table">
+                <thead><tr><th>#</th><th class="left">CLB</th><th>Tr</th><th>HS</th><th>Đ</th></tr></thead>
+                <tbody>
+                    @{ var prev = 0; }
+                    @foreach (var r in TableSnippet)
+                    {
+                        if (r.Pos > prev + 1) { <tr><td class="muted">…</td><td></td><td></td><td></td><td></td></tr> }
+                        prev = r.Pos;
+                        <tr class="@(r.Mine ? "mine" : "")"><td>@r.Pos</td><td class="left"><Crest Name="@r.Club" Logo="@r.Logo" /> @r.Club</td><td>@r.P</td><td>@r.GD</td><td><b>@r.Pts</b></td></tr>
+                    }
+                </tbody>
+            </table>
+            <p><a href="bxh">Xem cả bảng</a></p>
+        </section>
+    }
+    @if (cups.Count > 0)
+    {
+        <section class="panel">
+            <h2><span class="ms ic" aria-hidden="true">emoji_events</span>Cúp</h2>
+            <table class="table">
+                <tbody>
+                    @foreach (var c in cups) { <tr><td class="left">@c.Name</td><td class="left">@c.State</td></tr> }
+                </tbody>
+            </table>
+        </section>
+    }
     <section class="panel">
-        <p><a class="btn" href="clb">CLB của tôi</a> <a class="btn" href="chuyen-nhuong">Chuyển nhượng</a> <a class="btn" href="lich">Lịch</a> <a class="btn" href="bxh">BXH</a> <a class="btn" href="hop-thu">Hộp thư</a></p>
+        <p><a class="btn" href="clb">CLB của tôi</a> <a class="btn" href="chuyen-nhuong">Chuyển nhượng</a> <a class="btn" href="tai-chinh">Tài chính</a> <a class="btn" href="ban-lanh-dao">Ban lãnh đạo</a> <a class="btn" href="lich">Lịch</a> <a class="btn" href="hop-thu">Hộp thư</a></p>
     </section>
+    </div>
+    </div>
     return;
 }
 @if (me is null)
@@ -130,9 +216,23 @@
     NextMatch? next;
 
     sealed record NextMatch(Guid Id, string Title, string Competition, int Slot);
-    sealed record Current(Guid Id, int Number, int BotLeft, bool MineLeft);
+    sealed record Current(Guid Id, int Number, int BotLeft, Guid? MineFixture);
+    sealed record ResultRow(Guid Id, string Competition, string Opponent, string? OppLogo, bool Home, string Score, string Result);
+    sealed record TableRow(int Pos, string Club, string? Logo, int P, int GD, int Pts, bool Mine);
+    sealed record CupRow(string Name, string State);
     Current? current;
     int slots;
+    string? clubLogo, leagueName;
+    long budget;
+    int? myPos;
+    (int W, int D, int L) tally;
+    List<NextMatch> upcoming = [];
+    List<ResultRow> recent = [];
+    List<TableRow> table = [];
+    List<CupRow> cups = [];
+
+    /// <summary>Top 3 + 2 đội quanh CLB mình.</summary>
+    IEnumerable<TableRow> TableSnippet => table.Where(r => r.Pos <= 3 || (myPos is { } p && Math.Abs(r.Pos - p) <= 2));
 
     IEnumerable<(string Name, int Count)> Leagues => choices.GroupBy(c => (c.League, c.Tier, c.Country))
         .OrderBy(g => g.Key.Tier).ThenByDescending(g => g.Average(c => c.Ovr)).Select(g => (g.Key.League, g.Count()));
@@ -150,32 +250,16 @@
         if (me is { } id)
         {
             var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
-                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name }).FirstOrDefaultAsync();
+                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name, c.LogoPath }).FirstOrDefaultAsync();
             if (mine is not null)
             {
                 club = mine.Name;
-                var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync();
+                clubLogo = mine.LogoPath;
+                budget = await db.Ledger.Where(e => e.ClubId == mine.Id).SumAsync(e => e.Amount);
+                var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync()
+                    ?? await db.Seasons.Where(s => s.Status == SeasonStatus.Finished).OrderByDescending(s => s.Number).FirstOrDefaultAsync();
                 seasonName = season?.Name;
-                if (season is not null)
-                    next = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
-                                  join e in db.Editions on f.CompetitionEditionId equals (Guid?)e.Id join comp in db.Competitions on e.CompetitionId equals comp.Id
-                                  join h in db.Clubs on f.HomeClubId equals h.Id join w in db.Clubs on f.AwayClubId equals w.Id
-                                  where m.SeasonId == season.Id && f.Status != FixtureStatus.Played && (f.HomeClubId == mine.Id || f.AwayClubId == mine.Id)
-                                  orderby m.Number
-                                  select new NextMatch(f.Id, h.Name + " – " + w.Name, comp.Name, m.Number)).FirstOrDefaultAsync();
-                if (season is not null)
-                {
-                    slots = await db.Matchdays.CountAsync(m => m.SeasonId == season.Id);
-                    var md = await db.Matchdays.Where(m => m.SeasonId == season.Id
-                            && (m.Status == MatchdayStatus.WindowOpen || m.Status == MatchdayStatus.Locked || m.Status == MatchdayStatus.Playing))
-                        .OrderBy(m => m.Number).FirstOrDefaultAsync();
-                    if (md is not null)
-                    {
-                        var left = await db.Fixtures.Where(f => f.MatchdayId == md.Id && f.Status != FixtureStatus.Played)
-                            .Select(f => new { Mine = (f.HomeClubId == mine.Id || f.AwayClubId == mine.Id) && !f.AssistantPlays }).ToListAsync();
-                        current = new Current(md.Id, md.Number, left.Count(x => !x.Mine), left.Any(x => x.Mine));
-                    }
-                }
+                if (season is not null) await LoadClubAsync(db, season.Id, mine.Id);
                 return;
             }
         }
@@ -185,6 +269,79 @@
         if (pending is null) return;
         taken = await career.HasCoachAsync();
         if (!taken) choices = await career.ChoicesAsync(pending.Id);
+    }
+
+    async Task LoadClubAsync(ClubsDbContext db, Guid seasonId, Guid mineId)
+    {
+        var fixtures = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
+                              join e in db.Editions on f.CompetitionEditionId equals (Guid?)e.Id join comp in db.Competitions on e.CompetitionId equals comp.Id
+                              join h in db.Clubs on f.HomeClubId equals h.Id join w in db.Clubs on f.AwayClubId equals w.Id
+                              where m.SeasonId == seasonId && (f.HomeClubId == mineId || f.AwayClubId == mineId)
+                              orderby m.Number
+                              select new { F = f, Slot = m.Number, EditionId = e.Id, Comp = comp.Name, comp.Type, Home = h.Name, HomeLogo = h.LogoPath, Away = w.Name, AwayLogo = w.LogoPath })
+            .AsNoTracking().ToListAsync();
+        string Label(string comp, FixtureStage stage, int? leg) => stage == FixtureStage.League ? comp : $"{comp} · {AdminText.SlotKind(stage, leg)}";
+
+        upcoming = [.. fixtures.Where(x => x.F.Status != FixtureStatus.Played).Take(4)
+            .Select(x => new NextMatch(x.F.Id, x.Home + " – " + x.Away, Label(x.Comp, x.F.Stage, x.F.Leg), x.Slot))];
+        next = upcoming.FirstOrDefault();
+
+        var played = fixtures.Where(x => x.F.Status == FixtureStatus.Played && x.F.HomeGoals is not null).ToList();
+        string Result(Fixture f) => f.WinnerClubId() is { } w ? (w == mineId ? "W" : "L") : f.HomeGoals == f.AwayGoals ? "D" : (f.HomeGoals > f.AwayGoals) == (f.HomeClubId == mineId) ? "W" : "L";
+        tally = (played.Count(x => Result(x.F) == "W"), played.Count(x => Result(x.F) == "D"), played.Count(x => Result(x.F) == "L"));
+        recent = [.. played.TakeLast(6).Reverse().Select(x =>
+        {
+            var home = x.F.HomeClubId == mineId;
+            return new ResultRow(x.F.Id, Label(x.Comp, x.F.Stage, x.F.Leg), home ? x.Away : x.Home, home ? x.AwayLogo : x.HomeLogo, home,
+                home ? Fmt.Score(x.F.HomeGoals, x.F.AwayGoals, x.F.HomePenalties, x.F.AwayPenalties) : Fmt.Score(x.F.AwayGoals, x.F.HomeGoals, x.F.AwayPenalties, x.F.HomePenalties),
+                Result(x.F));
+        })];
+
+        // Giải quốc nội: vị trí + bảng
+        var league = await (from x in db.EditionClubs join e in db.Editions on x.EditionId equals e.Id join c in db.Competitions on e.CompetitionId equals c.Id
+                            where e.SeasonId == seasonId && x.ClubId == mineId && c.Type == CompetitionType.DomesticLeague select new { e.Id, c.Name }).FirstOrDefaultAsync();
+        if (league is not null)
+        {
+            leagueName = league.Name;
+            var rows = await new CompetitionService(db, Store, Clock).GetEditionStandingsAsync(league.Id);
+            var ids = rows.Select(r => r.Club).ToList();
+            var names = await db.Clubs.Where(c => ids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => new { c.Name, c.LogoPath });
+            table = [.. rows.Select((r, i) => new TableRow(i + 1, names[r.Club].Name, names[r.Club].LogoPath, r.Played, r.GoalDifference, r.Points, r.Club == mineId))];
+            myPos = table.FirstOrDefault(r => r.Mine)?.Pos;
+        }
+
+        // Cúp: đang dự / bị loại / vô địch
+        var cupEditions = fixtures.Where(x => x.Type != CompetitionType.DomesticLeague).GroupBy(x => (x.EditionId, x.Comp)).ToList();
+        var editionIds = cupEditions.Select(g => g.Key.EditionId).ToList();
+        var stages = (await db.Fixtures.Where(f => f.CompetitionEditionId != null && editionIds.Contains(f.CompetitionEditionId.Value))
+                .Select(f => new { Edition = f.CompetitionEditionId!.Value, f.Stage }).Distinct().ToListAsync())   // Stage lưu dạng chuỗi → so thứ tự ở client
+            .GroupBy(x => x.Edition).ToDictionary(g => g.Key, g => g.Max(x => x.Stage));
+        cups = [.. cupEditions.Select(g =>
+        {
+            var open = g.FirstOrDefault(x => x.F.Status != FixtureStatus.Played);
+            if (open is not null) return new CupRow(g.Key.Comp, $"Đang dự · {AdminText.SlotKind(open.F.Stage, open.F.Leg)}");
+            var last = g.Last().F;
+            if (last.Stage == FixtureStage.Final) return new CupRow(g.Key.Comp, last.WinnerClubId() == mineId ? "🏆 Vô địch" : "Á quân");
+            return stages.GetValueOrDefault(g.Key.EditionId) > last.Stage
+                ? new CupRow(g.Key.Comp, $"Bị loại · {AdminText.Stage(last.Stage)}")
+                : new CupRow(g.Key.Comp, $"Chờ vòng sau (đã đá {AdminText.Stage(last.Stage)})");
+        })];
+
+        slots = await db.Matchdays.CountAsync(m => m.SeasonId == seasonId);
+        var md = await new Pes17CareerService(db, Store, Clock).OpenMatchdayAsync(seasonId);
+        current = null;
+        if (md is not null)
+        {
+            var left = await db.Fixtures.Where(f => f.MatchdayId == md.Id && f.Status != FixtureStatus.Played)
+                .Select(f => new { f.Id, Mine = (f.HomeClubId == mineId || f.AwayClubId == mineId) && !f.AssistantPlays }).ToListAsync();
+            current = new Current(md.Id, md.Number, left.Count(x => !x.Mine), left.FirstOrDefault(x => x.Mine)?.Id);
+        }
+    }
+
+    void Simulate(bool mine)
+    {
+        error = null;
+        if (!Jobs.SimulateCareer(mine)) error = "Máy đang bận, thử lại sau.";
     }
 
     protected override void OnInitialized() => Jobs.Changed += OnJob;

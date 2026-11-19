@@ -173,6 +173,22 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
         }, () => { _stop = stop; _botMatchday = matchdayId; });
     }
 
+    public const string SimTitle = "Mô phỏng các trận";
+
+    /// <summary>
+    /// Career (PO 19/11): mô phỏng các trận không có người chơi, khung này sang khung khác, tới trận kế tiếp của người chơi / hết mùa.
+    /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi đang chờ (rồi dừng ở cuối khung đó).
+    /// </summary>
+    public bool SimulateCareer(bool includeMine = false) => Start(SimTitle, async ct =>
+    {
+        await using var db = await dbs.CreateDbContextAsync(ct);
+        var career = new Pes17CareerService(db, store, clock);
+        var r = await career.ContinueAsync(includeMine ? 1 : 500, Write, includeMine, ct);
+        foreach (var e in r.Errors.Take(5)) Write($"LỖI {e}");
+        Write($"Xong: mô phỏng {r.Simulated} trận" + (r.SeasonFinished ? " — mùa giải đã kết thúc." : "."));
+        if (r.MyFixtureId is { } f) Write($"Tới trận của bạn: {Name(f)}");
+    });
+
     /// <summary>Đang đá BOT → admin được chen ngang (<see cref="PlayHumanNowAsync"/>).</summary>
     public bool CanPreemptBots => Running && Title == "Đá các trận BOT";
 
