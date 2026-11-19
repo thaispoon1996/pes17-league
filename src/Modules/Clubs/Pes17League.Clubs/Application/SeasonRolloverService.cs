@@ -84,11 +84,14 @@ public sealed class SeasonRolloverService(ClubsDbContext db, IOptionFileStore st
     {
         var values = await new EconomyService(db, clock).CurrentAttributesAsync(lastId, null, ct);
         var pos = await db.Players.Where(p => values.Keys.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Position, ct);
+        var potentials = await TrainingService.PotentialsAsync(db, _price, lastId, pos.Select(kv => (kv.Key, kv.Value)).ToList(), ct);
         var now = clock.GetUtcNow();
         var age = new Dictionary<Guid, int>();
         foreach (var (id, v) in values.OrderBy(kv => kv.Key))
         {
-            var nv = AgingRules.NextSeason(v, pos.TryGetValue(id, out var p) ? AttributeEvolution.RoleFields(p) : [], rng.Next(1000));
+            var known = pos.TryGetValue(id, out var p);
+            var room = known && potentials.TryGetValue(id, out var pt) ? Math.Max(0, pt - _price.Overall(p, v)) : 0;
+            var nv = AgingRules.NextSeason(v, known ? AttributeEvolution.RoleFields(p) : [], rng.Next(1000), room);
             age[id] = nv.GetValueOrDefault("AGE");
             db.PlayerAttributes.Add(new PlayerAttributes { PlayerId = id, SeasonId = nextId, Values = nv, CapturedAt = now });
         }

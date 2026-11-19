@@ -27,7 +27,7 @@
         <div><small>Dự báo cuối mùa (@report.RoundsLeft vòng còn)</small><b class="@(report.Forecast < 0 ? "down" : "")">@Fmt.Money(report.Forecast)</b></div>
         <div><small>Sân</small><b>@f.Capacity.ToString("N0") chỗ</b></div>
         <div><small>Cổ động viên</small><b>@f.Fans.ToString("N0")</b></div>
-        <div><small>Tài trợ/vòng</small><b>@Fmt.Money(f.SponsorPerRound)</b></div>
+        <div><small>Tài trợ/trận</small><b>@Fmt.Money(f.SponsorPerRound)</b></div>
         <div><small>Khán giả dự kiến</small><b>@FinanceRules.Attendance(f.Capacity, f.Fans, price).ToString("N0")</b></div>
     </div>
 
@@ -41,8 +41,8 @@
                 <input disabled value="@Fmt.Money(FinanceRules.Attendance(f.Capacity, f.Fans, price) * price)" />
             </label>
         </div>
-        <p class="fm-note">Vé đắt → ít khán giả. Thắng +1% CĐV, thua −0,5%. Bảo trì @FinanceRules.UpkeepPerSeat/chỗ/vòng.
-            Bản quyền TV @Fmt.Money(FinanceRules.TvPerRound)/vòng, thưởng thắng @Fmt.Money(FinanceRules.WinPrize), hoà @Fmt.Money(FinanceRules.DrawPrize).</p>
+        <p class="fm-note">Vé đắt → ít khán giả. Thắng +1% CĐV, thua −0,5%. Bảo trì @FinanceRules.UpkeepPerSeat/chỗ/trận.
+            Bản quyền TV @Fmt.Money(FinanceRules.TvPerRound)/trận (tài trợ, TV, bảo trì chỉ tính khung CLB có trận; lương cầu thủ tính mọi khung), thưởng thắng @Fmt.Money(FinanceRules.WinPrize), hoà @Fmt.Money(FinanceRules.DrawPrize).</p>
         <button class="primary" disabled="@busy" @onclick="SavePrice">Lưu giá vé</button>
         <button disabled="@busy" @onclick="Expand">Mở rộng +@FinanceRules.ExpandSeats.ToString("N0") chỗ (@Fmt.Money(FinanceRules.ExpandCost))</button>
     </section>

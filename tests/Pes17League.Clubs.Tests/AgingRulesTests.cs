@@ -30,6 +30,16 @@ public class AgingRulesTests
     }
 
     [Fact]
+    public void Growth_stops_at_potential_but_decline_does_not()
+    {
+        var young = new Dictionary<string, int> { ["AGE"] = 19, ["ATTACK"] = 70 };
+        Assert.Equal(71, AgingRules.NextSeason(young, ["ATTACK"], roll: 2, maxGrowth: 1)["ATTACK"]);   // +4 chặn còn +1
+        Assert.Equal(70, AgingRules.NextSeason(young, ["ATTACK"], roll: 2, maxGrowth: 0)["ATTACK"]);
+        var old = new Dictionary<string, int> { ["AGE"] = 35, ["ATTACK"] = 70 };
+        Assert.InRange(AgingRules.NextSeason(old, ["ATTACK"], roll: 1, maxGrowth: 0)["ATTACK"], 67, 68);
+    }
+
+    [Fact]
     public void Retirement_by_age()
     {
         Assert.False(AgingRules.Retires(33, 0));

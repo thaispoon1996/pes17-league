@@ -356,7 +356,8 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
     }
 
     /// <summary>
-    /// C19 theo trận (PO chọn 04/11): điểm ≥ 7,5 → +1, ≤ 5,0 → −1 mỗi chỉ số hợp vai trò; tổng thay đổi mùa mỗi chỉ số trong ±3, giá trị trong 1–99.
+    /// C19 theo trận (PO chọn 04/11): điểm ≥ 7,5 → +1 (chỉ khi chỉ số tổng còn dưới tiềm năng — PO 19/11), ≤ 5,0 → −1 mỗi chỉ số hợp vai trò;
+    /// tổng thay đổi mùa mỗi chỉ số trong ±3, giá trị trong 1–99.
     /// Ghi AttributeChange (chỉ phần thực đổi) rồi tính lại giá gốc cầu thủ bị đổi. Trả về số cầu thủ bị đổi chỉ số.
     /// </summary>
     public async Task<int> EvolveAttributesAsync(Guid seasonId, IReadOnlyCollection<MatchRating> ratings, CancellationToken ct = default)
@@ -375,12 +376,15 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
         foreach (var c in admin)
             if (start.TryGetValue(c.PlayerId, out var v) && v.TryGetValue(c.Field, out var x)) v[c.Field] = x + c.Delta;
         var current = await CurrentAttributesAsync(seasonId, ids, ct);
+        // PO 19/11 mục 5: chỉ tăng khi còn dưới tiềm năng (cố định từ mùa đầu) — ngôi sao đá hay không vượt trần mãi.
+        var potentials = await TrainingService.PotentialsAsync(db, _price, seasonId, positions.Select(p => (p.Key, p.Value)).ToList(), ct);
         var at = clock.GetUtcNow();
         var changed = new HashSet<Guid>();
         foreach (var r in moves)
         {
             if (!start.TryGetValue(r.PlayerId, out var s0)) continue;
             var delta = AttributeEvolution.MatchDelta(r.Rating!.Value);
+            if (delta > 0 && (!potentials.TryGetValue(r.PlayerId, out var pot) || _price.Overall(positions[r.PlayerId], current[r.PlayerId]) >= pot)) continue;
             foreach (var field in AttributeEvolution.RoleFields(positions[r.PlayerId], priceOptions))
             {
                 if (!s0.TryGetValue(field, out var baseValue)) continue;

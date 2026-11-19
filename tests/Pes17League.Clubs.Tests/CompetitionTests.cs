@@ -88,6 +88,10 @@ public class CompetitionTests
         var homeStarter = await db.SquadMemberships.Where(m => m.ClubId == home && m.LeftAt == null && m.SlotOrder == 0).Select(m => m.PlayerId).SingleAsync();
         var awayStarter = await db.SquadMemberships.Where(m => m.ClubId == away && m.LeftAt == null && m.SlotOrder == 0).Select(m => m.PlayerId).SingleAsync();
         var homeSub = await db.SquadMemberships.Where(m => m.ClubId == home && m.LeftAt == null && m.SlotOrder == 15).Select(m => m.PlayerId).SingleAsync();
+        // Tăng theo trận chặn ở tiềm năng (PO 19/11): cho thủ môn đội nhà 18 tuổi để còn chỗ tăng.
+        var snap = await db.PlayerAttributes.SingleAsync(a => a.PlayerId == homeStarter && a.SeasonId == season.Id);
+        snap.Values = new Dictionary<string, int>(snap.Values) { ["AGE"] = 18 };
+        await db.SaveChangesAsync();
 
         var overall0 = db.PlayerPrices.AsNoTracking().Single(x => x.PlayerId == homeStarter && x.SeasonId == season.Id).Overall;
         var r1 = await svc.RecordResultAsync(f1.Id, 2, 1, [new GoalInput(home, 1, 10), new GoalInput(away, 2, 50), new GoalInput(home, 2, 88, 1234.5)],

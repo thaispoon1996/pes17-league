@@ -33,6 +33,10 @@
 </section>
 @if (!loaded) { return; }
 @if (error is not null) { <p class="msg">@error</p> }
+@if (offersWaiting > 0)
+{
+    <p class="msg"><span class="ms ic" aria-hidden="true">swap_horiz</span>Có <b>@offersWaiting</b> đề nghị mua cầu thủ của bạn đang chờ trả lời — <a href="de-nghi">xem đề nghị</a> (hết hạn khi chợ đóng).</p>
+}
 
 @if (club is not null)
 {
@@ -227,6 +231,7 @@
 @code {
     Guid? me, seasonId, clubId;
     bool loaded, taken, starting, autoLineup = true, canNext;
+    int offersWaiting;
     List<string> champion = [];
     string? club, seasonName, league, error;
     CareerClubChoice? pick;
@@ -276,6 +281,8 @@
                 autoLineup = mine.AutoLineup;
                 clubLogo = mine.LogoPath;
                 budget = await db.Ledger.Where(e => e.ClubId == mine.Id).SumAsync(e => e.Amount);
+                await new TransferOfferService(db, Clock).ExpireStaleAsync();
+                offersWaiting = await db.TransferOffers.CountAsync(o => o.SellerClubId == mine.Id && o.Status == OfferStatus.Pending);
                 var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync()
                     ?? await db.Seasons.Where(s => s.Status == SeasonStatus.Finished).OrderByDescending(s => s.Number).FirstOrDefaultAsync();
                 seasonName = season?.Name;

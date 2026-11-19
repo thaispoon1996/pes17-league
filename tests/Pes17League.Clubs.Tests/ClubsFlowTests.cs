@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pes17League.Clubs.Application;
+using Pes17League.Clubs.Domain;
 using Pes17League.Clubs.Infrastructure;
 using Pes17League.OptionFile;
 
@@ -606,6 +607,32 @@ public class ClubsFlowTests
         await FundAsync(db, arsenal, 3 * price, t.Clock.GetUtcNow());
         Assert.True((await new TransferService(db, t.Clock).BuyAsync(c.Window, havertz, arsenal, price, 30, 0)).Ok);
         Assert.Equal(price * 20 / 100, await db.Ledger.Where(l => l.ClubId == arsenal && l.Reason == LedgerReason.SellOn).SumAsync(l => l.Amount));
+    }
+
+    [DbFact]
+    public async Task Bot_buyer_answers_counter_by_walk_away()
+    {
+        await using var t = await TestDb.CreateAsync();
+        var c = await SetupAsync(t);
+        await using var db = t.Context();
+        var (villa, havertz) = await IdsAsync(db, c.Import.PatchVersionId, AstonVilla, Havertz);
+        var (arsenal, gyokeres) = await IdsAsync(db, c.Import.PatchVersionId, Arsenal, Gyokeres);
+        await SetHumanAsync(db, arsenal);   // Villa vẫn là BOT
+        var (p1, p2) = (await PriceAsync(db, havertz), await PriceAsync(db, gyokeres));
+        await FundAsync(db, villa, 3 * (p1 + p2), t.Clock.GetUtcNow());
+        var svc = new TransferOfferService(db, t.Clock);
+
+        var a = await svc.MakeAsync(c.Window, new(havertz, villa, OfferKind.Permanent, p1, 60, 0));
+        Assert.True(a.Ok, a.Error);
+        var ok = await svc.RespondAsync(a.OfferId!.Value, arsenal, OfferReply.Counter, BotMarketRules.WalkAway(p1, a.OfferId.Value));
+        Assert.Equal(OfferStatus.Completed, ok.Status);   // trả giá đúng mức trần → BOT đồng ý ngay
+        Assert.Equal(villa, (await db.SquadMemberships.SingleAsync(m => m.PlayerId == havertz && m.LeftAt == null)).ClubId);
+
+        var b = await svc.MakeAsync(c.Window, new(gyokeres, villa, OfferKind.Permanent, p2, 60, 0));
+        Assert.True(b.Ok, b.Error);
+        var over = BotMarketRules.WalkAway(p2, b.OfferId!.Value) + 10_000;
+        Assert.Equal(OfferStatus.Withdrawn, (await svc.RespondAsync(b.OfferId.Value, arsenal, OfferReply.Counter, over)).Status);
+        Assert.Equal(arsenal, (await db.SquadMemberships.SingleAsync(m => m.PlayerId == gyokeres && m.LeftAt == null)).ClubId);
     }
 
     [DbFact]

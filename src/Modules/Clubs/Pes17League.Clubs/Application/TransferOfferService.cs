@@ -134,8 +134,24 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
                 break;
         }
         await db.SaveChangesAsync(ct);
+        if (o.Status == OfferStatus.Countered && !await SquadStore.IsHumanAsync(db, o.BuyerClubId, ct)) return await BotAnswerCounterAsync(o, ct);
         if (o.Status == OfferStatus.Rejected) await MailAsync(o, toBuyer: true, "Đề nghị mua {player} bị từ chối", "CLB {seller} đã từ chối đề nghị mua {player} giá {fee}.", ct);
         else await MailAsync(o, toBuyer: true, "{seller} trả giá {player}", "CLB {seller} trả giá {counter} cho {player} (bạn đề nghị {fee}). Vào mục Đề nghị chuyển nhượng để đồng ý hoặc rút.", ct);
+        return new(o.Id, Status: o.Status);
+    }
+
+    /// <summary>CLB mua là BOT (chợ BOT career, <see cref="BotMarketRules"/>): đồng ý ngay nếu giá trả ≤ mức trần riêng của đề nghị và đủ tiền, không thì rút.</summary>
+    private async Task<OfferResult> BotAnswerCounterAsync(TransferOffer o, CancellationToken ct)
+    {
+        var seasonId = await db.TransferWindows.Where(w => w.Id == o.TransferWindowId).Select(w => w.SeasonId).SingleAsync(ct);
+        var price = (await db.PlayerPrices.FindAsync([o.PlayerId, seasonId], ct))?.Price ?? 0;
+        var counter = o.CounterFee ?? long.MaxValue;
+        if (counter <= BotMarketRules.WalkAway(price, o.Id) && await SquadStore.BalanceAsync(db, o.BuyerClubId, ct) >= counter)
+            return await CompleteAndMailAsync(o, ct);
+        o.Status = OfferStatus.Withdrawn;
+        o.RespondedAt = clock.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+        await MailAsync(o, toBuyer: false, "{buyer} rút đề nghị mua {player}", "CLB {buyer} không chấp nhận giá {counter} cho {player} và đã rút đề nghị.", ct);
         return new(o.Id, Status: o.Status);
     }
 

@@ -88,6 +88,7 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
         var start = await new CompetitionService(db, store, clock).StartScheduledSeasonAsync(season.Id, actor, ct);
         if (start.Error is { } err) throw new AdminRuleException($"Bắt đầu mùa lỗi: {err}");
         await new FreeMarketService(db, clock).OpenAsync(season.Id, actor, ct);
+        await new FinanceService(db, clock).RefreshSponsorsAsync(season.Id, ct);   // tài trợ theo uy tín mùa mới
         if (clubId is { } human) await new ClubAdminService(db, clock, store).SetHumanClubAsync(human, actor, managerId, ct);
         var budget = clubId is { } b ? await db.Ledger.Where(e => e.ClubId == b).SumAsync(e => e.Amount, ct) : 0;
         return new CareerStartResult(season.Name, clubName ?? "(BOT)", schedule.Slots.Count, schedule.Slots.Sum(s => s.Matches.Count),
@@ -98,10 +99,12 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
     /// "Tiếp tục" (PO 19/11: trận không có PO thì mô phỏng): mô phỏng lần lượt từng khung đang mở (chốt khung → khung sau tự mở) tới khi gặp
     /// trận của người chơi chưa đá (dừng, trả trận đó), hết mùa, hoặc khung không tiến được (trận đang đá dở / lỗi ghi kết quả).
     /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi (người chơi chọn "mô phỏng trận của tôi" / chạy thử cả mùa).
+    /// Đầu mỗi khung chạy chợ BOT (<see cref="BotMarketService"/>, chỉ khi chợ mở).
     /// </summary>
     public async Task<CareerContinueResult> ContinueAsync(int maxSlots = 500, Action<string>? progress = null, bool includeMine = false, CancellationToken ct = default)
     {
         var sim = new MatchSimService(db, store, clock);
+        var market = new BotMarketService(db, clock);
         var simulated = 0;
         var slots = new List<int>();
         var errors = new List<string>();
@@ -111,6 +114,8 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
             if (season is null) return new(simulated, slots, null, true, errors);
             var md = await OpenMatchdayAsync(season.Id, ct);
             if (md is null) return new(simulated, slots, null, true, errors);
+            var mk = await market.RunAsync(md.Id, ct);
+            if (mk.Deals + mk.Offers > 0) progress?.Invoke($"Khung {md.Number}: chợ BOT {mk.Deals} vụ{(mk.Offers > 0 ? $", {mk.Offers} đề nghị mua cầu thủ của bạn" : "")}");
             var r = await sim.SimulateMatchdayAsync(md.Id, ct: ct);
             simulated += r.Simulated;
             errors.AddRange(r.Errors);

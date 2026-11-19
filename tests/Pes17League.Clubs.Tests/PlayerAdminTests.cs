@@ -127,7 +127,14 @@ public class PlayerAdminTests
         var away = await ClubAsync(db, 1);
         var p = (await SquadAsync(db, home.Id))[5].P;
         var fields = AttributeEvolution.RoleFields(p.Position).ToList();
-        var start = (await db.PlayerAttributes.AsNoTracking().SingleAsync(a => a.SeasonId == season && a.PlayerId == p.Id)).Values;
+        var snap = await db.PlayerAttributes.SingleAsync(a => a.SeasonId == season && a.PlayerId == p.Id);
+        snap.Values = new Dictionary<string, int>(snap.Values) { [PlayerField.Age.Name] = 18 };   // trẻ → còn xa tiềm năng (tăng theo trận chặn ở tiềm năng)
+        // Cầu thủ đã chạm tiềm năng (33 tuổi: tiềm năng = chỉ số đầu mùa): đá hay cũng không tăng.
+        var vet = (await SquadAsync(db, home.Id))[6].P;
+        var vetSnap = await db.PlayerAttributes.SingleAsync(a => a.SeasonId == season && a.PlayerId == vet.Id);
+        vetSnap.Values = new Dictionary<string, int>(vetSnap.Values) { [PlayerField.Age.Name] = 33 };
+        await db.SaveChangesAsync();
+        var start = snap.Values;
         var target = start[fields[0]] > 5 ? start[fields[0]] - 4 : start[fields[0]] + 4;
         await new PlayerAdminService(db, t.Clock).SetAttributesAsync(p.Id, new Dictionary<string, int> { [fields[0]] = target }, "test");
 
@@ -137,7 +144,9 @@ public class PlayerAdminTests
         await db.SaveChangesAsync();
         var eco = new EconomyService(db, t.Clock);
         for (var i = 0; i < 4; i++)
-            await eco.EvolveAttributesAsync(season, [new MatchRating { FixtureId = fixture.Id, ClubId = home.Id, PlayerId = p.Id, Slot = 5, Rating = 8.0m }]);
+            await eco.EvolveAttributesAsync(season, [new MatchRating { FixtureId = fixture.Id, ClubId = home.Id, PlayerId = p.Id, Slot = 5, Rating = 8.0m },
+                new MatchRating { FixtureId = fixture.Id, ClubId = home.Id, PlayerId = vet.Id, Slot = 6, Rating = 8.0m }]);
+        Assert.False(await db.AttributeChanges.AnyAsync(c => c.PlayerId == vet.Id));
 
         var current = (await eco.CurrentAttributesAsync(season, [p.Id]))[p.Id];
         Assert.Equal(target + 3, current[fields[0]]);   // trần +3 tính từ giá trị admin sửa, không phải snapshot

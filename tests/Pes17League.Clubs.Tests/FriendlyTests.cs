@@ -17,7 +17,7 @@ public class FriendlyTests
         Assert.Equal((0, 0), FriendlyRules.EloDelta(1000, 1000, 1, 1));
         Assert.Equal(100, FriendlyRules.Window(TimeSpan.FromSeconds(29)));
         Assert.Equal(200, FriendlyRules.Window(TimeSpan.FromSeconds(61)));
-        Assert.Equal(37_500, FriendlyRules.DefaultWinPrize);
+        Assert.Equal(FinanceRules.WinPrize / 4, FriendlyRules.DefaultWinPrize);
     }
 
     private static Manager NewManager(string u, int elo = 1000) => new() { Username = u, DisplayName = u.ToUpper(), PasswordHash = "x", Elo = elo };
@@ -122,7 +122,7 @@ public class FriendlyTests
         Assert.Equal(984, (await db2.Managers.SingleAsync(x => x.Id == b.Id)).Elo);
         var pay = await db2.Ledger.Where(l => l.Reason == LedgerReason.FriendlyPrize).ToListAsync();
         Assert.Equal(ca.Id, Assert.Single(pay).ClubId);
-        Assert.Equal(37_500, pay[0].Amount);
+        Assert.Equal(FriendlyRules.DefaultWinPrize, pay[0].Amount);
         Assert.Single(await db2.FriendlyGoals.Where(g => g.MatchId == m.Id).ToListAsync());
 
         // đá lại: người rời sau hiệp 1 → thua 0-3

@@ -3,6 +3,7 @@ namespace Pes17League.Clubs.Domain;
 /// <summary>
 /// Sang mùa career (PO 19/11, đề xuất mặc định — chỉnh được): mỗi cầu thủ +1 tuổi, các chỉ số hợp vai trò (<see cref="AttributeEvolution.RoleFields"/>)
 /// đổi theo tuổi mới: ≤ 20 +2…+4, 21–23 +1…+3, 24–26 0…+1, 27–29 giữ, 30–31 0…−1, 32–33 −1…−2, ≥ 34 −2…−3 (cùng mức cho mọi chỉ số của 1 người).
+/// Phần tăng chặn ở tiềm năng (cố định từ mùa đầu, xem TrainingService.PotentialsAsync).
 /// Giải nghệ theo tuổi mới: 34 → 10%, 35 → 25%, 36 → 45%, 37 → 70%, ≥ 38 chắc chắn.
 /// </summary>
 public static class AgingRules
@@ -25,13 +26,15 @@ public static class AgingRules
 
     public static bool Retires(int age, int roll) => roll < RetirePermille(age);
 
-    /// <summary>Chỉ số mùa mới: AGE +1, chỉ số vai trò + <see cref="Development"/>.</summary>
-    public static Dictionary<string, int> NextSeason(IReadOnlyDictionary<string, int> values, IEnumerable<string> roleFields, int roll)
+    /// <summary>Chỉ số mùa mới: AGE +1, chỉ số vai trò + <see cref="Development"/>; phần tăng không quá <paramref name="maxGrowth"/>
+    /// (= tiềm năng − chỉ số tổng hiện tại, PO 19/11 mục 5: đã chạm tiềm năng thì thôi lớn).</summary>
+    public static Dictionary<string, int> NextSeason(IReadOnlyDictionary<string, int> values, IEnumerable<string> roleFields, int roll, int maxGrowth = int.MaxValue)
     {
         var next = values.ToDictionary(kv => kv.Key, kv => kv.Value);
         if (!next.TryGetValue("AGE", out var age)) return next;
         next["AGE"] = ++age;
         var d = Development(age, roll);
+        if (d > 0) d = Math.Min(d, Math.Max(0, maxGrowth));
         foreach (var f in roleFields)
             if (next.TryGetValue(f, out var v)) next[f] = Math.Clamp(v + d, MinAttribute, MaxAttribute);
         return next;

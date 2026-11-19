@@ -27,15 +27,18 @@ public sealed class FinanceService(ClubsDbContext db, TimeProvider clock)
         {
             if (amount != 0) db.Ledger.Add(new ClubLedgerEntry { ClubId = club, Amount = amount, Reason = reason, RefType = nameof(RoundSettlement), RefId = settlement.Id, At = now });
         }
+        var fixtures = await db.Fixtures.Where(x => x.MatchdayId == matchdayId && x.HomeGoals != null && x.AwayGoals != null).ToListAsync(ct);
+        // PO 19/11 mục 5: TV, tài trợ, bảo trì sân, lương ban huấn luyện tính theo TRẬN — chỉ CLB có trận ở khung này
+        // (lịch PES17 69 khung, mỗi CLB đá ~40–55; trước đây cộng cả khung nghỉ nên tiền phình). Lương cầu thủ vẫn theo khung (EconomyService).
+        var playing = fixtures.SelectMany(x => new[] { x.HomeClubId, x.AwayClubId }).ToHashSet();
         var staff = await db.ClubStaff.Where(s => s.Level > 1).ToListAsync(ct);
-        foreach (var s in staff.Where(s => finances.ContainsKey(s.ClubId))) Add(s.ClubId, -StaffRules.Wage(s.Level), LedgerReason.Staff);   // FM đợt 7
-        foreach (var f in finances.Values)
+        foreach (var s in staff.Where(s => finances.ContainsKey(s.ClubId) && playing.Contains(s.ClubId))) Add(s.ClubId, -StaffRules.Wage(s.Level), LedgerReason.Staff);   // FM đợt 7
+        foreach (var f in finances.Values.Where(f => playing.Contains(f.ClubId)))
         {
             Add(f.ClubId, FinanceRules.TvPerRound, LedgerReason.TvRights);
             Add(f.ClubId, f.SponsorPerRound, LedgerReason.Sponsor);
             Add(f.ClubId, -f.Capacity * FinanceRules.UpkeepPerSeat, LedgerReason.Facility);
         }
-        var fixtures = await db.Fixtures.Where(x => x.MatchdayId == matchdayId && x.HomeGoals != null && x.AwayGoals != null).ToListAsync(ct);
         foreach (var x in fixtures)
         {
             var diff = x.HomeGoals!.Value - x.AwayGoals!.Value;
@@ -75,6 +78,29 @@ public sealed class FinanceService(ClubsDbContext db, TimeProvider clock)
         }
         var active = clubs.Select(c => c.Id).ToHashSet();
         return existing.Where(e => active.Contains(e.Key)).ToDictionary();
+    }
+
+    /// <summary>Đầu mùa (career): tính lại tài trợ mọi CLB theo uy tín mới (hạng giá trị squad) và mức <see cref="FinanceRules.SponsorBase"/> hiện hành.</summary>
+    public async Task<int> RefreshSponsorsAsync(Guid seasonId, CancellationToken ct = default)
+    {
+        var finances = await EnsureAsync(seasonId, ct);
+        var ranked = await db.Clubs.Where(c => c.Status == ClubStatus.Active).Select(c => new
+        {
+            c.Id,
+            Value = (from m in db.SquadMemberships
+                     join p in db.PlayerPrices on new { m.PlayerId, SeasonId = seasonId } equals new { p.PlayerId, p.SeasonId }
+                     where m.ClubId == c.Id && m.LeftAt == null
+                     select (long?)p.Price).Sum() ?? 0,
+        }).OrderByDescending(c => c.Value).ThenBy(c => c.Id).Select(c => c.Id).ToListAsync(ct);
+        var now = clock.GetUtcNow();
+        for (var i = 0; i < ranked.Count; i++)
+            if (finances.TryGetValue(ranked[i], out var f))
+            {
+                f.SponsorPerRound = FinanceRules.Sponsor(FinanceRules.Reputation(i, ranked.Count));
+                f.UpdatedAt = now;
+            }
+        await db.SaveChangesAsync(ct);
+        return ranked.Count;
     }
 
     public async Task<string?> SetTicketPriceAsync(Guid seasonId, Guid clubId, long price, CancellationToken ct = default)

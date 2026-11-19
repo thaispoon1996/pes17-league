@@ -7,23 +7,25 @@ public class ClubFinance
     public int Capacity { get; set; }
     public int Fans { get; set; }
     public long TicketPrice { get; set; } = FinanceRules.DefaultTicketPrice;
-    /// <summary>Tài trợ mỗi vòng (chốt theo uy tín khi tạo, đổi đầu mùa).</summary>
+    /// <summary>Tài trợ mỗi trận (theo uy tín = hạng giá trị squad; career tính lại đầu mỗi mùa).</summary>
     public long SponsorPerRound { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// Thu chi mỗi vòng (FM đợt 6, PO duyệt mặc định 12/11 — số liệu chỉnh sau). Quy mô theo quỹ lương ~0,7 tr/vòng:
-/// vé (trận sân nhà) + tài trợ + bản quyền TV + thưởng kết quả − bảo trì sân. Fan tăng khi thắng, giảm khi thua.
+/// Thu chi mỗi trận (FM đợt 6, PO duyệt mặc định 12/11; cân bằng lại PO 19/11 mục 5 — chỉnh được): vé (trận sân nhà) + tài trợ + bản quyền TV
+/// + thưởng kết quả − bảo trì sân, chỉ ở khung CLB có trận. Đo trên 1 mùa career mô phỏng (355 CLB, lương 2‰): mức cũ (TV 200k, tài trợ 250k × uy tín,
+/// thắng 150k, cộng cả khung nghỉ) cho CLB trung vị lãi +71% giá trị squad/mùa; mức mới ≈ +10% (top 20 ≈ +2%, ~6% CLB lỗ) — tiền chuyển nhượng
+/// chủ yếu đến từ ngân sách đầu mùa. Fan tăng khi thắng, giảm khi thua.
 /// </summary>
 public static class FinanceRules
 {
     public const long DefaultTicketPrice = 12, MinTicketPrice = 5, MaxTicketPrice = 40;
     public const int MinCapacity = 15_000, MaxCapacity = 80_000, ExpandSeats = 5_000;
     public const long ExpandCost = 5_000_000;
-    public const long TvPerRound = 200_000, WinPrize = 150_000, DrawPrize = 50_000;
-    public const long SponsorBase = 250_000;
-    /// <summary>Bảo trì sân mỗi vòng = sức chứa × 2.</summary>
+    public const long TvPerRound = 50_000, WinPrize = 50_000, DrawPrize = 15_000;
+    public const long SponsorBase = 60_000;
+    /// <summary>Bảo trì sân mỗi trận = sức chứa × 2.</summary>
     public const long UpkeepPerSeat = 2;
 
     /// <summary>rank 0 = squad giá trị nhất trong n CLB → hệ số uy tín 1,4; cuối → 0,6.</summary>

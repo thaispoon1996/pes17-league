@@ -38,7 +38,7 @@ public sealed class TrainingService(ClubsDbContext db, TimeProvider clock, Price
         var plans = await db.ClubTrainings.ToDictionaryAsync(t => t.ClubId, ct);
         var start = await db.PlayerAttributes.Where(a => a.SeasonId == seasonId && ids.Contains(a.PlayerId))
             .ToDictionaryAsync(a => a.PlayerId, a => new Dictionary<string, int>(a.Values), ct);
-        var startOverall = squad.Where(s => start.ContainsKey(s.Id)).ToDictionary(s => s.Id, s => _model.Overall(s.Position, start[s.Id]));
+        var potentials = await PotentialsAsync(db, _model, seasonId, squad.Select(s => (s.Id, s.Position)).ToList(), ct);
         // Trần ±3/mùa: mốc = snapshot + phần admin sửa (như tiến hoá theo trận).
         var admin = await db.AttributeChanges.Where(c => c.SeasonId == seasonId && ids.Contains(c.PlayerId) && c.Source == AttributeChangeSource.Admin)
             .GroupBy(c => new { c.PlayerId, c.Field }).Select(g => new { g.Key.PlayerId, g.Key.Field, Delta = g.Sum(c => c.Delta) }).ToListAsync(ct);
@@ -54,7 +54,7 @@ public sealed class TrainingService(ClubsDbContext db, TimeProvider clock, Price
             if (!start.TryGetValue(s.Id, out var s0) || !current.TryGetValue(s.Id, out var now)) continue;
             var plan = plans.GetValueOrDefault(s.ClubId) ?? new ClubTraining { ClubId = s.ClubId };
             var age = now.GetValueOrDefault("AGE", 25);
-            var potential = TrainingRules.Potential(s.Id, startOverall[s.Id], age);
+            var potential = potentials.GetValueOrDefault(s.Id);
             var focus = plan.Focus == TrainingFocus.Goalkeeping && s.Position.Group() != PositionGroup.Goalkeeper ? TrainingFocus.Balanced : plan.Focus;
             var fields = TrainingRules.Fields(focus, AttributeEvolution.RoleFields(s.Position, priceOptions));
 
@@ -88,13 +88,35 @@ public sealed class TrainingService(ClubsDbContext db, TimeProvider clock, Price
         var ids = squad.Select(s => s.Id).ToList();
         var start = await db.PlayerAttributes.AsNoTracking().Where(a => a.SeasonId == seasonId && ids.Contains(a.PlayerId)).ToDictionaryAsync(a => a.PlayerId, a => a.Values, ct);
         var current = await new EconomyService(db, clock, priceOptions).CurrentAttributesAsync(seasonId, ids, ct);
+        var potentials = await PotentialsAsync(db, _model, seasonId, squad.Select(s => (s.Id, s.Position)).ToList(), ct);
         var deltas = await db.AttributeChanges.Where(c => c.SeasonId == seasonId && ids.Contains(c.PlayerId) && c.Source != AttributeChangeSource.Admin)
             .GroupBy(c => c.PlayerId).Select(g => new { g.Key, D = g.Sum(c => c.Delta) }).ToDictionaryAsync(x => x.Key, x => x.D, ct);
         return squad.Where(s => start.ContainsKey(s.Id) && current.ContainsKey(s.Id)).Select(s =>
         {
             var age = current[s.Id].GetValueOrDefault("AGE", 25);
-            var pot = TrainingRules.Potential(s.Id, _model.Overall(s.Position, start[s.Id]), age);
+            var pot = potentials.GetValueOrDefault(s.Id, _model.Overall(s.Position, start[s.Id]));
             return new TrainingPlayerRow(s.Id, s.Name, s.Position, age, _model.Overall(s.Position, current[s.Id]), TrainingRules.Stars(pot), deltas.GetValueOrDefault(s.Id));
         }).OrderBy(r => r.Position).ThenByDescending(r => r.Overall).ToList();
+    }
+
+    /// <summary>
+    /// Tiềm năng cố định cả sự nghiệp (PO 19/11 mục 5): tính từ snapshot mùa ĐẦU TIÊN cùng patch (OVR + tuổi lúc đó), không tính lại mỗi mùa —
+    /// tránh "nâng trần" mỗi mùa làm chỉ số tăng mãi. Cầu thủ chưa có ở mùa đầu thì dùng snapshot mùa này.
+    /// Dùng chung cho tập luyện, tiến hoá theo trận (chỉ tăng khi còn dưới tiềm năng) và phát triển theo tuổi khi sang mùa.
+    /// </summary>
+    internal static async Task<Dictionary<Guid, int>> PotentialsAsync(ClubsDbContext db, PriceModel model, Guid seasonId,
+        IReadOnlyCollection<(Guid Id, Position Position)> players, CancellationToken ct)
+    {
+        var season = await db.Seasons.AsNoTracking().SingleOrDefaultAsync(s => s.Id == seasonId, ct);
+        var first = season is null ? seasonId : await db.Seasons.AsNoTracking()
+            .Where(s => s.PatchVersionId == season.PatchVersionId && s.Number <= season.Number).OrderBy(s => s.Number).Select(s => s.Id).FirstAsync(ct);
+        var ids = players.Select(p => p.Id).ToList();
+        var snaps = await db.PlayerAttributes.AsNoTracking().Where(a => (a.SeasonId == first || a.SeasonId == seasonId) && ids.Contains(a.PlayerId))
+            .Select(a => new { a.PlayerId, a.SeasonId, a.Values }).ToListAsync(ct);
+        var byPlayer = snaps.GroupBy(a => a.PlayerId).ToDictionary(g => g.Key, g => (g.FirstOrDefault(x => x.SeasonId == first) ?? g.First()).Values);
+        var result = new Dictionary<Guid, int>();
+        foreach (var (id, pos) in players)
+            if (byPlayer.TryGetValue(id, out var v)) result[id] = TrainingRules.Potential(id, model.Overall(pos, v), v.GetValueOrDefault("AGE", 25));
+        return result;
     }
 }

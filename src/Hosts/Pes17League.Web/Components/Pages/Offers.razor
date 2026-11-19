@@ -235,7 +235,18 @@
     Task Reply(OfferRow o, OfferReply reply) => Run(async svc =>
     {
         var r = await svc.RespondAsync(o.Id, season!.HumanClubId, reply, counter.TryGetValue(o.Id, out var c) ? c : null);
-        message = r.Error ?? reply switch { OfferReply.Accept => $"Đã bán {o.Player}.", OfferReply.Reject => "Đã từ chối.", _ => "Đã trả giá." };
+        message = r.Error ?? reply switch
+        {
+            OfferReply.Accept => $"Đã bán {o.Player}.",
+            OfferReply.Reject => "Đã từ chối.",
+            // CLB BOT trả lời ngay khi bị trả giá (chợ BOT career).
+            _ => r.Status switch
+            {
+                OfferStatus.Completed => $"{o.Buyer} đồng ý giá của bạn — đã bán {o.Player}.",
+                OfferStatus.Withdrawn => $"{o.Buyer} không chấp nhận giá và đã rút đề nghị.",
+                _ => "Đã trả giá.",
+            },
+        };
     });
 
     Task Buyer(OfferRow o, bool accept) => Run(async svc =>
