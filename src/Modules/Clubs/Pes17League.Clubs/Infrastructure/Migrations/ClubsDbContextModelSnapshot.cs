@@ -130,6 +130,23 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.ToTable("BoardConfidences", "clubs");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CareerSeen", b =>
+                {
+                    b.Property<Guid>("ParticipantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Key")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ParticipantId", "Key");
+
+                    b.ToTable("CareerSeen", "clubs");
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.Club", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2050,12 +2067,12 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.Property<long>("FriendlyDrawPrize")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
-                        .HasDefaultValue(12500L);
+                        .HasDefaultValue(3750L);
 
                     b.Property<long>("FriendlyWinPrize")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
-                        .HasDefaultValue(37500L);
+                        .HasDefaultValue(12500L);
 
                     b.Property<long>("InitialBudgetFund")
                         .HasColumnType("bigint");

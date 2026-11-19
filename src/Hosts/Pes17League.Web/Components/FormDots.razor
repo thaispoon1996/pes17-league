@@ -1,0 +1,3 @@
+@* Phong độ 5 trận gần nhất: W/D/L → chấm màu (UI career đợt 1). *@
+<span class="cx-formdots" aria-label="Phong độ @Form">@foreach (var c in Form) { <i class="@c">@(c switch { 'W' => "T", 'D' => "H", _ => "B" })</i> }</span>
+@code { [Parameter] public string Form { get; set; } = ""; }

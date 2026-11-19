@@ -1,7 +1,8 @@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        @* PO 16/11: trang quản trị (Admin*.razor, Ẩn/hiện) dùng khu riêng AdminLayout *@
-        <RouteView RouteData="routeData" DefaultLayout="@(routeData.PageType.Name.StartsWith("Admin") || routeData.PageType == typeof(Pages.Visibility) ? typeof(AdminLayout) : typeof(MainLayout))" />
+        @* PO 16/11: trang quản trị (Admin*.razor, Ẩn/hiện) dùng khu riêng AdminLayout.
+           PO 19/11 (UI career đợt 1): trang của chế độ sự nghiệp dùng CareerLayout (người chơi chưa cầm CLB → tự quay về MainLayout). *@
+        <RouteView RouteData="routeData" DefaultLayout="@LayoutFor(routeData.PageType)" />
     </Found>
     <NotFound>
         <LayoutView Layout="typeof(MainLayout)">
@@ -9,3 +10,17 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    static readonly HashSet<Type> CareerPages =
+    [
+        typeof(Pages.Career), typeof(Pages.Club), typeof(Pages.Market), typeof(Pages.Offers), typeof(Pages.Finance), typeof(Pages.Board),
+        typeof(Pages.Training), typeof(Pages.Academy), typeof(Pages.Standings), typeof(Pages.Schedule), typeof(Pages.Stats), typeof(Pages.Mail),
+        typeof(Pages.Inbox), typeof(Pages.Match), typeof(Pages.Player), typeof(Pages.Prepare),
+    ];
+
+    static Type LayoutFor(Type page) =>
+        page.Name.StartsWith("Admin") || page == typeof(Pages.Visibility) ? typeof(AdminLayout)
+        : CareerPages.Contains(page) ? typeof(CareerLayout)
+        : typeof(MainLayout);
+}

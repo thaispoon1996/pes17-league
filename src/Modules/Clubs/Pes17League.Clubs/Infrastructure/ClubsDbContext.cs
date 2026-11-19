@@ -11,6 +11,7 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
     public const string Schema = "clubs";
 
     public DbSet<Club> Clubs => Set<Club>();
+    public DbSet<CareerSeen> CareerSeen => Set<CareerSeen>();
     public DbSet<TeamAssignment> TeamAssignments => Set<TeamAssignment>();
     public DbSet<FootballPlayer> Players => Set<FootballPlayer>();
     public DbSet<PlayerAttributes> PlayerAttributes => Set<PlayerAttributes>();
@@ -159,6 +160,7 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
         b.Entity<YouthIntake>(e => e.HasIndex(x => new { x.SeasonId, x.ClubId }));
         b.Entity<ScoutReport>(e => e.HasKey(x => new { x.ClubId, x.PlayerId }));
         b.Entity<BoardConfidence>(e => e.HasKey(x => new { x.ClubId, x.SeasonId }));
+        b.Entity<CareerSeen>(e => { e.HasKey(x => new { x.ParticipantId, x.Key }); e.Property(x => x.Key).HasMaxLength(80); });
         b.Entity<ClubStaff>(e =>
         {
             e.HasKey(x => new { x.ClubId, x.Role });

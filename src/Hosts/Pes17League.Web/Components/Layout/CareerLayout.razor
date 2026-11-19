@@ -1,0 +1,279 @@
+@inherits LayoutComponentBase
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject CurrentUser Me
+@inject NavigationManager Nav
+@inject MailHub Mail
+@inject MatchJobService Jobs
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@implements IDisposable
+
+@* UI Career đợt 1 (Stitch "Nocturnal Apex", PO duyệt 19/11): người chơi đang cầm CLB career → khung game (đầu trang CLB, menu nổi ≤5 mục mở dần,
+   thẻ "Vừa mở khoá", màn kết quả trận). Chưa có CLB: chỉ trang /su-nghiep dùng khung này (hướng dẫn bắt đầu); khách/admin/trang khác → MainLayout như cũ. *@
+@if (!ready)
+{
+    <div class="cx cx-boot"><div class="cx-sky" aria-hidden="true"></div></div>
+}
+else if (P is null && !(onboarding && OnCareerHome))
+{
+    <MainLayout Body="@Body" />
+}
+else
+{
+    <div class="cx @(P is null ? "cx-solo" : "")">
+        <div class="cx-sky" aria-hidden="true"><i class="beam b1"></i><i class="beam b2"></i><i class="beam b3"></i><canvas class="cx-dust"></canvas></div>
+        @if (P is { } p)
+        {
+            <header class="cx-top">
+                <a class="cx-club" href="su-nghiep">
+                    <Crest Name="@p.ClubName" Logo="@p.ClubLogo" />
+                    <span><b>@p.ClubName</b><small>@p.SeasonName · @(p.Finished ? "hết mùa" : $"Khung {Math.Max(p.Slot, 1)}/{p.Slots}")</small></span>
+                </a>
+                <span class="cx-coin" title="Quỹ CLB"><i class="ms fill" aria-hidden="true">paid</i><b data-count="@p.Budget" data-fmt="money">@Fmt.Money(p.Budget)</b></span>
+                <a class="cx-ibtn" href="thu" aria-label="Hòm thư"><i class="ms" aria-hidden="true">notifications</i>@if (unread > 0) { <em>@unread</em> }</a>
+                <details class="cx-menu">
+                    <summary class="cx-ibtn" aria-label="Menu"><i class="ms" aria-hidden="true">menu</i></summary>
+                    <div>
+                        @if (profile is not null) { <a href="@profile"><i class="ms" aria-hidden="true">person</i>@who</a> }
+                        <a href="" data-enhance-nav="false"><i class="ms" aria-hidden="true">public</i>Trang giải đấu đầy đủ</a>
+                        <a href="hop-thu"><i class="ms" aria-hidden="true">inbox</i>Hộp thư HLV</a>
+                        <a href="dieu-khien"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</a>
+                        @if (admin) { <a href="admin"><i class="ms" aria-hidden="true">settings</i>Quản trị</a> }
+                        <form method="post" action="/logout" data-enhance="false"><button><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
+                    </div>
+                </details>
+            </header>
+            @if (CurrentTab is { Subs.Count: > 1 } tab)
+            {
+                <nav class="cx-sub" aria-label="@tab.Label">
+                    @foreach (var s in tab.Subs)
+                    {
+                        <NavLink href="@s.Href" Match="NavLinkMatch.All">@s.Label @if (p.IsNew(s.Feature)) { <i class="cx-dot" aria-label="mới"></i> }</NavLink>
+                    }
+                </nav>
+            }
+        }
+        <CascadingValue Value="this" IsFixed="true">
+            <main class="cx-page">@Body</main>
+        </CascadingValue>
+        @if (P is { } q)
+        {
+            <nav class="cx-dock" aria-label="Điều hướng sự nghiệp">
+                @foreach (var t in Tabs.Where(t => q.Has(t.Feature)))
+                {
+                    var on = CurrentTab?.Id == t.Id;
+                    <a class="@(on ? "on" : "") @(fresh.Contains(t.Id) ? "fly" : "")" href="@t.Href" aria-current="@(on ? "page" : null)">
+                        @if (t.Subs.Any(s => q.IsNew(s.Feature)) || q.IsNew(t.Feature)) { <span class="cx-new">MỚI</span> }
+                        <i class="ms @(on ? "fill" : "")" aria-hidden="true">@t.Icon</i>@t.Label
+                    </a>
+                }
+            </nav>
+            @if (result is { } r)
+            {
+                <div class="cx-ov cx-result-ov @(r.Verdict switch { 'W' => "win", 'L' => "loss", _ => "draw" })" role="dialog" aria-modal="true" aria-label="Kết quả trận">
+                    <canvas class="cx-confetti" aria-hidden="true"></canvas>
+                    <div class="cx-result">
+                        <div class="cx-eyebrow">@r.Competition@(r.Stage == FixtureStage.League ? "" : " · " + AdminText.SlotKind(r.Stage, r.Leg)) · Hết giờ</div>
+                        <div class="cx-score">
+                            <span class="t"><Crest Name="@r.Home" Logo="@r.HomeLogo" Large="true" /><b>@r.Home</b></span>
+                            <span class="n"><b data-count="@r.HomeGoals">@r.HomeGoals</b><i>–</i><b data-count="@r.AwayGoals">@r.AwayGoals</b></span>
+                            <span class="t"><Crest Name="@r.Away" Logo="@r.AwayLogo" Large="true" /><b>@r.Away</b></span>
+                        </div>
+                        @if (r.HomePens is { } hp && r.AwayPens is { } ap) { <p class="cx-pens">Luân lưu @hp–@ap</p> }
+                        <span class="cx-verdict">@(r.Verdict switch { 'W' => "Thắng", 'L' => "Thua", _ => "Hoà" })</span>
+                        @if (r.Scorers.Count > 0)
+                        {
+                            <div class="cx-scorers">
+                                <p>@string.Join(", ", r.Scorers.Where(s => s.Home).Select(s => $"{s.Name} {s.Minute}'"))</p>
+                                <i class="ms" aria-hidden="true">sports_soccer</i>
+                                <p>@string.Join(", ", r.Scorers.Where(s => !s.Home).Select(s => $"{s.Name} {s.Minute}'"))</p>
+                            </div>
+                        }
+                        <div class="cx-facts">
+                            <div>@if (r.BestId is { } bid) { <Face Id="bid" Name="@r.BestName" Size="md" /> }<b>@(r.BestRating?.ToString("0.0") ?? "–")</b><span>@(r.BestName ?? "Hay nhất")</span></div>
+                            <div><b class="cx-up">@(r.Prize is { } pz ? "+" + Fmt.Money(pz) : "–")</b><span>Tiền thưởng</span></div>
+                            @{ var dr = r.RankBefore is { } rb && r.RankAfter is { } ra ? rb - ra : 0; }
+                            <div><b class="@(dr > 0 ? "cx-up" : dr < 0 ? "cx-down" : "")">@(r.RankAfter is { } rk ? (dr > 0 ? "▲ " : dr < 0 ? "▼ " : "") + rk : "–")</b><span>Hạng giải</span></div>
+                        </div>
+                        <div class="cx-acts">
+                            <a class="cx-btn ghost" href="tran/@r.FixtureId" @onclick="CloseResult">Xem trận</a>
+                            <button class="cx-btn gold" @onclick="CloseResult">Tiếp tục</button>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (intro is { } f && Intros.TryGetValue(f, out var info))
+            {
+                <div class="cx-ov cx-unlock-ov" role="dialog" aria-modal="true" aria-label="Vừa mở khoá">
+                    <div class="cx-sheet">
+                        <div class="cx-lock" aria-hidden="true"><i class="ms fill">lock</i><i class="ms fill open">@info.Icon</i>@for (var k = 0; k < 8; k++) { <s style="--k:@k"></s> }</div>
+                        <div class="cx-eyebrow">Vừa mở khoá</div>
+                        <h2>@info.Title</h2>
+                        <p>@info.Text</p>
+                        <div class="cx-acts">
+                            <button class="cx-btn ghost" @onclick="() => CloseIntro(false)">Để sau</button>
+                            <button class="cx-btn gold" @onclick="() => CloseIntro(true)">Xem ngay</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    public sealed record Sub(string Feature, string Label, string Href);
+    public sealed record Tab(string Id, string Feature, string Label, string Icon, string Href, IReadOnlyList<Sub> Subs);
+    public sealed record Intro(string Title, string Text, string Icon, string Href);
+
+    static readonly Tab[] AllTabs =
+    [
+        new("home", CareerUnlocks.Home, "Trang chủ", "stadium", "su-nghiep", [new(CareerUnlocks.Home, "Trang chủ", "su-nghiep")]),
+        new("squad", CareerUnlocks.Squad, "Đội hình", "groups", "clb", [new(CareerUnlocks.Squad, "Đội hình", "clb")]),
+        new("transfer", CareerUnlocks.Transfer, "Chuyển nhượng", "swap_horiz", "chuyen-nhuong",
+            [new(CareerUnlocks.Transfer, "Thị trường", "chuyen-nhuong"), new(CareerUnlocks.Offers, "Đề nghị", "de-nghi")]),
+        new("club", CareerUnlocks.Club, "CLB", "shield", "tai-chinh",
+            [new(CareerUnlocks.Finance, "Tài chính", "tai-chinh"), new(CareerUnlocks.Board, "Ban lãnh đạo", "ban-lanh-dao"),
+             new(CareerUnlocks.Training, "Tập luyện", "tap-luyen"), new(CareerUnlocks.Academy, "Học viện", "hoc-vien")]),
+        new("league", CareerUnlocks.League, "Giải đấu", "emoji_events", "bxh",
+            [new(CareerUnlocks.League, "BXH", "bxh"), new(CareerUnlocks.League, "Lịch", "lich"), new(CareerUnlocks.Stats, "Thống kê", "thong-ke")]),
+    ];
+
+    public static readonly IReadOnlyDictionary<string, Intro> Intros = new Dictionary<string, Intro>
+    {
+        [CareerUnlocks.Transfer] = new("Chuyển nhượng", "Chợ đang mở. Mua người hợp với tuyến yếu nhất, bán bớt người dư để có tiền. CLB BOT cũng sẽ hỏi mua cầu thủ của bạn.", "swap_horiz", "chuyen-nhuong"),
+        [CareerUnlocks.Stats] = new("Thống kê", "Trận đầu tiên đã có kết quả. Xem vua phá lưới, điểm cầu thủ và phong độ cả giải.", "query_stats", "thong-ke"),
+        [CareerUnlocks.Finance] = new("Tài chính", "Mỗi khung có trận, CLB nhận tiền bản quyền, tài trợ, tiền vé và tiền thưởng, rồi trả lương. Giữ quỹ dương để ban lãnh đạo hài lòng.", "account_balance", "tai-chinh"),
+        [CareerUnlocks.Board] = new("Ban lãnh đạo", "Ban lãnh đạo đặt mục tiêu theo sức mạnh đội. Thứ hạng tốt thì niềm tin tăng; tụt quá sâu thì ghế HLV lung lay.", "domain", "ban-lanh-dao"),
+        [CareerUnlocks.Offers] = new("Đề nghị chuyển nhượng", "Có CLB vừa hỏi mua cầu thủ của bạn. Chấp nhận, trả giá hoặc từ chối trước khi chợ đóng.", "handshake", "de-nghi"),
+        [CareerUnlocks.Training] = new("Tập luyện", "Đặt giáo án và chọn người để phát triển. Chỉ số tăng dần cho tới khi chạm tiềm năng.", "fitness_center", "tap-luyen"),
+        [CareerUnlocks.Contracts] = new("Gia hạn hợp đồng", "Hợp đồng tính theo số trận. Có cầu thủ còn dưới 10 trận: gia hạn ở trang Đội hình, hoặc để họ ra đi.", "contract_edit", "clb"),
+        [CareerUnlocks.Academy] = new("Học viện & trinh sát", "Giữa mùa rồi: gửi trinh sát tìm tài năng trẻ và đôn người từ học viện lên.", "school", "hoc-vien"),
+    };
+
+    static readonly Dictionary<string, string> PathFeature = new()
+    {
+        ["su-nghiep"] = CareerUnlocks.Home, ["clb"] = CareerUnlocks.Squad, ["chuyen-nhuong"] = CareerUnlocks.Transfer, ["de-nghi"] = CareerUnlocks.Offers,
+        ["tai-chinh"] = CareerUnlocks.Finance, ["ban-lanh-dao"] = CareerUnlocks.Board, ["tap-luyen"] = CareerUnlocks.Training, ["hoc-vien"] = CareerUnlocks.Academy,
+        ["bxh"] = CareerUnlocks.League, ["lich"] = CareerUnlocks.League, ["thong-ke"] = CareerUnlocks.Stats,
+    };
+
+    /// <summary>Trạng thái career của người chơi (null = chưa cầm CLB).</summary>
+    public CareerProgress? P { get; private set; }
+    /// <summary>Báo trang con khi P đổi (trang chủ đọc lại).</summary>
+    public event Action? Changed;
+
+    bool ready, onboarding, admin;
+    Guid? me;
+    int unread;
+    string? who, profile;
+    CareerMatchResult? result;
+    string? intro;
+    HashSet<string> fresh = [];   // tab vừa mở → hiệu ứng bay xuống thanh menu
+
+    string Path => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+    bool OnCareerHome => Path == "su-nghiep";
+    IEnumerable<Tab> Tabs => AllTabs;
+    IReadOnlyList<Tab> VisibleTabs(CareerProgress p) => [.. AllTabs.Where(t => p.Has(t.Feature)).Select(t => t with { Subs = [.. t.Subs.Where(s => p.Has(s.Feature))] })];
+    Tab? CurrentTab => P is { } p ? VisibleTabs(p).FirstOrDefault(t => t.Subs.Any(s => s.Href == Path) || t.Href == Path) : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        admin = await Me.IsAdminAsync();
+        var guest = await Me.IsGuestAsync();
+        me = await Me.ManagerIdAsync();
+        onboarding = !guest && me is not null;
+        if (me is not null)
+        {
+            who = await Me.NameAsync();
+            profile = "nguoi-choi/" + await Me.UsernameAsync();
+            await LoadAsync(first: true);
+            await CountMailAsync();
+            Mail.Changed += OnMail;
+            Jobs.Changed += OnJob;
+            Nav.LocationChanged += OnLocation;
+        }
+        ready = true;
+    }
+
+    public async Task RefreshAsync()
+    {
+        await LoadAsync(first: false);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task LoadAsync(bool first)
+    {
+        if (me is not { } id) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new CareerProgressService(db, Clock);
+        var before = P;
+        P = await svc.LoadAsync(id);
+        if (P is null) { result = null; intro = null; return; }
+        if (PathFeature.TryGetValue(Path, out var f) && P.Has(f) && !P.Seen.Contains("visit:" + f))
+        {
+            await svc.MarkAsync(id, "visit:" + f, "intro:" + f);
+            P = await svc.LoadAsync(id);
+        }
+        // Tab mới xuất hiện so với lần đọc trước → cho bay xuống thanh menu.
+        if (before is not null && P is not null)
+            fresh = [.. AllTabs.Where(t => P.Has(t.Feature) && !before.Has(t.Feature)).Select(t => t.Id)];
+        // Màn kết quả trước, rồi tới thẻ mở khoá; không chen khi máy đang mô phỏng hoặc đang ở trang chuẩn bị/xem trận.
+        var quiet = Jobs.Running || Path.StartsWith("chuan-bi") || Path.StartsWith("vao-tran");
+        result = !quiet && P?.PendingResult is { } rid ? await svc.ResultAsync(rid, P.ClubId) : null;
+        intro = !quiet && result is null ? P?.PendingIntros.FirstOrDefault(Intros.ContainsKey) : null;
+        Changed?.Invoke();
+    }
+
+    async Task CloseResult()
+    {
+        if (me is not { } id || result is null) return;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            await new CareerProgressService(db, Clock).MarkAsync(id, "result:" + result.FixtureId);
+        result = null;
+        await LoadAsync(first: false);
+    }
+
+    async Task CloseIntro(bool go)
+    {
+        if (me is not { } id || intro is not { } f) return;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            await new CareerProgressService(db, Clock).MarkAsync(id, go ? ["intro:" + f, "visit:" + f] : ["intro:" + f]);
+        intro = null;
+        if (go && Intros.TryGetValue(f, out var info)) { Nav.NavigateTo(info.Href); return; }
+        await LoadAsync(first: false);
+    }
+
+    void OnLocation(object? _, LocationChangedEventArgs e) => InvokeAsync(async () =>
+    {
+        try { await LoadAsync(first: false); } catch { /* khung phụ: lỗi đọc không chặn trang */ }
+        StateHasChanged();
+    });
+
+    bool wasRunning;
+    void OnJob() => InvokeAsync(async () =>
+    {
+        if (wasRunning && !Jobs.Running)
+        {
+            try { await LoadAsync(first: false); } catch { }
+            StateHasChanged();
+        }
+        wasRunning = Jobs.Running;
+    });
+
+    async Task CountMailAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        unread = await new MailService(db, Clock).UnreadAsync(me);
+    }
+
+    void OnMail() => InvokeAsync(async () => { await CountMailAsync(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        Mail.Changed -= OnMail;
+        Jobs.Changed -= OnJob;
+        Nav.LocationChanged -= OnLocation;
+    }
+}
