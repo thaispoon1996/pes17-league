@@ -400,7 +400,7 @@
       label(); return;
     }
     if (!document.querySelector('.cx')) return;
-    if (e.target.closest?.('.cx button, .cx a, .cx-pc, .cx summary')) fire('click');
+    if (e.target.closest?.('.cx button, .cx a, .cx-pc, .cx summary, .ui-dialog button')) fire('click');
   }, true);
   document.addEventListener('input', e => {
     const k = e.target.dataset?.sndVol;
