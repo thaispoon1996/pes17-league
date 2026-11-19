@@ -90,8 +90,12 @@
     setTimeout(() => { const s = document.querySelector('.fm-scout'); s && s.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 250);
   });
   // Nút nổi "Vào trận ↓": ẩn khi khu Vào trận đã hiện trên màn hình
-  const cta = () => { const b = document.querySelector('.jump-cta'), t = document.getElementById('vao-tran'); if (!b || !t) return;
-    b.classList.toggle('off', t.getBoundingClientRect().top < innerHeight - 80); };
+  // IntersectionObserver thay cho đo vị trí mỗi lần cuộn; gắn lại khi Blazor thay khu #vao-tran
+  let ctaT = null, ctaIo = null;
+  const cta = () => { const t = document.getElementById('vao-tran'); if (t === ctaT) return; ctaIo?.disconnect(); ctaT = t; if (!t) return;
+    ctaIo = new IntersectionObserver(([e]) => document.querySelector('.jump-cta')?.classList.toggle('off', e.boundingClientRect.top < innerHeight - 80),
+      { rootMargin: '0px 0px -80px 0px', threshold: [0, 1] });
+    ctaIo.observe(t); };
   addEventListener('scroll', cta, { passive: true });
 
   /* ---------- theo dõi DOM ---------- */

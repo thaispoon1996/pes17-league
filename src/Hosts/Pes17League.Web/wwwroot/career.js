@@ -21,6 +21,14 @@
     requestAnimationFrame(step);
   }
 
+  // đang cuộn → <html data-cx-scroll> (career.css dừng hiệu ứng lặp), ngừng ~150ms thì bỏ. Không dùng class: MutationObserver dưới theo dõi class.
+  let scrolling = false, scrollT;
+  addEventListener('scroll', () => {
+    if (!scrolling && document.querySelector('.cx')) { scrolling = true; document.documentElement.dataset.cxScroll = ''; }
+    clearTimeout(scrollT);
+    scrollT = setTimeout(() => { scrolling = false; delete document.documentElement.dataset.cxScroll; }, 150);
+  }, { passive: true });
+
   // bụi sáng trên nền
   let dust = null;
   function startDust(canvas) {
@@ -32,16 +40,27 @@
     resize(); addEventListener('resize', resize);
     const ps = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .3, v: Math.random() * .00025 + .00006, a: Math.random() * Math.PI * 2,
       c: Math.random() < .2 ? '255,201,74' : Math.random() < .5 ? '54,227,255' : '220,230,255' }));
+    const sprites = {};   // hạt có quầng sáng vẽ sẵn 1 lần → mỗi khung chỉ drawImage
+    for (const p of ps) if (!sprites[p.c]) {
+      const c = document.createElement('canvas'); c.width = c.height = 24; const g = c.getContext('2d');
+      const gr = g.createRadialGradient(12, 12, 0, 12, 12, 12);
+      gr.addColorStop(0, `rgba(${p.c},1)`); gr.addColorStop(.18, `rgba(${p.c},.9)`); gr.addColorStop(.45, `rgba(${p.c},.25)`); gr.addColorStop(1, `rgba(${p.c},0)`);
+      g.fillStyle = gr; g.fillRect(0, 0, 24, 24); sprites[p.c] = c;
+    }
+    let last = 0;
     const tick = t => {
       if (!alive) return;
+      requestAnimationFrame(tick);
+      if (scrolling || t - last < 32) return;   // ~30 khung/s, giữ nguyên khi đang cuộn
+      const dt = last ? Math.min(t - last, 100) / 16.7 : 1; last = t;
       ctx.clearRect(0, 0, w, h);
       for (const p of ps) {
-        p.y -= p.v; if (p.y < -.02) { p.y = 1.02; p.x = Math.random(); }
-        const tw = .35 + .45 * Math.sin(t / 900 + p.a);
-        ctx.beginPath(); ctx.arc(p.x * w + Math.sin(t / 3000 + p.a) * 12, p.y * h, p.r, 0, 7);
-        ctx.fillStyle = `rgba(${p.c},${tw})`; ctx.shadowColor = `rgba(${p.c},.8)`; ctx.shadowBlur = 6; ctx.fill();
+        p.y -= p.v * dt; if (p.y < -.02) { p.y = 1.02; p.x = Math.random(); }
+        const s = p.r * 7.5;
+        ctx.globalAlpha = .35 + .45 * Math.sin(t / 900 + p.a);
+        ctx.drawImage(sprites[p.c], p.x * w + Math.sin(t / 3000 + p.a) * 12 - s / 2, p.y * h - s / 2, s, s);
       }
-      requestAnimationFrame(tick);
+      ctx.globalAlpha = 1;
     };
     requestAnimationFrame(tick);
     dust = { canvas, stop() { alive = false; removeEventListener('resize', resize); } };
