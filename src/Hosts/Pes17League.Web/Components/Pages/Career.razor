@@ -231,22 +231,55 @@
     }
     else if (step == 3 && pick is { } pk)
     {
-        <button class="cx-back" @onclick="() => step = 2"><i class="ms" aria-hidden="true">arrow_back</i>Đổi CLB</button>
-        <h1>Ban lãnh đạo chào bạn</h1>
-        <div class="cx-letter">
-            <div class="from"><Crest Name="@pk.Name" Logo="@pk.LogoPath" Large="true" /><span>Thư từ chủ tịch<b>@pk.Name</b></span></div>
-            <p>Chào HLV mới. Chúng tôi giao cho bạn đội hình trị giá <b>@Fmt.Money(pk.SquadValue)</b> và ngân sách <b>@Fmt.Money(pk.Budget)</b>. Mục tiêu mùa này:</p>
-            <ul>
-                <li><i class="ms fill" aria-hidden="true">flag</i>@pk.League: <b>@Objective(pk)</b></li>
-                @foreach (var cup in pk.Cups) { <li><i class="ms fill" aria-hidden="true">emoji_events</i>@cup: <b>đi càng xa càng tốt</b></li> }
-                <li><i class="ms fill" aria-hidden="true">savings</i>Tài chính: <b>không để quỹ âm</b></li>
+        @* PO duyệt mockup 19/11: chủ tịch (SVG) chào trong phòng họp nhìn ra sân; bấm Bắt đầu → cảnh ra mắt HLV trong lúc dựng mùa. *@
+        @if (!starting) { <button class="cx-back" @onclick="() => step = 2"><i class="ms" aria-hidden="true">arrow_back</i>Đổi CLB</button> }
+        <h1>@(starting ? "Chào mừng HLV mới" : "Ban lãnh đạo chào bạn")</h1>
+        <section class="cx-board @(starting ? "unveil" : "greet")" data-logo="@pk.LogoPath" aria-label="Phòng họp ban lãnh đạo @pk.Name">
+            <BoardRoom />
+            @if (!starting)
+            {
+                <div class="fig"><Chairman Club="@pk.Name" /></div>
+                <div class="note">
+                    <i class="tail" aria-hidden="true"></i>
+                    <div class="from"><Crest Name="@pk.Name" Logo="@pk.LogoPath" Large="true" /><span>Thư từ chủ tịch<b>@pk.Name</b></span></div>
+                    <p class="l1">Chào HLV mới. Chúng tôi giao cho bạn đội hình trị giá <b>@Fmt.Money(pk.SquadValue)</b> và ngân sách <b>@Fmt.Money(pk.Budget)</b>.</p>
+                    <p class="l2">Mục tiêu mùa này ở bên dưới. Chúc may mắn, khán đài đang chờ bạn.</p>
+                    <div class="sig"><svg viewBox="0 0 120 34" aria-hidden="true"><path d="M4 24 C14 6 20 6 18 20 C16 30 26 12 34 14 C40 16 34 28 42 24 C50 20 52 8 58 10 C64 12 56 26 64 24 C74 22 80 14 90 16 C98 18 104 22 116 12" /></svg><span>Chủ tịch @pk.Name</span></div>
+                </div>
+            }
+            else
+            {
+                <div class="fig"><Chairman Club="@pk.Name" Scarf="true" /></div>
+                <div class="flashes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="shade" aria-hidden="true"></div>
+                <div class="ban">
+                    <span class="chip"><i class="ms fill" aria-hidden="true">photo_camera</i>Họp báo ra mắt</span>
+                    <b><small>HLV mới của</small>@pk.Name</b>
+                    <span>Chủ tịch giới thiệu bạn trước báo giới.</span>
+                </div>
+                <div class="flash-all" aria-hidden="true"></div>
+            }
+        </section>
+        @if (!starting)
+        {
+            <h2 class="cx-goals-h">Mục tiêu @(seasonName ?? "mùa này")</h2>
+            <ul class="cx-goals">
+                <li><i class="ms fill" aria-hidden="true">flag</i><span>@pk.League: <b>@Objective(pk)</b></span></li>
+                @foreach (var cup in pk.Cups) { <li><i class="ms fill" aria-hidden="true">emoji_events</i><span>@cup: <b>đi càng xa càng tốt</b></span></li> }
+                <li><i class="ms fill" aria-hidden="true">savings</i><span>Tài chính: <b>không để quỹ âm</b></span></li>
             </ul>
-            <p class="sign">Chúc may mắn. Khán đài đang chờ bạn.</p>
-        </div>
-        <button class="cx-cta solo" disabled="@starting" data-confirm="Bắt đầu sự nghiệp với @pk.Name?" @onclick="Start">
-            <span><b>@(starting ? "Đang dựng mùa giải…" : "Bắt đầu mùa giải")</b><small>@(starting ? "Ghi lịch cả mùa, mở chợ hè (khoảng nửa phút)" : $"{pk.Name} · {pk.League}")</small></span>
-            @if (starting) { <i class="cx-spin" aria-hidden="true"></i> } else { <i class="ms fill" aria-hidden="true">rocket_launch</i> }
-        </button>
+            <button class="cx-cta solo" data-confirm="Bắt đầu sự nghiệp với @pk.Name?" @onclick="Start">
+                <span><b>Bắt đầu mùa giải</b><small>@pk.Name · @pk.League</small></span>
+                <i class="ms fill" aria-hidden="true">rocket_launch</i>
+            </button>
+        }
+        else
+        {
+            <div class="cx-board-prog" role="status">
+                <div><b>Đang dựng mùa giải</b><span>Ghi lịch cả mùa, mở chợ hè (khoảng nửa phút)</span></div>
+                <i aria-hidden="true"></i>
+            </div>
+        }
     }
 </div>
 
@@ -547,6 +580,7 @@
         starting = true;
         error = null;
         StateHasChanged();
+        await Task.Yield();   // vẽ cảnh ra mắt trước khi dựng mùa
         try
         {
             await using var db = await Dbs.CreateDbContextAsync();

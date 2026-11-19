@@ -1,0 +1,47 @@
+@* Phòng họp ban lãnh đạo nhìn ra sân ban đêm (nền cảnh chủ tịch, career bước 3). Đèn sân bật dần: .bd-lamp/.bd-cone ở career.css. *@
+<svg class="cx-room" viewBox="0 0 960 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+        <linearGradient id="bd-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#070C26" /><stop offset=".7" stop-color="#16245C" /><stop offset="1" stop-color="#2B3F8A" /></linearGradient>
+        <linearGradient id="bd-cone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF4D6" stop-opacity=".34" /><stop offset="1" stop-color="#FFF4D6" stop-opacity="0" /></linearGradient>
+        <radialGradient id="bd-glow"><stop offset="0" stop-color="#FFF4D6" stop-opacity=".75" /><stop offset="1" stop-color="#FFF4D6" stop-opacity="0" /></radialGradient>
+        <radialGradient id="bd-pitch"><stop offset="0" stop-color="#3DFFA2" stop-opacity=".42" /><stop offset="1" stop-color="#3DFFA2" stop-opacity="0" /></radialGradient>
+        <linearGradient id="bd-floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#111A40" /><stop offset="1" stop-color="#05081A" /></linearGradient>
+    </defs>
+    <rect width="960" height="420" fill="#090E24" />
+    <rect x="30" y="24" width="900" height="300" fill="url(#bd-sky)" />
+    <g fill="#fff"><circle cx="132" cy="62" r="1.2" opacity=".6" /><circle cx="402" cy="44" r="1" opacity=".5" /><circle cx="566" cy="70" r="1.4" fill="#36E3FF" opacity=".6" /><circle cx="780" cy="50" r="1" opacity=".5" /><circle cx="884" cy="96" r="1.2" opacity=".4" /></g>
+    @* khán đài phía xa + đèn khán giả *@
+    <path d="M30 236 L30 170 C200 140 760 140 930 170 L930 236 Z" fill="#0D1534" />
+    <path d="M30 192 C200 166 760 166 930 192 M30 214 C200 192 760 192 930 214" stroke="#1B2654" stroke-width="2.5" fill="none" />
+    <path d="M40 182 C210 156 750 156 920 182" stroke="#FFE6A8" stroke-opacity=".5" stroke-width="2.5" stroke-dasharray="1.5 11" stroke-linecap="round" fill="none" />
+    <path d="M36 204 C206 182 754 182 924 204" stroke="#36E3FF" stroke-opacity=".35" stroke-width="2.5" stroke-dasharray="1.5 14" stroke-linecap="round" fill="none" />
+    <path d="M34 226 C206 208 754 208 926 226" stroke="#FFE6A8" stroke-opacity=".3" stroke-width="2" stroke-dasharray="1.5 9" stroke-linecap="round" fill="none" />
+    <path d="M30 170 C200 140 760 140 930 170" stroke="#33438A" stroke-width="4" fill="none" />
+    <path d="M120 170 V60 M330 152 V60 M630 152 V60 M840 170 V60" stroke="#1A2450" stroke-width="5" fill="none" />
+    @* sân *@
+    <rect x="30" y="236" width="900" height="88" fill="#0E3A2C" />
+    <path d="M30 236 h90 v88 h-90 Z M210 236 h90 v88 h-90 Z M390 236 h90 v88 h-90 Z M570 236 h90 v88 h-90 Z M750 236 h90 v88 h-90 Z" fill="#124634" />
+    <ellipse cx="480" cy="282" rx="430" ry="40" fill="url(#bd-pitch)" />
+    <path d="M30 242 H930 M480 242 V324 M30 262 H96 V310 H30 M930 262 H864 V310 H930" stroke="#fff" stroke-opacity=".38" stroke-width="2" fill="none" />
+    <ellipse cx="480" cy="282" rx="66" ry="20" stroke="#fff" stroke-opacity=".38" stroke-width="2" fill="none" />
+    <g class="bd-cone">
+        <polygon points="104,62 136,62 380,304 220,304" fill="url(#bd-cone)" />
+        <polygon points="314,62 346,62 475,304 335,304" fill="url(#bd-cone)" />
+        <polygon points="614,62 646,62 625,304 485,304" fill="url(#bd-cone)" />
+        <polygon points="824,62 856,62 730,304 590,304" fill="url(#bd-cone)" />
+    </g>
+    @foreach (var (x, d) in Lamps)
+    {
+        <g class="bd-lamp" style="animation-delay:@(d)s"><circle cx="@x" cy="56" r="40" fill="url(#bd-glow)" /><rect x="@(x - 22)" y="48" width="44" height="16" rx="3" fill="#FFF6DD" /></g>
+    }
+    @* khung kính + sàn phòng *@
+    <path d="M255 24 V324 M480 24 V324 M705 24 V324" stroke="#121A3E" stroke-width="8" fill="none" />
+    <rect x="30" y="24" width="900" height="300" fill="none" stroke="#202B5A" stroke-width="8" />
+    <polygon points="70,24 150,24 60,324 34,324 34,140" fill="#fff" opacity=".035" />
+    <rect y="328" width="960" height="92" fill="url(#bd-floor)" />
+    <path d="M0 328 H960" stroke="#2A3670" stroke-width="2" />
+</svg>
+
+@code {
+    static readonly (int X, string Delay)[] Lamps = [(120, "0"), (330, ".25"), (630, ".5"), (840, ".7")];
+}

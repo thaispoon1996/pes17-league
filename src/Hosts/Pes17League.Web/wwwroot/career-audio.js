@@ -365,6 +365,18 @@
       [55, 60, 64, 67].forEach(m => I.brass(sfxBus, t + 1.2, m, 1, .06));
       I.crowd(sfxBus, t + 1.1, 1.8, .16);
     },
+    unveil() {   // ra mắt HLV: tiếng màn trập theo nhịp flash (career.css .flashes), khán giả + kèn
+      const t = ctx.currentTime;
+      setDuck(true);
+      I.crash(sfxBus, t, .18, 1.6);
+      for (const s of [.4, .9, 1.2, 1.9, 2.3, 3.0, 3.5, 3.8, 4.5, 4.9]) {
+        const n = noise(t + s, t + s + .05), hp = filt('highpass', 2500), g = ctx.createGain();
+        g.gain.setValueAtTime(.2, t + s); g.gain.exponentialRampToValueAtTime(.001, t + s + .045); n.connect(hp); hp.connect(g); g.connect(sfxBus);
+      }
+      [55, 60, 64, 67].forEach((m, i) => I.brass(sfxBus, t + .7 + i * .1, m, .16, .07));
+      [48, 55, 60, 64, 67].forEach(m => I.brass(sfxBus, t + 1.1, m, 1.6, .055));
+      I.crowd(sfxBus, t + .6, 3.2, .2);
+    },
     fly() { const t = ctx.currentTime; I.whoosh(sfxBus, t, .05); I.bell(sfxBus, t + .5, 84, .04); I.bell(sfxBus, t + .58, 91, .035); },
   };
   const fire = (name, ...a) => { if (!ctx || !st.sfx) return; if (ctx.state === 'suspended') ctx.resume(); try { sfx[name](...a); } catch { } };
@@ -425,7 +437,9 @@
     for (const [el, f] of [[res, () => fire('result', res.classList.contains('win') ? 'win' : res.classList.contains('loss') ? 'loss' : 'draw')], [sg ? null : un, () => fire('unlock')], [sg, () => fire('signed')]])
       if (el && !seen.has(el)) { seen.add(el); f(); }
     root.querySelectorAll('.cx-dock a.fly').forEach(a => { if (!seen.has(a)) { seen.add(a); fire('fly'); } });
-    const any = !!(res || un || sg);
+    const uv = root.querySelector('.cx-board.unveil');
+    if (uv && !seen.has(uv)) { seen.add(uv); fire('unveil'); }
+    const any = !!(res || un || sg || uv);
     if (any !== overlay) { overlay = any; if (!any) setDuck(false); }
   }
   let q = false;

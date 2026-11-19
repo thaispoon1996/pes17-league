@@ -84,12 +84,47 @@
     scrollTo({ top: 0 });
   }
 
+  // cảnh chủ tịch (bước 3): màu cà vạt/khăn lấy từ logo CLB → --ch-tie/--ch-tie2 (Chairman.razor có màu dự phòng)
+  const tints = new Map();
+  function logoColors(img) {
+    const n = 40, c = document.createElement('canvas'); c.width = c.height = n;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, n, n);
+    const d = g.getImageData(0, 0, n, n).data, bins = new Map();
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 200) continue;
+      const k = (d[i] >> 5) << 6 | (d[i + 1] >> 5) << 3 | (d[i + 2] >> 5), e = bins.get(k) || { n: 0, r: 0, g: 0, b: 0 };
+      e.n++; e.r += d[i]; e.g += d[i + 1]; e.b += d[i + 2]; bins.set(k, e);
+    }
+    const cols = [...bins.values()].filter(e => e.n >= 8).map(e => {
+      const r = e.r / e.n, gg = e.g / e.n, b = e.b / e.n, mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+      return { r, g: gg, b, w: e.n * (.35 + (mx ? (mx - mn) / mx : 0)) };
+    }).sort((a, b) => b.w - a.w);
+    if (!cols.length) return null;
+    const hex = c => '#' + [c.r, c.g, c.b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    const a = cols[0], b = cols.find(c => Math.hypot(c.r - a.r, c.g - a.g, c.b - a.b) > 90) || { r: 233, g: 237, b: 247 };
+    const lum = c => (.2126 * c.r + .7152 * c.g + .0722 * c.b) / 255, con = (x, y) => (Math.max(lum(x), lum(y)) + .05) / (Math.min(lum(x), lum(y)) + .05);
+    const ink = con(a, b) >= 2.5 ? hex(b) : lum(a) > .55 ? '#0B1430' : '#ffffff';   // chữ trên khăn đủ đọc
+    return [hex(a), hex(b), ink];
+  }
+  function tint(el) {
+    const src = el.dataset.logo; if (!src) return;
+    if (!tints.has(src)) {
+      tints.set(src, null);
+      const img = new Image();
+      img.onload = () => { try { tints.set(src, logoColors(img)); } catch { } scan(); };
+      img.src = src; return;
+    }
+    const t = tints.get(src);
+    if (t && el.style.getPropertyValue('--ch-tie') !== t[0]) { el.style.setProperty('--ch-tie', t[0]); el.style.setProperty('--ch-tie2', t[1]); el.style.setProperty('--ch-ink', t[2]); }
+  }
+
   function scan() {
     const root = document.querySelector('.cx');
     if (!root) { dust?.stop(); dust = null; return; }
     const c = root.querySelector('.cx-dust'); if (c) startDust(c);
     root.querySelectorAll('[data-count]').forEach(count);
     root.querySelectorAll('.cx-result-ov.win .cx-confetti, .cx-signed-ov .cx-confetti').forEach(confetti);
+    root.querySelectorAll('.cx-board[data-logo]').forEach(tint);
     // menu ⋯: đóng khi bấm ra ngoài / chọn mục
     enter();
   }
