@@ -359,14 +359,142 @@
             @foreach (var (c, i) in LeagueClubs.Select((c, i) => (c, i)))
             {
                 var d = Difficulty(c);
-                <button class="cx-pick club" style="--i:@i" @onclick="() => { pick = c; step = 3; }">
+                <button class="cx-pick club" style="--i:@i" @onclick="() => OpenClub(c)" aria-haspopup="dialog">
                     <Crest Name="@c.Name" Logo="@c.LogoPath" Large="true" />
                     <span><b>@c.Name</b><small>OVR @c.Ovr.ToString("0.0") · đội hình @Fmt.Money(c.SquadValue) · quỹ @Fmt.Money(c.Budget)</small>
+                        <small class="goal"><i class="ms" aria-hidden="true">flag</i>Mục tiêu: @Objective(c)<span class="dif @d.Css">@d.Label</span></small>
                         @if (c.Cups.Count > 0) { <small class="cups">@string.Join(" · ", c.Cups)</small> }</span>
                     <span class="cx-chip @d.Css">@d.Label</span>
+                    <i class="ms more" aria-hidden="true">chevron_right</i>
                 </button>
             }
         </div>
+        @if (clubDetail is { } cd && choices.FirstOrDefault(x => x.ClubId == cd.Id) is { } cc)
+        {
+            var dif = Difficulty(cc);
+            var expected = ExpectedPos(cc);
+            var youth = cd.Players.Where(p => p.Age is <= 21).MaxBy(p => (p.Ovr, p.Price));
+            var stars = cd.Players.GroupBy(p => p.Position.Group()).Select(g => g.MaxBy(p => (p.Ovr, p.Price))!).OrderByDescending(p => p.Ovr).ThenByDescending(p => p.Price).Take(3).ToList();
+            <div class="cx-ov cx-ldet-ov" @onclick="() => clubDetail = null">
+                <section class="cx-ldet cx-cdet" role="dialog" aria-modal="true" aria-label="@cd.Name" @onclick:stopPropagation="true">
+                    <button class="x" @onclick="() => clubDetail = null" aria-label="Đóng"><i class="ms" aria-hidden="true">close</i></button>
+                    <div class="lhead">
+                        <Crest Name="@cd.Name" Logo="@cd.Logo" Large="true" />
+                        <div>
+                            <small>@cc.League · @Fmt.Country(cc.Country)</small>
+                            <h2>@cd.Name</h2>
+                            <span class="tags"><span class="cx-chip @dif.Css">@dif.Label</span></span>
+                        </div>
+                    </div>
+                    <div class="nums">
+                        <div class="cx-stat"><span>OVR đá chính</span><b>@cd.XiOvr.ToString("0.0")</b><small>Hạng @cd.XiRank/@cd.Teams giải</small></div>
+                        <div class="cx-stat"><span>Giá trị đội hình</span><b>@Fmt.Money(cc.SquadValue)</b><small>OVR cả đội @cc.Ovr.ToString("0.0")</small></div>
+                        <div class="cx-stat"><span>Quỹ chuyển nhượng</span><b class="gold">@Fmt.Money(cc.Budget)</b><small>khi bắt đầu</small></div>
+                        <div class="cx-stat"><span>Cầu thủ</span><b data-count="@cd.Players.Count">@cd.Players.Count</b></div>
+                        <div class="cx-stat"><span>Tuổi TB</span><b>@cd.AvgAge.ToString("0.0")</b></div>
+                        <div class="cx-stat"><span>Lương/trận</span><b>@K(cd.WageBill)</b><small>cả đội</small></div>
+                    </div>
+
+                    <h3>Ban lãnh đạo</h3>
+                    <ul class="rules">
+                        <li><i class="ms" aria-hidden="true">flag</i><span>Mục tiêu mùa: <b>@Objective(cc)</b></span></li>
+                        <li><i class="ms" aria-hidden="true">leaderboard</i><span>Kỳ vọng xếp hạng <b>@expected/@cd.Teams</b> (theo giá trị đội hình trong giải)</span></li>
+                        <li><i class="ms" aria-hidden="true">handshake</i><span>Độ tin cậy khởi đầu <b>@BoardRules.StartConfidence</b>/100; xuống dưới @BoardRules.ReviewBelow thì ban lãnh đạo xem xét</span></li>
+                    </ul>
+
+                    <h3>Thi đấu mùa này</h3>
+                    <ul class="comps">
+                        @foreach (var c in cd.Competitions)
+                        {
+                            <li><LeagueLogo Name="@c.Name" Logo="@c.Logo" Small="true" /><b>@c.Name</b></li>
+                        }
+                    </ul>
+
+                    <h3>Sức mạnh từng tuyến</h3>
+                    <ul class="lines">
+                        @foreach (var l in cd.Lines)
+                        {
+                            var diff = l.Club - l.League;
+                            <li>
+                                <span class="lab">@LineName(l.Group) <small>@l.Count đá chính</small></span>
+                                <span class="bar" style="--v:@Pct(l.Club);--m:@Pct(l.League)"><i></i><em title="TB giải @l.League.ToString("0.0")"></em></span>
+                                <b>@l.Club.ToString("0.0")</b>
+                                <small class="@(diff >= 0 ? "cx-up" : "cx-down")">@(diff >= 0 ? "+" : "−")@Math.Abs(diff).ToString("0.0")</small>
+                            </li>
+                        }
+                    </ul>
+                    <p class="note">OVR trung bình 11 người đá chính (đội hình gốc) theo tuyến; vạch trắng = trung bình các CLB cùng giải. Mô phỏng tính sức mạnh bằng 11 người này.</p>
+
+                    <h3>Ngôi sao</h3>
+                    <div class="stars-row">
+                        @foreach (var p in stars)
+                        {
+                            <div class="pl tier-@(CardTier(p.Ovr))">
+                                <span class="o">@p.Ovr</span><span class="ps">@p.Position</span>
+                                <Face Id="p.Id" Name="@p.Name" Size="md" />
+                                <b>@p.Name</b>
+                                <small>@(p.Age is { } a ? $"{a} tuổi" : "")</small>
+                                <small class="price">@Fmt.Money(p.Price)</small>
+                            </div>
+                        }
+                    </div>
+                    @if (youth is not null)
+                    {
+                        <div class="youth"><i class="ms fill" aria-hidden="true">auto_awesome</i><span><small>Trẻ đáng chú ý</small><b>@youth.Name</b></span>
+                            <span class="meta">@youth.Position · @youth.Age tuổi</span><span class="cx-ovr">@youth.Ovr</span></div>
+                    }
+
+                    <h3>Đội hình (@cd.Players.Count)</h3>
+                    <p class="note legend"><i></i>Đá chính (11 ô đầu đội hình) · lương tính mỗi trận</p>
+                    @foreach (var g in cd.Players.GroupBy(p => p.Position.Group()).OrderBy(g => g.Key))
+                    {
+                        <h4>@LineName(g.Key) <small>@g.Count()</small></h4>
+                        <ul class="squad">
+                            @foreach (var p in g.OrderByDescending(p => p.Starter).ThenByDescending(p => p.Ovr))
+                            {
+                                <li class="@(p.Starter ? "st" : "")">
+                                    <span class="ps">@p.Position</span>
+                                    <span class="who"><b>@p.Name</b><small>@(p.Age is { } a ? $"{a} tuổi · " : "")số @p.Shirt@(p.ContractLeft is { } cl ? $" · HĐ {cl} trận" : "")</small></span>
+                                    <span class="cx-ovr tier-@(CardTier(p.Ovr))">@p.Ovr</span>
+                                    <span class="money"><b>@Fmt.Money(p.Price)</b><small>lương @K(p.Wage)</small></span>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    <h3>Tài chính</h3>
+                    <div class="nums money">
+                        <div class="cx-stat"><span>Vé / trận sân nhà</span><b>@K(cd.TicketIncome)</b><small>@cd.Capacity.ToString("N0") chỗ · @cd.Fans.ToString("N0") fan · vé @cd.TicketPrice</small></div>
+                        <div class="cx-stat"><span>Tài trợ / trận</span><b>@K(cd.Sponsor)</b><small>theo uy tín CLB</small></div>
+                        <div class="cx-stat"><span>Bản quyền TV / trận</span><b>@K(FinanceRules.TvPerRound)</b><small>thưởng thắng +@K(FinanceRules.WinPrize) · hoà +@K(FinanceRules.DrawPrize)</small></div>
+                        <div class="cx-stat"><span>Chi / trận</span><b class="cx-down">−@K(cd.WageBill + cd.Capacity * FinanceRules.UpkeepPerSeat)</b><small>lương @K(cd.WageBill) · bảo trì sân @K(cd.Capacity * FinanceRules.UpkeepPerSeat)</small></div>
+                    </div>
+
+                    <h3>Lịch sử</h3>
+                    @if (cd.History.Count == 0)
+                    {
+                        <div class="empty"><i class="ms" aria-hidden="true">history</i><span><b>Chưa có mùa nào</b><small>@(firstSeason ? $"{Fmt.Season(seasonName ?? "1")} là mùa đầu tiên của sự nghiệp." : "CLB chưa đá xong mùa nào trong sự nghiệp.")</small></span></div>
+                    }
+                    else
+                    {
+                        <ul class="hist">
+                            @foreach (var h in cd.History)
+                            {
+                                <li>
+                                    <em>@Fmt.Season(h.Season)</em>
+                                    <span class="champ"><LeagueLogo Name="@h.League.Name" Logo="@h.League.Logo" Small="true" /><b>@(h.Position is { } ps ? $"Hạng {ps}/{h.Teams}" : "–")</b></span>
+                                    @foreach (var t in h.Titles) { <small class="cx-up"><i class="ms fill" aria-hidden="true">emoji_events</i>@t.Name</small> }
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    <div class="foot">
+                        <button class="cx-cta" @onclick="() => { pick = cc; clubDetail = null; step = 3; }"><span><b>Chọn CLB này</b><small>Xem thư của chủ tịch @cd.Name</small></span><i class="ms fill" aria-hidden="true">arrow_forward</i></button>
+                    </div>
+                </section>
+            </div>
+        }
     }
     else if (step == 3 && pick is { } pk)
     {
@@ -491,10 +619,25 @@
         return rank < Math.Max(1, list.Count / 5) ? ("Ứng viên vô địch", "ok") : rank < list.Count / 2 ? ("Tầm trung", "") : ("Thử thách", "bad");
     }
 
-    string Objective(CareerClubChoice c)
+    string Objective(CareerClubChoice c) => BoardRules.Objective(ExpectedPos(c), choices.Count(x => x.League == c.League));
+
+    /// <summary>Hạng kỳ vọng = hạng giá trị đội hình trong giải (như BoardService).</summary>
+    int ExpectedPos(CareerClubChoice c) => choices.Where(x => x.League == c.League).OrderByDescending(x => x.SquadValue).ToList().IndexOf(c) + 1;
+
+    /// <summary>Bước 2: bảng chi tiết CLB đang mở (PO 19/11).</summary>
+    CareerClubInfo? clubDetail;
+    /// <summary>Tiền nhỏ (lương, thu chi mỗi trận): dưới 1 tr ghi theo nghìn ("3.5k") cho khỏi thành "0 tr".</summary>
+    static string K(long v) => Math.Abs(v) >= 1_000_000 ? Fmt.Money(v) : (v / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "k";
+    static string LineName(PositionGroup g) => g switch { PositionGroup.Goalkeeper => "Thủ môn", PositionGroup.Defender => "Hậu vệ", PositionGroup.Midfielder => "Tiền vệ", _ => "Tiền đạo" };
+    /// <summary>Thanh OVR: 50 → 0%, 95 → 100%.</summary>
+    static string Pct(double ovr) => Math.Clamp((ovr - 50) / 45 * 100, 0, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    async Task OpenClub(CareerClubChoice c)
     {
-        var list = choices.Where(x => x.League == c.League).OrderByDescending(x => x.SquadValue).ToList();
-        return BoardRules.Objective(list.IndexOf(c) + 1, list.Count);
+        if (seasonId is not { } sid) return;
+        try { clubDetail = await Q.CareerClubAsync(sid, c.ClubId, Store, Clock); }
+        catch (Exception ex) { error = $"Không mở được chi tiết {c.Name}: {ex.Message}"; }
+        if (clubDetail is null) { pick = c; step = 3; }
     }
 
     protected override async Task OnInitializedAsync()

@@ -801,3 +801,69 @@ body:has(.cx-ldet-ov) { overflow: hidden; }
 /* Cuộn mượt (PO ok 19/11): khi đang cuộn tạm dừng hiệu ứng, ngừng cuộn ~150ms thì chạy tiếp (career.js) */
 html[data-cx-scroll] .cx *, html[data-cx-scroll] .cx *::before, html[data-cx-scroll] .cx *::after { animation-play-state: paused !important; }
 .cx-sky { contain: strict; }
+
+/* Bước 2: bảng chi tiết CLB (PO 19/11) — dựa trên .cx-ldet của bảng giải */
+.cx-pick.club small.goal { display: block; color: var(--gold); font-weight: 600; }
+.cx-pick.club small.goal .ms { margin-right: 4px; font-size: 14px; vertical-align: -2px; }
+.cx-pick.club small.goal .dif { display: none; margin-left: 2px; color: var(--cyan); }
+.cx-pick.club small.goal .dif::before { content: "· "; color: var(--muted); }
+.cx-pick.club small.goal .dif.ok { color: var(--emerald); } .cx-pick.club small.goal .dif.bad { color: var(--crimson); }
+.cx-pick.club .more { flex: none; margin-left: -6px; color: var(--muted); font-size: 22px; transition: color .2s, transform .2s; }
+.cx-pick.club:hover .more { color: var(--gold); transform: translateX(3px); }
+.cx-cdet .lhead .crest.lg { flex: none; width: 76px; height: 76px; animation: cx-ldet-logo .7s cubic-bezier(.2,1.6,.4,1) both .1s; }
+.cx-cdet .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cx-cdet .nums { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cx-cdet .nums .cx-stat b { font-size: 24px; white-space: nowrap; }
+.cx-cdet .nums .cx-stat b.gold { color: var(--gold); }
+.cx-cdet .nums.money .cx-stat small { white-space: normal; }
+.cx-cdet > :is(.lines, .comps, .youth, h4, .squad) { animation: cx-rise .5s cubic-bezier(.2,.8,.2,1) both .18s; }
+.cx-cdet .comps { display: flex !important; flex-wrap: wrap; gap: 8px; }
+.cx-cdet .comps li { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; border: 1px solid var(--line); background: rgba(0,0,0,.25); }
+.cx-cdet .comps b { font: 800 italic 15px var(--f-display); text-transform: uppercase; }
+.cx-cdet .lines li { display: grid; grid-template-columns: 96px 1fr 40px 40px; align-items: center; gap: 10px; }
+.cx-cdet .lines .lab { font: 800 italic 16px/1.1 var(--f-display); text-transform: uppercase; }
+.cx-cdet .lines .lab small { display: block; font: 500 11px "Be Vietnam Pro", sans-serif; text-transform: none; color: var(--muted); }
+.cx-cdet .lines .bar { position: relative; height: 10px; border-radius: 5px; background: rgba(255,255,255,.07); }
+.cx-cdet .lines .bar i { position: absolute; inset: 0 auto 0 0; width: var(--v); border-radius: inherit; background: linear-gradient(90deg, var(--cyan), var(--gold));
+  box-shadow: 0 0 12px rgba(54,227,255,.35); transform-origin: left; animation: cx-grow 1s cubic-bezier(.2,.8,.2,1) both .3s; }
+.cx-cdet .lines .bar em { position: absolute; top: -4px; bottom: -4px; left: var(--m); width: 2px; margin-left: -1px; border-radius: 1px; background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.7); }
+.cx-cdet .lines b { font: 800 italic 20px var(--f-display); text-align: right; }
+.cx-cdet .lines li > small { font: 700 13px var(--f-display); text-align: right; }
+.cx-cdet .youth { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid rgba(61,255,162,.35); background: linear-gradient(90deg, rgba(61,255,162,.1), transparent 70%); }
+.cx-cdet .youth > .ms { flex: none; font-size: 26px; color: var(--emerald); }
+.cx-cdet .youth > span:nth-child(2) { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.cx-cdet .youth small { font: 700 11px var(--f-display); text-transform: uppercase; letter-spacing: .08em; color: var(--emerald); }
+.cx-cdet .youth b { font: 800 italic 18px/1.05 var(--f-display); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-cdet .youth .meta { flex: none; font-size: 12px; color: var(--muted); }
+.cx-cdet .youth .cx-ovr { flex: none; font: 900 italic 26px var(--f-display); color: var(--emerald); }
+.cx-cdet h4 { display: flex; align-items: baseline; gap: 8px; margin: 16px 2px 8px; font: 800 italic 15px var(--f-display); text-transform: uppercase; letter-spacing: .06em; color: var(--cyan); }
+.cx-cdet h4 small { font: 600 12px "Be Vietnam Pro", sans-serif; color: var(--muted); }
+.cx-cdet .squad { gap: 6px !important; }
+.cx-cdet .squad li { display: grid; grid-template-columns: 42px minmax(0, 1fr) 36px auto; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: rgba(0,0,0,.22); }
+.cx-cdet .squad li.st { border-color: rgba(54,227,255,.28); background: linear-gradient(90deg, rgba(54,227,255,.08), rgba(0,0,0,.22) 60%); }
+.cx-cdet .squad .ps { font: 800 13px var(--f-display); text-align: center; padding: 3px 0; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--muted); }
+.cx-cdet .squad .st .ps { color: var(--cyan); background: rgba(54,227,255,.12); }
+.cx-cdet .squad .who { display: grid; gap: 1px; min-width: 0; }
+.cx-cdet .squad .who b { font: 800 italic 16px/1.1 var(--f-display); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-cdet .squad .who small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-cdet .squad .cx-ovr { font: 900 italic 22px var(--f-display); text-align: center; color: #c58b5a; }
+.cx-cdet .squad .cx-ovr.tier-1 { color: #d7e0ec; } .cx-cdet .squad .cx-ovr.tier-2 { color: var(--gold); } .cx-cdet .squad .cx-ovr.tier-3 { color: var(--violet); text-shadow: 0 0 10px rgba(176,77,255,.6); }
+.cx-cdet .squad .money { display: grid; justify-items: end; gap: 1px; }
+.cx-cdet .squad .money b { font: 800 italic 15px var(--f-display); color: var(--gold); white-space: nowrap; }
+.cx-cdet .squad .money small { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.cx-cdet .legend { display: flex; align-items: center; gap: 8px; margin: -2px 2px 4px; }
+.cx-cdet .legend i { width: 14px; height: 10px; border-radius: 3px; border: 1px solid rgba(54,227,255,.6); background: rgba(54,227,255,.15); }
+.cx-cdet .squad li.st { border-color: rgba(54,227,255,.45); }
+.cx-cdet .hist .champ .cx-lglogo { width: 26px; height: 26px; }
+@media (max-width: 520px) {
+  .cx-cdet .lhead .crest.lg { width: 60px; height: 60px; }
+  .cx-cdet .nums { gap: 6px; }
+  .cx-cdet .nums .cx-stat { padding: 8px 9px; }
+  .cx-cdet .nums .cx-stat b { font-size: 20px; }
+  .cx-cdet .lines li { grid-template-columns: 74px 1fr 34px 36px; gap: 8px; }
+  .cx-cdet .squad li { grid-template-columns: 38px minmax(0, 1fr) 30px auto; gap: 8px; padding: 7px 10px; }
+  .cx-pick.club > .cx-chip { display: none; }   /* nhãn độ khó chuyển xuống dòng mục tiêu */
+  .cx-pick.club small.goal .dif { display: inline; }
+}
