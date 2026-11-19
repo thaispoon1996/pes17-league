@@ -10,6 +10,8 @@
 @inject FriendlyHub Hub
 @inject FriendlyMachineOptions Machine
 @inject StreamPass Pass
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
 
 @* Chuẩn bị trận của PO (PO 05/11): chỉnh đội hình/chiến thuật trên sân → "Sẵn sàng" = chốt đội hình, game tự vào trận
    (màn chờ /vao-tran đếm ngược). Vào trận nhanh (PO 16/11): mở trang lúc máy rảnh → máy dựng sẵn game tới màn Chọn đội, vẫn sửa
@@ -18,6 +20,60 @@
 {
     <section class="panel"><p>@(notMine ? "Đây không phải trận của CLB bạn — chỉ HLV của 2 đội mới chuẩn bị trận được." : "Không tìm thấy trận.")</p><p><a class="btn" href="@(notMine ? $"tran/{FixtureId}" : "lich")">@(notMine ? "Xem trận →" : "Lịch thi đấu →")</a></p></section>
     return;
+}
+@if (Shell is not null && preview is { } pv && page is { } pg)
+{
+    @* UI career đợt 2 (Stitch "Ngày thi đấu", PO 19/11): thẻ đối đầu, tâm điểm 2 đội, so sánh số liệu mùa. Số liệu thật (không dự đoán/thời tiết/trọng tài). *@
+    <section class="cx-card cx-matchday">
+        <div class="cx-comp"><i class="ms fill" aria-hidden="true">emoji_events</i>@(pg.Edition?.Name ?? "Giao hữu")<span>@(fixture.Stage == FixtureStage.League ? $"Khung {fixture.Matchday}" : AdminText.SlotKind(fixture.Stage, fixture.Leg))</span></div>
+        <div class="cx-vs big">
+            @foreach (var (cid, tf, label) in new[] { (fixture.Home, pv.Home, "Đội chủ nhà"), (fixture.Away, pv.Away, "Đội khách") })
+            {
+                if (cid == fixture.Away) { <span class="x">VS<small>@(side == MatchSide.Home ? "Sân nhà" : "Sân khách")</small></span> }
+                <span class="t @(cid == club ? "me" : "")">
+                    <span class="crestbox"><Crest Name="@season.Clubs[cid]" Logo="@season.Logo(cid)" Large="true" /><em>OVR @tf.StarterOvr.ToString("0")</em></span>
+                    <b>@season.Clubs[cid]</b><small>@(cid == club ? "Bạn · " : "")@label</small>
+                    @if (tf.Rank is { } rk) { <i class="rk">Hạng @rk · @tf.Points đ</i> }
+                    <FormDots Form="@string.Concat(tf.Last.Select(x => x.Result))" />
+                </span>
+            }
+        </div>
+    </section>
+    <h3 class="cx-h3">Tâm điểm đối đầu</h3>
+    <div class="cx-duo">
+        @foreach (var (cid, tf) in new[] { (fixture.Home, pv.Home), (fixture.Away, pv.Away) })
+        {
+            var sq = squads.GetValueOrDefault(cid) ?? [];
+            var star = tf.TopScorer is { } ts ? sq.FirstOrDefault(x => x.PlayerId == ts.Id) : null;
+            star ??= sq.Where(x => x.Slot <= 10).MaxBy(x => x.Overall) ?? sq.MaxBy(x => x.Overall);
+            if (star is null) { <section class="cx-card"></section> continue; }
+            var tier = star.Overall >= 88 ? 3 : star.Overall >= 82 ? 2 : star.Overall >= 75 ? 1 : 0;
+            <a class="cx-card cx-spot @(cid == fixture.Home ? "h" : "a")" href="cau-thu/@star.PlayerId">
+                <span class="ps">@star.Position #@star.Shirt</span>
+                <div class="cx-pc tier-@tier"><Face Id="@star.PlayerId" Name="@star.Name" Size="md" /><span class="o">@star.Overall</span></div>
+                <b>@star.Name</b>
+                <small>@(tf.TopScorer is { } t2 && t2.Id == star.PlayerId ? $"{t2.Value} bàn mùa này" : "OVR cao nhất đội")</small>
+            </a>
+        }
+    </div>
+    <section class="cx-card cx-compare">
+        @foreach (var (label, hv, av, fmt, more) in new (string, double, double, string, bool)[] {
+            ("Bàn thắng mùa này", pv.Home.GoalsFor, pv.Away.GoalsFor, "0", true), ("Thủng lưới", pv.Home.GoalsAgainst, pv.Away.GoalsAgainst, "0", false),
+            ("Thắng / trận", pv.Home.Won, pv.Away.Won, "0", true), ("OVR đá chính", pv.Home.StarterOvr, pv.Away.StarterOvr, "0.0", true),
+            ("Giá trị đội hình (tr)", pv.Home.SquadValue / 1e6, pv.Away.SquadValue / 1e6, "0.#", true) })
+        {
+            var tot = hv + av;
+            var hp = tot <= 0 ? 50 : 100 * hv / tot;
+            <div class="cmp">
+                <b class="@((more ? hv > av : hv < av) ? "lead" : "")">@hv.ToString(fmt)</b><span>@label</span><b class="@((more ? av > hv : av < hv) ? "lead" : "")">@av.ToString(fmt)</b>
+                <i><s style="width:@hp.ToString("0", System.Globalization.CultureInfo.InvariantCulture)%"></s></i>
+            </div>
+        }
+        @if (pv.H2H.Count > 0)
+        {
+            <p class="h2h">Đối đầu gần đây: @string.Join(" · ", pv.H2H.Take(4).Select(h => $"{season.Clubs.GetValueOrDefault(h.Home, "?")} {h.HomeGoals}–{h.AwayGoals}"))</p>
+        }
+    </section>
 }
 <section class="hero">
     <span class="pill">Chuẩn bị trận · Vòng @fixture.Matchday</span>
@@ -140,6 +196,10 @@
 </div>
 
 @code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+    MatchPreview? preview;
+    MatchPage? page;
+    Dictionary<Guid, List<SquadRow>> squads = [];
     bool notMine;   // trận có thật nhưng không phải CLB của người xem
     [Parameter] public Guid FixtureId { get; set; }
     [SupplyParameterFromQuery(Name = "ben")] public string? Ben { get; set; }
@@ -183,6 +243,12 @@
             touch = new Timer(_ => { if (me is { } id) Hub.Touch(id, myName!); }, null, 0, 5000);   // máy chỉ nhận trận khi 2 HLV đang mở trang
         }
         Warm();
+        if (Shell is not null)
+        {
+            page = await Q.MatchAsync(FixtureId);
+            if (page is not null) preview = await Q.PreviewAsync(page, Store, Clock);
+            foreach (var c in new[] { fixture.Home, fixture.Away }) squads[c] = await Q.SquadAsync(season.Id, c);
+        }
     }
 
     async Task DuelReady(bool on)

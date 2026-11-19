@@ -13,7 +13,71 @@
 {
     var rated = p.Games.Where(g => g.Line.Rating is not null).ToList();
     var goals = p.Games.Sum(g => g.Line.Goals);
-    <div class="fm">
+    <div class="fm @(Shell is null ? "" : "cx-skin")">
+        @if (Shell is not null)
+        {
+            @* UI career đợt 2 (Stitch "Hồ sơ chỉ số cầu thủ", PO 19/11): thẻ cầu thủ theo hạng OVR + giá trị/hợp đồng + phong độ 5 trận. Số liệu thật. *@
+            var tier = p.Overall >= 88 ? 3 : p.Overall >= 82 ? 2 : p.Overall >= 75 ? 1 : 0;
+            var top = p.Attributes.Where(a => a.Max == 99 && IsKey(a)).Take(6).ToList();
+            if (top.Count < 6) top.AddRange(p.Attributes.Where(a => a.Max == 99 && !top.Contains(a)).OrderByDescending(a => a.Value).Take(6 - top.Count));
+            <section class="cx-pcard tier-@tier">
+                <div class="cx-pcard-top">
+                    <span class="cx-tier">@(tier switch { 3 => "Huyền thoại", 2 => "Thẻ vàng", 1 => "Thẻ bạc", _ => "Thẻ đồng" })</span>
+                    <span class="cx-label cyan">@p.Position · @Fmt.PositionName(p.Position)</span>
+                </div>
+                <div class="cx-pcard-mid">
+                    <div class="l">
+                        <b class="cx-ovr" data-count="@(known ? p.Overall : 0)">@(known ? p.Overall.ToString() : ScoutRules.Mask(p.Overall))</b><small>OVR</small>
+                        @if (rated.Count >= 3) { var avg = rated.TakeLast(3).Average(g => g.Line.Rating!.Value); <span class="cx-chip @(avg >= 7 ? "ok" : avg < 6 ? "bad" : "")">@(avg >= 7 ? "Phong độ cao" : avg < 6 ? "Phong độ thấp" : "Phong độ ổn")</span> }
+                    </div>
+                    <div class="cx-portrait"><Face Id="@Id" Name="@p.Name" Size="lg" /><i class="halo" aria-hidden="true"></i></div>
+                </div>
+                <h1>@p.Name</h1>
+                <p class="sub">@(p.Club ?? "Tự do")@(p.Shirt is { } sh ? $" · số {sh}" : "")@(p.Info.TryGetValue("AGE", out var ag2) ? $" · {ag2} tuổi" : "")@(p.Nationality is { Length: > 0 } nn ? $" · {nn}" : "")</p>
+                <div class="cx-six">
+                    @foreach (var a in top)
+                    {
+                        <div class="@(a.Value >= 85 ? "hot" : "")"><b data-count="@(known ? a.Value : 0)">@(known ? a.Value.ToString() : ScoutRules.Mask(a.Value))</b><span>@a.Label</span></div>
+                    }
+                </div>
+            </section>
+            <div class="cx-duo">
+                <section class="cx-card">
+                    <span class="cx-label">Giá trị thị trường</span>
+                    <b class="big">@Fmt.Money(p.Price)</b>
+                    @if (Change() is { } ch) { <small class="@(ch > 0 ? "cx-up" : ch < 0 ? "cx-down" : "")">@(ch > 0 ? "▲" : ch < 0 ? "▼" : "")@Math.Abs(ch)% mùa này</small> }
+                </section>
+                <section class="cx-card">
+                    <span class="cx-label cyan">Hợp đồng</span>
+                    @if (p.Contract is { } kc)
+                    {
+                        <b class="big">@(kc.Wage is { } kw ? Fmt.Money(kw) : "—")<small>/vòng</small></b>
+                        @if (kc.MatchesTotal is { } kt)
+                        {
+                            <small>Còn @(kt - kc.MatchesPlayed) trận (@kc.MatchesPlayed/@kt)</small>
+                            <div class="cx-track thin"><div style="width:@(100 * kc.MatchesPlayed / Math.Max(kt, 1))%"></div></div>
+                        }
+                        else { <small>Không thời hạn</small> }
+                    }
+                    else { <b class="big">—</b><small>Không có hợp đồng</small> }
+                </section>
+            </div>
+            @if (p.Games.Count > 0)
+            {
+                <section class="cx-card cx-last5">
+                    <div class="row"><span class="cx-label">Phong độ 5 trận gần nhất</span><small>@goals bàn · @p.Games.Count trận@(rated.Count > 0 ? $" · TB {rated.Average(g => g.Line.Rating!.Value):0.0}" : "")</small></div>
+                    <div class="pills">
+                        @foreach (var g in p.Games.Take(5).Reverse())
+                        {
+                            var home = g.Line.ClubId == g.Fixture.Home;
+                            var (gm, gt) = home ? (g.Fixture.HomeGoals, g.Fixture.AwayGoals) : (g.Fixture.AwayGoals, g.Fixture.HomeGoals);
+                            var res = gm > gt ? "W" : gm == gt ? "D" : "L";
+                            <a class="pill @res" href="tran/@g.Fixture.Id" title="@season.Clubs.GetValueOrDefault(g.Line.OpponentId, "?")"><i>@(res switch { "W" => "T", "D" => "H", _ => "B" })</i><b>@gm-@gt</b><small>@(g.Line.Rating?.ToString("0.0") ?? "–")@(g.Motm ? " ★" : "")</small></a>
+                        }
+                    </div>
+                </section>
+            }
+        }
         <header class="fm-head">
             <Face Id="@Id" Name="@p.Name" Size="lg"><span class="fm-shirt @Fmt.Group(p.Position)">@(p.Shirt?.ToString() ?? "–")</span></Face>
             <div class="fm-title">
@@ -198,6 +262,7 @@
 }
 
 @code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
     [Parameter] public Guid Id { get; set; }
     [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
 

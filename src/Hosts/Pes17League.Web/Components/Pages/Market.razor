@@ -9,7 +9,49 @@
    và Giao dịch (các vụ đã hoàn tất trong mùa). ?tab=giao-dich mở thẳng tab. Luật mua giữ nguyên TransferService. *@
 @if (season is null) { return; }
 @{ var me = season.HumanClubId; var myName = season.Clubs.GetValueOrDefault(me, "Chưa chọn CLB"); }
-<div class="fm">
+<div class="fm @(Shell is null ? "" : "cx-skin")">
+    @if (Shell?.P is { } cp)
+    {
+        @* UI career đợt 2 (Stitch "Chuyển nhượng & Hợp đồng", PO 19/11): đầu trang kỳ chuyển nhượng; mua xong hiện màn ký hợp đồng. *@
+        <section class="cx-card cx-mkhero">
+            <div class="row">
+                <span class="cx-label"><i class="ms fill" aria-hidden="true">verified</i>Cửa sổ chuyển nhượng</span>
+                <span class="cx-chip @(window is null ? "bad" : "live ok")">@(window is null ? "Đang đóng" : $"Mở · còn {cp.MarketSlotsLeft} khung")</span>
+            </div>
+            <h1>@(window is null ? "Chợ đã đóng" : cp.Slot >= Pes17TransferWindows.WinterStart(cp.Slots) ? "Thị trường mùa đông" : "Thị trường mùa hè")</h1>
+            <p>@(window is null ? (cp.NextMarketSlot is { } nm ? $"Chợ mở lại ở khung {nm}. Vẫn xem và trinh sát được." : "Chợ không mở lại trong mùa này.") : "Mua người hợp tuyến yếu nhất, bán bớt người dư để có tiền.")</p>
+            <div class="cx-duo">
+                <div class="cx-stat"><span>Ngân sách CLB</span><b class="@(balance < 0 ? "cx-down" : "gold")" data-count="@balance" data-fmt="money">@Fmt.Money(balance)</b></div>
+                <div class="cx-stat"><span>Quỹ lương/vòng</span><b class="cyan">@Fmt.Money(payroll)</b>@if (season.Economy.SoftWageCap > 0) { <small>trần @Fmt.Money(season.Economy.SoftWageCap)</small> }</div>
+            </div>
+            <div class="cx-lines">@foreach (var g in Groups) { <span><i class="@Fmt.Group(g.Group)">@squad.Count(p => p.Position.Group() == g.Group)</i>@g.Name</span> }</div>
+        </section>
+    }
+    @if (signed is { } sg)
+    {
+        <div class="cx-ov cx-signed-ov" role="dialog" aria-modal="true" aria-label="Đã ký hợp đồng">
+            <canvas class="cx-confetti" aria-hidden="true"></canvas>
+            <div class="cx-signed">
+                <span class="cx-label"><i class="ms fill" aria-hidden="true">auto_awesome</i>Tân binh mới ký</span>
+                <div class="cx-pc big tier-@(sg.Overall >= 88 ? 3 : sg.Overall >= 82 ? 2 : sg.Overall >= 75 ? 1 : 0)">
+                    <span class="o">@sg.Overall</span><span class="ps @Fmt.Group(sg.Position)">@sg.Position</span>
+                    <Face Id="@sg.PlayerId" Name="@sg.Name" Size="lg" />
+                    <span class="stamp"><i class="ms fill" aria-hidden="true">verified</i>Đã ký hợp đồng</span>
+                </div>
+                <h2>@sg.Name</h2>
+                <p>@(sg.ClubId is { } fc ? season.Clubs.GetValueOrDefault(fc, "CLB ngoài giải") : "Tự do") → @season.Clubs.GetValueOrDefault(season.HumanClubId, "")</p>
+                <div class="cx-facts">
+                    <div><b>@Fmt.Money(sg.Price)</b><span>Phí chuyển nhượng</span></div>
+                    <div><b class="cyan">@Fmt.Money(signedWage)</b><span>Lương/vòng</span></div>
+                    <div><b>@signedMatches</b><span>Trận hợp đồng</span></div>
+                </div>
+                <div class="cx-acts">
+                    <a class="cx-btn ghost" href="clb">Xem đội hình</a>
+                    <button class="cx-btn gold" @onclick="() => signed = null">Tiếp tục</button>
+                </div>
+            </div>
+        </div>
+    }
     <header class="fm-head">
         @if (me != Guid.Empty) { <Crest Name="@myName" Logo="@season.Logo(me)" Large="true" /> }
         <div class="fm-title">
@@ -167,6 +209,10 @@
 </div>
 
 @code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+    MarketRow? signed;
+    long signedWage;
+    int signedMatches;
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
 
     const int TransferTake = 100;
@@ -247,9 +293,11 @@
     {
         await using var db = await Dbs.CreateDbContextAsync();
         var r = await new TransferService(db, Clock).BuyAsync(window!.Id, p.PlayerId, season!.HumanClubId, p.Price, matches, Wage(p));
+        if (r.Ok && Shell is not null) { signed = p; signedWage = Wage(p); signedMatches = matches; }
         message = r.Ok ? $"Đã mua {p.Name} ({Fmt.Money(p.Price)})." + (r.NeedsLineupReview ? " Kiểm tra lại đội hình." : "") : $"Không mua được {p.Name}: {OfferRules.Text(r.Error!.Value)}";
         sel = null; prof = null;
         await LoadAsync();
+        if (r.Ok && Shell is not null) await Shell.RefreshAsync();   // số dư đầu trang
     }
 
     long Wage(MarketRow p) => ContractRules.Wage(p.Price, season!.Economy.WagePermille);

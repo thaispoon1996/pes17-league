@@ -34,6 +34,7 @@
     <script src="ticker.js"></script>
     <script src="ui.js"></script>
     <script src="career.js"></script>
+    <script src="career-audio.js"></script>
     <script>document.addEventListener('click',e=>{const a=e.target.closest('[data-seek]');const v=a&&document.getElementById(a.dataset.seek);if(!v)return;e.preventDefault();const go=()=>{v.currentTime=+a.dataset.t;v.play();};v.readyState>0?go():(v.addEventListener('loadedmetadata',go,{once:true}),v.load());v.scrollIntoView({behavior:'smooth',block:'center'});});</script>
     <script>window.pesPrefersReducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;</script>
     <script src="_framework/blazor.web.js"></script>

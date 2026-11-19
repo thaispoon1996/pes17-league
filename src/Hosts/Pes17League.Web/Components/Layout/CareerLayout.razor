@@ -32,6 +32,7 @@ else
                 </a>
                 <span class="cx-coin" title="Quỹ CLB"><i class="ms fill" aria-hidden="true">paid</i><b data-count="@p.Budget" data-fmt="money">@Fmt.Money(p.Budget)</b></span>
                 <a class="cx-ibtn" href="thu" aria-label="Hòm thư"><i class="ms" aria-hidden="true">notifications</i>@if (unread > 0) { <em>@unread</em> }</a>
+                <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button>
                 <details class="cx-menu">
                     <summary class="cx-ibtn" aria-label="Menu"><i class="ms" aria-hidden="true">menu</i></summary>
                     <div>
@@ -40,6 +41,12 @@ else
                         <a href="hop-thu"><i class="ms" aria-hidden="true">inbox</i>Hộp thư HLV</a>
                         <a href="dieu-khien"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</a>
                         @if (admin) { <a href="admin"><i class="ms" aria-hidden="true">settings</i>Quản trị</a> }
+                        <div class="cx-snd">
+                            <span class="now" data-snd="now">Nhạc đang tắt</span>
+                            <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
+                            <label>Hiệu ứng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
+                            <label><input type="checkbox" data-snd="sfx" /> Bật âm hiệu ứng</label>
+                        </div>
                         <form method="post" action="/logout" data-enhance="false"><button><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
                     </div>
                 </details>

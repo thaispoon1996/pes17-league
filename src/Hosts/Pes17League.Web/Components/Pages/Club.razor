@@ -13,7 +13,24 @@
 @if (season is null) { return; }
 @if (clubId == Guid.Empty) { <NoClubNote /> return; }
 @{ var name = season.Clubs.GetValueOrDefault(clubId, "?"); }
-<div class="fm">
+<div class="fm @(Shell is null ? "" : "cx-skin")">
+    @if (Shell is not null)
+    {
+        @* UI career đợt 2 (PO 19/11): đầu trang CLB kiểu game: huy hiệu, hạng, OVR đá chính, giá trị, phong độ. *@
+        <section class="cx-card cx-clubhero">
+            <div class="crestwrap"><Crest Name="@name" Logo="@season.Logo(clubId)" Large="true" /><i class="halo" aria-hidden="true"></i></div>
+            <div class="t">
+                <span class="cx-label">@(mine ? "CLB của bạn" : coach ? "CLB có HLV" : "CLB BOT") · @season.Name</span>
+                <h1>@name</h1>
+                @if (glance is { } gh && gh.Last.Count > 0) { <span class="cx-formdots">@foreach (var x in gh.Last) { <i class="@x.Result">@(x.Result switch { 'W' => "T", 'D' => "H", _ => "B" })</i> }</span> }
+            </div>
+            <div class="cx-facts">
+                <div><b>@(glance?.Rank is { } rk ? $"#{rk}" : "–")</b><span>@(glance?.Points is { } pt ? $"{pt} điểm" : "Hạng")</span></div>
+                <div><b>@Avg(squad.Where(p => p.Slot <= 10).Select(p => p.Overall))</b><span>OVR đá chính</span></div>
+                <div><b>@Fmt.Money(squad.Sum(p => p.Price))</b><span>Giá trị</span></div>
+            </div>
+        </section>
+    }
     <header class="fm-head">
         <Crest Name="@name" Logo="@season.Logo(clubId)" Large="true" />
         <div class="fm-title">
@@ -58,6 +75,34 @@
     @switch (tab)
     {
         case "doi-hinh":
+            @if (Shell is not null)
+            {
+                @* Đội hình dạng thẻ (career): chạm thẻ mở thao tác (số áo, gia hạn, thanh lý), bấm tên xem hồ sơ. *@
+                @foreach (var (title, rows) in new[] { ("Đá chính", squad.Where(p => p.Slot <= 10).ToList()), ("Dự bị", squad.Where(p => p.Slot > 10).ToList()) })
+                {
+                    <h3 class="cx-h3">@title <small>@rows.Count cầu thủ</small></h3>
+                    <div class="cx-squad">
+                        @foreach (var (p, i) in rows.Select((p, i) => (p, i)))
+                        {
+                            var st = stats.GetValueOrDefault(p.PlayerId);
+                            var tier = p.Overall >= 88 ? 3 : p.Overall >= 82 ? 2 : p.Overall >= 75 ? 1 : 0;
+                            var hide = hidden.Contains(p.PlayerId);
+                            <div class="cx-pc tier-@tier @(open == p.PlayerId ? "open" : "") @(p.MatchesTotal - p.MatchesPlayed <= ContractRules.RenewalReminderMatches ? "exp" : "")" style="--i:@i" @onclick="() => Tap(p)">
+                                <span class="o">@(hide ? ScoutRules.Mask(p.Overall) : p.Overall.ToString())</span><span class="ps @Fmt.Group(p.Position)">@p.Position</span>
+                                <Face Id="@p.PlayerId" Name="@p.Name" Size="md" />
+                                <a class="nm" href="@season.Url($"cau-thu/{p.PlayerId}")" @onclick:stopPropagation="true">@p.Name</a>
+                                <small>@(st?.Apps ?? 0) trận · @(st?.Goals ?? 0) bàn · @(st?.Rating?.ToString("0.0") ?? "–")</small>
+                                <em title="Hợp đồng đã đá/tổng trận">HĐ @p.MatchesPlayed/@(p.MatchesTotal?.ToString() ?? "∞")</em>
+                            </div>
+                        }
+                    </div>
+                    @if (mine && rows.FirstOrDefault(r => r.PlayerId == open) is { } op)
+                    {
+                        <section class="cx-card cx-pc-detail"><b>#@op.Shirt @op.Name</b> · @Fmt.Money(op.Price)@(op.Wage is { } ow ? $" · lương {Fmt.Money(ow)}/vòng" : "")@Detail(op)</section>
+                    }
+                }
+                break;
+            }
             <section class="fm-panel">
                 <div class="fm-h"><h2>Đội hình</h2><small>@(mine ? "Chạm 1 dòng để đổi số áo, gia hạn, thanh lý · bấm tên xem hồ sơ" : "Bấm tên xem hồ sơ cầu thủ")</small></div>
                 <div class="fm-scroll">
@@ -86,22 +131,7 @@
                                 </tr>
                                 @if (mine && open == p.PlayerId)
                                 {
-                                    <tr class="detail"><td colspan="12">
-                                        <div class="row">
-                                            <label>Số áo <input type="number" min="1" max="99" @bind="shirt" /></label>
-                                            <button @onclick="() => ChangeShirt(p)">Đổi số</button>
-                                        </div>
-                                        <div class="row">
-                                            <label>Gia hạn <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="renewMatches" /> trận</label>
-                                            <label>Phí <input type="number" min="0" @bind="renewFeeM" step="0.1" /> tr</label>
-                                            <button data-confirm="@($"Gia hạn hợp đồng {p.Name}?")" @onclick="() => Renew(p)">Gia hạn</button>
-                                            @if (p.Renewal is { } rs) { <small>(lần gần nhất: @rs)</small> }
-                                        </div>
-                                        <div class="row">
-                                            <button class="danger" disabled="@(window is null)" data-confirm="@($"Thanh lý {p.Name}? Cầu thủ thành tự do, không hoàn tác được.")" data-confirm-ok="Thanh lý" @onclick="() => Release(p)">Thanh lý (thành tự do)</button>
-                                            @if (window is null) { <small>chỉ khi đang mở kỳ CN</small> }
-                                        </div>
-                                    </td></tr>
+                                    <tr class="detail"><td colspan="12">@Detail(p)</td></tr>
                                 }
                             }
                         }
@@ -204,6 +234,7 @@
 </div>
 
 @code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
     [Parameter] public Guid? ClubId { get; set; }
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
     SeasonInfo? season;
@@ -231,7 +262,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        tab = Tab ?? "tong-quan";
+        tab = Tab ?? (Shell is not null && ClubId is null ? "doi-hinh" : "tong-quan");   // career: tab Đội hình mở thẳng thẻ cầu thủ
         await LoadAsync();
         if (tab == "chien-thuat" && !mine) tab = "tong-quan";
     }
@@ -278,6 +309,24 @@
     KeyValuePair<Guid, SquadStat>? TopMotm() => stats.Where(x => x.Value.Motm > 0).OrderByDescending(x => x.Value.Motm).Cast<KeyValuePair<Guid, SquadStat>?>().FirstOrDefault();
 
     static string Avg(IEnumerable<int> xs) => xs.Any() ? xs.Average().ToString("0.#") : "–";
+
+    RenderFragment Detail(SquadRow p) => __builder =>
+    {
+                                        <div class="row">
+                                            <label>Số áo <input type="number" min="1" max="99" @bind="shirt" /></label>
+                                            <button @onclick="() => ChangeShirt(p)">Đổi số</button>
+                                        </div>
+                                        <div class="row">
+                                            <label>Gia hạn <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="renewMatches" /> trận</label>
+                                            <label>Phí <input type="number" min="0" @bind="renewFeeM" step="0.1" /> tr</label>
+                                            <button data-confirm="@($"Gia hạn hợp đồng {p.Name}?")" @onclick="() => Renew(p)">Gia hạn</button>
+                                            @if (p.Renewal is { } rs) { <small>(lần gần nhất: @rs)</small> }
+                                        </div>
+                                        <div class="row">
+                                            <button class="danger" disabled="@(window is null)" data-confirm="@($"Thanh lý {p.Name}? Cầu thủ thành tự do, không hoàn tác được.")" data-confirm-ok="Thanh lý" @onclick="() => Release(p)">Thanh lý (thành tự do)</button>
+                                            @if (window is null) { <small>chỉ khi đang mở kỳ CN</small> }
+                                        </div>
+                                        };
 
     RenderFragment Person(string label, Guid? id, string? value) => __builder =>
     {

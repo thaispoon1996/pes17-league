@@ -89,7 +89,7 @@
     if (!root) { dust?.stop(); dust = null; return; }
     const c = root.querySelector('.cx-dust'); if (c) startDust(c);
     root.querySelectorAll('[data-count]').forEach(count);
-    root.querySelectorAll('.cx-result-ov.win .cx-confetti').forEach(confetti);
+    root.querySelectorAll('.cx-result-ov.win .cx-confetti, .cx-signed-ov .cx-confetti').forEach(confetti);
     // menu ⋯: đóng khi bấm ra ngoài / chọn mục
     enter();
   }
