@@ -114,7 +114,7 @@ def to_team_select(both: bool = False) -> None:
         if kind == "teams" or header(im, "away")[0] or kickoff_screen(im):
             nav.pad("B w:2")
             continue
-        if ocr.hud(im) or ocr.stats_goals(im):
+        if ocr.hud(im) or ocr.stats_screen(im):
             raise NavError("game đang đá (thấy HUD/bảng số)")
         if ocr.menu(im):   # menu hết trận còn lại từ trận trước: Select Team
             nav.pad("Right w:0.6 A w:3")
@@ -377,7 +377,7 @@ class Match:
                     self.half, self.minute = 1, 45
                     last_press = now
                     last_play = progress = now   # đang ở menu nghỉ: không tính là treo / AFK
-                elif ocr.stats_goals(im) is not None:
+                elif ocr.stats_screen(im):
                     nav.pad("A w:1")   # Half Time / Time Up
                     last_press = now
             time.sleep(2.5)

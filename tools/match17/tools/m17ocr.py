@@ -71,6 +71,11 @@ def stats_goals(im: Image.Image) -> tuple[int, int] | None:
     return (nums[0], nums[-1]) if len(nums) == 2 and any("oal" in t for t in toks) else None
 
 
+def stats_screen(im: Image.Image) -> bool:
+    """Bảng số Half Time / Time Up: có dòng "Goals Scored", kể cả khi không đọc được số (19/11: số 0 bên nhà hay bị sót → kẹt nghỉ giữa hiệp)."""
+    return any("oal" in t and s > 0.5 for t, s, _ in det(im, STATS_GOALS))
+
+
 RANK_ROW0, RANK_STEP = 262, 25                                        # tâm y hàng đầu, khoảng cách hàng
 RANK_COLS = {"home": ((286, 326), (550, 592)), "away": ((672, 712), (932, 974))}   # (x số áo, x điểm)
 
