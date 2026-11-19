@@ -572,3 +572,6 @@ a.cx-card:active { transform: scale(.985); }
 @media (prefers-reduced-motion: reduce) {
   .cx *, .cx *::before, .cx *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition: none !important; }
 }
+
+/* đợt 2b: thẻ "Vừa mở khoá" chờ người chơi đóng màn "Đã ký hợp đồng" rồi mới hiện */
+body:has(.cx-signed-ov) .cx-unlock-ov { display: none; }

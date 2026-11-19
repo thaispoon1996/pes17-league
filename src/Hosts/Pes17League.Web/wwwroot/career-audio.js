@@ -1,5 +1,5 @@
 // Âm thanh career (UI đợt 2, PO 19/11/2026): nhạc tự sáng tác bằng Web Audio (không dùng file, không bản quyền) + hiệu ứng.
-// 3 bản nhạc theo khu: "Đêm Châu Âu" (trang chủ, CLB), "Ngày thi đấu" (chuẩn bị/vào trận/trận), "Chợ đêm" (chuyển nhượng).
+// 3 bản nhạc theo khu: "Khán đài đêm" (trang chủ, CLB), "Ngày thi đấu" (chuẩn bị/vào trận/trận), "Phiên chợ đêm" (chuyển nhượng) — chất sân bóng: trống cổ động viên, vỗ tay, khán giả hát, còi, kèn hơi.
 // Giai điệu sinh theo hạt giống cố định → mỗi bản luôn giống nhau, có đoạn A/B/A' và biến tấu. Trình duyệt chỉ cho phát sau lần chạm đầu tiên.
 (() => {
   const KEY = 'cx-audio';
@@ -150,6 +150,32 @@
       g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .015); g.gain.setValueAtTime(v, t + len - .03); g.gain.exponentialRampToValueAtTime(.0001, t + len);
       o.connect(g); send(g, out, .25);
     },
+    clap(out, t, v = .3) {   // nhiều người vỗ tay lệch nhau vài ms
+      for (let k = 0; k < 7; k++) {
+        const t0 = t + Math.random() * .028, n = noise(t0, t0 + .12), bp = filt('bandpass', 1000 + Math.random() * 900, 1.4), g = ctx.createGain();
+        g.gain.setValueAtTime(v * .45, t0); g.gain.exponentialRampToValueAtTime(.001, t0 + .07);
+        n.connect(bp); bp.connect(g); send(g, out, .35);
+      }
+    },
+    bigdrum(out, t, v = .6) {   // trống cái cổ động viên
+      const o = osc('sine', 95, t, t + .6), g = ctx.createGain();
+      o.frequency.setValueAtTime(100, t); o.frequency.exponentialRampToValueAtTime(52, t + .22);
+      g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + .55); o.connect(g); send(g, out, .4);
+      const n = noise(t, t + .1), lp = filt('lowpass', 600), ng = ctx.createGain();
+      ng.gain.setValueAtTime(v * .5, t); ng.gain.exponentialRampToValueAtTime(.001, t + .06); n.connect(lp); lp.connect(ng); ng.connect(out);
+    },
+    chant(out, t, m, dur, v = .03) {   // khán giả hát "ô": nhiều giọng lệch cao độ, lọc formant
+      const g = ctx.createGain(), f1 = filt('bandpass', 480, 3), f2 = filt('bandpass', 820, 4);
+      env(g, t, .06, v, .1, .85, .2, t + dur);
+      for (let k = 0; k < 6; k++) { const o = osc('sawtooth', mtof(m - (k % 3 === 0 ? 12 : 0)), t + Math.random() * .035, t + dur + .5, (Math.random() * 2 - 1) * 30); o.connect(f1); o.connect(f2); }
+      f1.connect(g); f2.connect(g); send(g, out, .6);
+    },
+    horn(out, t, dur, m = 70, v = .05) {   // kèn hơi trên khán đài
+      const lp = filt('lowpass', 2600, 1), g = ctx.createGain();
+      env(g, t, .02, v, .05, .9, .12, t + dur);
+      for (const [mm, d] of [[m, 0], [m, 14], [m + 3, -8]]) { const o = osc('sawtooth', mtof(mm), t, t + dur + .3, d); o.frequency.setValueAtTime(mtof(mm), t + dur - .05); o.frequency.linearRampToValueAtTime(mtof(mm) * .94, t + dur + .12); o.connect(lp); }
+      lp.connect(g); send(g, out, .45);
+    },
     whoosh(out, t, v = .06) {
       const n = noise(t, t + .4), bp = filt('bandpass', 500, 1.4), g = ctx.createGain();
       bp.frequency.setValueAtTime(350, t); bp.frequency.exponentialRampToValueAtTime(3800, t + .22);
@@ -158,47 +184,60 @@
     },
   };
 
-  // ===== bản nhạc (tự sáng tác): hợp âm từng ô nhịp {b: bass, v: voicing}, thang giai điệu, mẫu trống 16 phách =====
+  // ===== bản nhạc (tự sáng tác, PO 19/11: sôi động, chất sân bóng): hợp âm từng ô nhịp {b: bass, v: voicing}, mẫu 16 phách,
+  // trống cổ động viên, vỗ tay khán đài, kèn stab, khán giả hát (giai điệu tự viết), còi + kèn hơi lúc vào bài =====
   const C = (b, ...v) => ({ b, v });
+  const F4 = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
   const TRACKS = {
     hub: {
-      name: 'Đêm Châu Âu', bpm: 94, seed: 17, swing: 0,
+      name: 'Khán đài đêm', bpm: 122, seed: 17, swing: 0, crowd: .035, cheer: .1,
       A: [C(38, 57, 62, 65, 69), C(34, 58, 62, 65, 70), C(41, 57, 60, 65, 69), C(36, 55, 60, 64, 67)],
       B: [C(43, 55, 58, 62, 67), C(38, 57, 62, 65, 69), C(34, 58, 62, 65, 70), C(33, 57, 61, 64, 69)],
       scale: [62, 64, 65, 67, 69, 72, 74, 76, 77, 79],
-      kick: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, .5, 0, 0, 0, 0], snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, .25],
-      hat: [.5, .15, .3, .15, .5, .15, .3, .15, .5, .15, .3, .15, .5, .15, .3, .3], arp: [0, 1, 2, 3, 2, 1, 2, 3, 0, 1, 2, 3, 3, 2, 1, 2],
-      bass: [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0], lead: 1900,
+      kick: F4, clap: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+      hat: [.15, .1, .7, .1, .15, .1, .7, .1, .15, .1, .7, .1, .15, .1, .7, .3], openHat: true,
+      arp: [0, 1, 2, 3, 2, 1, 2, 3, 0, 1, 2, 3, 3, 2, 1, 2],
+      bass: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0], oct: true, stab: [0, 6], lead: 2200,
+      drum: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0], drumIn: ['B', 'A2'],
+      chantIn: ['A2'],
+      chant: [[[0, 69, 4], [4, 69, 2], [6, 67, 2], [8, 65, 4], [12, 67, 4], [16, 69, 6], [22, 65, 2], [24, 62, 8]],
+              [[0, 65, 4], [4, 65, 2], [6, 67, 2], [8, 69, 4], [12, 70, 4], [16, 69, 4], [20, 67, 4], [24, 67, 8]]],
     },
     match: {
-      name: 'Ngày thi đấu', bpm: 128, seed: 41, swing: 0,
+      name: 'Ngày thi đấu', bpm: 138, seed: 41, swing: 0, crowd: .06, cheer: .2, whistle: true, horn: true,
       A: [C(40, 59, 64, 67, 71), C(36, 60, 64, 67, 72), C(43, 59, 62, 67, 71), C(38, 57, 62, 66, 69)],
       B: [C(45, 57, 60, 64, 69), C(36, 60, 64, 67, 72), C(38, 57, 62, 66, 69), C(35, 59, 63, 66, 71)],
       scale: [64, 67, 69, 71, 74, 76, 79, 81, 83],
-      kick: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, .4, 0], snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
-      hat: [.2, .2, .6, .2, .2, .2, .6, .2, .2, .2, .6, .2, .2, .2, .6, .35], arp: [0, 2, 1, 3, 0, 2, 1, 3, 0, 2, 1, 3, 3, 2, 1, 0],
-      bass: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1], lead: 2600, crowd: true,
+      kick: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0], clap: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1],
+      hat: [.3, .2, .6, .2, .3, .2, .6, .2, .3, .2, .6, .2, .3, .2, .6, .4], openHat: true, snare: [0, 0, 0, 0, .6, 0, 0, 0, 0, 0, 0, 0, .6, 0, 0, 0],
+      arp: [0, 2, 1, 3, 0, 2, 1, 3, 0, 2, 1, 3, 3, 2, 1, 0],
+      bass: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1], oct: true, stab: [0, 10], lead: 2800,
+      drum: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0], drumIn: ['I', 'A', 'B', 'A2'],
+      chantIn: ['A', 'A2'],
+      chant: [[[0, 64, 2], [2, 64, 2], [4, 67, 4], [8, 64, 2], [10, 64, 2], [12, 67, 4], [16, 67, 2], [18, 69, 2], [20, 71, 4], [24, 67, 4], [28, 64, 4]],
+              [[0, 67, 2], [2, 67, 2], [4, 71, 4], [8, 67, 2], [10, 67, 2], [12, 71, 4], [16, 69, 2], [18, 69, 2], [20, 66, 4], [24, 69, 4], [28, 62, 4]]],
     },
     market: {
-      name: 'Chợ đêm', bpm: 104, seed: 73, swing: .16,
+      name: 'Phiên chợ đêm', bpm: 114, seed: 73, swing: .14, crowd: .02, cheer: .06,
       A: [C(41, 56, 60, 65, 68), C(37, 56, 61, 65, 68), C(44, 56, 60, 63, 68), C(39, 55, 58, 63, 67)],
       B: [C(46, 58, 61, 65, 70), C(41, 56, 60, 65, 68), C(37, 56, 61, 65, 68), C(36, 55, 60, 64, 67)],
       scale: [65, 68, 70, 72, 75, 77, 80, 82],
-      kick: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0], snare: [0, 0, 0, 0, .7, 0, 0, 0, 0, 0, 0, 0, .7, 0, 0, .2],
-      hat: [.45, 0, .2, 0, .45, 0, .2, .1, .45, 0, .2, 0, .45, 0, .25, .15], arp: [0, -1, 2, -1, 1, -1, 3, -1, 2, -1, 1, -1, 3, -1, 2, -1],
-      bass: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1], lead: 1600,
+      kick: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0], clap: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+      hat: [.45, .15, .3, .15, .45, .15, .3, .2, .45, .15, .3, .15, .45, .15, .35, .2],
+      arp: [0, -1, 2, -1, 1, -1, 3, -1, 2, -1, 1, -1, 3, -1, 2, -1],
+      bass: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0], stab: [0, 6, 12], lead: 1900,
+      drum: null, drumIn: [], chantIn: [],
     },
   };
-  // giai điệu: mỗi cụm 2 ô nhịp, nhịp điệu + nốt sinh từ hạt giống (đoạn lặp lại → motif quen tai)
+  // giai điệu đàn: mỗi cụm 2 ô nhịp, nhịp điệu + nốt sinh từ hạt giống (đoạn lặp lại → motif quen tai)
   function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-  const RHYTHMS = [[0, 3, 6, 8, 10, 12, 14, 16, 22, 24, 28], [0, 4, 6, 8, 12, 16, 19, 22, 24], [0, 2, 4, 8, 11, 14, 16, 20, 24, 26, 28], [0, 6, 8, 12, 14, 16, 18, 24]];
+  const RHYTHMS = [[0, 3, 6, 8, 10, 12, 14, 16, 22, 24, 28], [0, 4, 6, 8, 12, 16, 19, 22, 24], [0, 2, 4, 8, 11, 14, 16, 20, 24, 26, 28], [0, 3, 6, 8, 12, 14, 16, 19, 22, 24]];
   function phrase(tr, seed, chords) {
     const r = rng(seed), rh = RHYTHMS[Math.floor(r() * RHYTHMS.length)], out = [];
     let idx = Math.floor(tr.scale.length / 2);
     rh.forEach((s, k) => {
       const ch = chords[Math.floor(s / 16)];
-      const strong = s % 8 === 0;
-      if (strong) {   // phách mạnh: nốt trong hợp âm gần nốt trước
+      if (s % 8 === 0) {   // phách mạnh: nốt trong hợp âm gần nốt trước
         const tones = tr.scale.map((m, i) => [m, i]).filter(([m]) => ch.v.some(c => (c - m) % 12 === 0));
         if (tones.length) idx = tones.reduce((a, b) => Math.abs(b[1] - idx) < Math.abs(a[1] - idx) ? b : a)[1];
       } else idx = Math.max(0, Math.min(tr.scale.length - 1, idx + [-2, -1, -1, 1, 1, 2][Math.floor(r() * 6)]));
@@ -207,15 +246,14 @@
     });
     return out;
   }
-  // bố cục 32 ô nhịp: 0–7 dạo (pad+arp, trống vào từ ô 4), 8–15 A + giai điệu, 16–23 B, 24–31 A' (giai điệu lên quãng 8, dồn trống ô cuối)
+  // bố cục 32 ô nhịp: I 0–7 dạo (khán đài, vỗ tay, trống vào dần), A 8–15, B 16–23, A' 24–31 (lên quãng 8, khán giả hát)
+  const section = bar => bar < 8 ? 'I' : bar < 16 ? 'A' : bar < 24 ? 'B' : 'A2';
   function arrangement(tr) {
     if (tr.cache) return tr.cache;
     const mel = {};
     for (let bar = 8; bar < 32; bar += 2) {
-      const sec = bar < 16 ? 'A' : bar < 24 ? 'B' : 'A2';
-      const prog = sec === 'B' ? tr.B : tr.A;
-      const ph = (bar % 8) / 2;   // 0..3
-      const seed = tr.seed * 100 + (sec === 'B' ? 50 : 0) + (sec === 'A2' && ph === 3 ? 9 : ph % 2);   // cụm 1 = 3 (hỏi–đáp), A' đổi câu kết
+      const sec = section(bar), prog = sec === 'B' ? tr.B : tr.A, ph = (bar % 8) / 2;
+      const seed = tr.seed * 100 + (sec === 'B' ? 50 : 0) + (sec === 'A2' && ph === 3 ? 9 : ph % 2);
       mel[bar] = phrase(tr, seed, [prog[(bar % 4)], prog[(bar % 4) + 1]]).map(n => ({ ...n, m: n.m + (sec === 'A2' && ph >= 2 ? 12 : 0) }));
     }
     return tr.cache = mel;
@@ -229,11 +267,11 @@
     if (curGain) { const g = curGain; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, .5); setTimeout(() => g.disconnect(), 3000); }
     if (bed) { const b = bed; b.g.gain.setTargetAtTime(0, t, .6); setTimeout(() => { try { b.n.stop(); } catch { } }, 3000); bed = null; }
     cur = TRACKS[name]; curName = name;
-    curGain = ctx.createGain(); curGain.gain.setValueAtTime(0, t); curGain.gain.linearRampToValueAtTime(1, t + 1.8); curGain.connect(musicBus);
+    curGain = ctx.createGain(); curGain.gain.setValueAtTime(0, t); curGain.gain.linearRampToValueAtTime(1, t + 1.5); curGain.connect(musicBus);
     if (cur.crowd) {   // tiếng sân vận động nền
       const n = noise(t, t + 3600), bp = filt('bandpass', 700, .6), g = ctx.createGain();
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.05, t + 3);
-      n.connect(bp); bp.connect(g); g.connect(curGain); bed = { n, g };
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(cur.crowd, t + 2.5);
+      n.connect(bp); bp.connect(g); send(g, curGain, .3); bed = { n, g };
     }
     step = 0; nextT = t + .1;
     if (!timer) timer = setInterval(tick, 25);
@@ -252,24 +290,37 @@
   }
   function play(s, t, sd) {
     const tr = cur, out = curGain, bar = Math.floor(s / 16) % 32, p = s % 16;
-    const sw = tr.swing && p % 2 ? sd * tr.swing : 0, T = t + sw;
-    const sec = bar < 16 ? tr.A : bar < 24 ? tr.B : tr.A, ch = sec[bar % 4];
-    const intro = bar < 8, fill = bar === 31 && p >= 8, drums = bar >= 4;
-    if (p === 0) I.pad(out, t, ch.v, sd * 16, intro ? .055 : .065);
-    if (p === 0 && (bar === 8 || bar === 24 || (bar === 16))) I.crash(out, t, .16);
-    if (bar === 7 || bar === 23) { if (p === 0) I.riser(out, t, sd * 16, .06); }
+    const T = t + (tr.swing && p % 2 ? sd * tr.swing : 0);
+    const sec = section(bar), ch = (sec === 'B' ? tr.B : tr.A)[bar % 4];
+    const intro = sec === 'I', build = bar >= 4 && bar < 8, fill = (bar === 15 || bar === 23 || bar === 31) && p >= 12;
+    if (p === 0) I.pad(out, t, ch.v, sd * 16, intro ? .035 : .04);
+    if (p === 0 && bar % 8 === 0 && !intro) { I.crash(out, t, .18); I.crowd(out, t, 2.4, tr.cheer); }
+    if (p === 0 && tr.horn && (bar === 8 || bar === 24)) { I.horn(out, t - sd * 4, sd * 3, 70); }
+    if (p === 0 && bar === 0 && tr.whistle) { I.whistle(out, t + .05, .2, .05); I.whistle(out, t + .35, .55, .05); }
+    if (p === 0 && bar === 7) I.riser(out, t, sd * 16, .07);
+    // trống cổ động viên + vỗ tay khán đài
+    if (tr.drum && tr.drumIn.includes(sec) && tr.drum[p] && !fill) I.bigdrum(out, T, (intro ? .45 : .6) * tr.drum[p]);
+    if (tr.clap[p] && bar >= 2 && !fill) I.clap(out, T, (intro ? .22 : .32) * tr.clap[p]);
+    // bộ trống
+    if ((!intro || (build && (bar >= 6 || p % 8 === 0))) && tr.kick[p] && !fill) I.kick(out, T, .85 * tr.kick[p]);
+    if (!intro) {
+      if (tr.hat[p]) I.hat(out, T, .07 * tr.hat[p], tr.openHat && p % 4 === 2);
+      if (tr.snare?.[p] && !fill) I.snare(out, T, .28 * tr.snare[p]);
+    } else if (build && p % 2 === 0) I.hat(out, T, .035);
+    if (fill) { I.tom(out, T, [260, 220, 180, 150][p - 12], .4); I.snare(out, T, .15 + (p - 12) * .06); }
+    // đàn
     const a = tr.arp[p];
-    if (a >= 0 && !(intro && bar < 2 && p % 4)) I.pluck(out, T, ch.v[a % ch.v.length] + (bar >= 24 && p >= 12 ? 12 : 0), intro ? .05 : .07, intro ? 1800 : 2800);
-    if (!intro || bar >= 4) if (tr.bass[p]) I.bass(out, T, ch.b + (tr === TRACKS.match && p % 4 === 2 ? 12 : 0), sd * 1.6);
-    if (drums && !fill) {
-      if (tr.kick[p]) I.kick(out, T, .8 * tr.kick[p]);
-      if (tr.snare[p] && bar >= 8) I.snare(out, T, .3 * tr.snare[p]);
-      if (tr.hat[p]) I.hat(out, T, .07 * tr.hat[p], tr === TRACKS.match && p % 4 === 2);
+    if (a >= 0 && bar >= 2) I.pluck(out, T, ch.v[a % ch.v.length] + (sec === 'A2' ? 12 : 0), intro ? .04 : .05, intro ? 1600 : 3000);
+    if (bar >= 4 && tr.bass[p]) I.bass(out, T, ch.b + (tr.oct && p % 4 === 2 ? 12 : 0), sd * 1.5);
+    if (!intro && sec !== 'B' && tr.stab.includes(p)) for (const m of ch.v) I.brass(out, T, m, sd * 1.4, .03);
+    // khán giả hát / giai điệu đàn
+    if (tr.chant && tr.chantIn.includes(sec)) {
+      const off = (bar % 2) * 16 + p;
+      for (const [s0, m, l] of tr.chant[(bar >> 1) % 2]) if (s0 === off) I.chant(out, T, m, l * sd * .95, .03);
+    } else if (!intro) {
+      const mel = arrangement(tr), base = bar % 2 ? bar - 1 : bar;
+      if (mel[base]) for (const n of mel[base]) if (n.s === (bar - base) * 16 + p) I.lead(out, T, n.m, n.len * sd * .92, sec === 'A2' ? .065 : .055, tr.lead);
     }
-    if (fill && p % 2 === 0) I.tom(out, T, [220, 200, 170, 150][(p - 8) / 2 % 4], .35 + (p - 8) * .03);
-    if (fill && p === 15) I.snare(out, T, .4);
-    const mel = arrangement(tr), base = bar % 2 ? bar - 1 : bar;
-    if (mel[base]) for (const n of mel[base]) if (n.s === (bar - base) * 16 + p) I.lead(out, T, n.m, n.len * sd * .92, bar >= 24 ? .07 : .06, tr.lead);
   }
 
   // ===== hiệu ứng =====
