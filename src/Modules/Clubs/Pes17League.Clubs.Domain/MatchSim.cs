@@ -43,23 +43,30 @@ public static class MatchSim
 
     /// <summary>Đội ra sân từ đội hình xếp theo ô (11 ô đầu đá chính): cầu thủ chấn thương không ra sân — người đá chính chấn thương được thay
     /// bằng dự bị khoẻ tốt nhất cùng tuyến (không có thì dự bị khoẻ tốt nhất ngoài thủ môn; thủ môn chỉ thay bằng thủ môn); hết người thì vẫn ra sân.
-    /// Cần cho CLB người chơi khi mô phỏng (không có HLV BOT dọn đội hình).</summary>
-    public static SimTeam Lineup(IReadOnlyList<SimPlayer> squad, Func<Guid, bool> injured)
+    /// <paramref name="tired"/> (trợ lý xoay vòng, PO 19/11): người đá chính mệt được cho nghỉ nếu có dự bị cùng tuyến không mệt, người nghỉ xuống
+    /// cuối ghế dự bị. Cần cho CLB người chơi khi mô phỏng (không có HLV BOT dọn đội hình).</summary>
+    public static SimTeam Lineup(IReadOnlyList<SimPlayer> squad, Func<Guid, bool> injured, Func<Guid, bool>? tired = null)
     {
         var starters = squad.Take(11).ToList();
         var bench = squad.Skip(11).Where(p => !injured(p.PlayerId)).ToList();
+        var rested = new List<SimPlayer>();
+        bool Fresh(SimPlayer p) => tired is null || !tired(p.PlayerId);
         for (var i = 0; i < starters.Count; i++)
         {
             var s = starters[i];
-            if (!injured(s.PlayerId)) continue;
+            var hurt = injured(s.PlayerId);
+            if (!hurt && Fresh(s)) continue;
             var g = s.Position.Group();
-            var sub = bench.Where(b => b.Position.Group() == g).MaxBy(b => b.Overall)
-                ?? (g == PositionGroup.Goalkeeper ? null : bench.Where(b => b.Position.Group() != PositionGroup.Goalkeeper).MaxBy(b => b.Overall));
+            var sub = bench.Where(b => b.Position.Group() == g && Fresh(b)).MaxBy(b => b.Overall);
+            if (sub is null && hurt)
+                sub = bench.Where(b => b.Position.Group() == g).MaxBy(b => b.Overall)
+                    ?? (g == PositionGroup.Goalkeeper ? null : bench.Where(b => b.Position.Group() != PositionGroup.Goalkeeper).MaxBy(b => b.Overall));
             if (sub is null) continue;
             bench.Remove(sub);
             starters[i] = sub with { Slot = s.Slot };
+            if (!hurt) rested.Add(s with { Slot = sub.Slot });
         }
-        return new SimTeam(starters, bench);
+        return new SimTeam(starters, [.. bench, .. rested]);
     }
 
     /// <param name="knockout">Trận loại trực tiếp 1 lượt: hoà sau 90' → hiệp phụ 30', vẫn hoà → luân lưu.</param>

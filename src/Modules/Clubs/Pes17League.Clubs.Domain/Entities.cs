@@ -19,6 +19,9 @@ public class Club
     public string? LogoPath { get; set; }
     /// <summary>Tăng mỗi lần squad đổi — chặn 2 giao dịch đồng thời cùng CLB (optimistic concurrency).</summary>
     public int SquadVersion { get; set; }
+    /// <summary>Trợ lý xoay vòng (PO 19/11, mặc định bật): khi mô phỏng trận của CLB người chơi, người đá chính mệt (≥ <see cref="ConditionRules.TiredAt"/>)
+    /// được cho nghỉ nếu có dự bị cùng tuyến khoẻ. Chỉ áp lúc mô phỏng, không sửa đội hình đã lưu.</summary>
+    public bool AutoLineup { get; set; } = true;
 }
 
 public class TeamAssignment

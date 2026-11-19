@@ -104,4 +104,30 @@ public class MatchSimTests
         Assert.Equal(benchCbGood.PlayerId, t.Starters[1].PlayerId);   // cùng tuyến hậu vệ, tốt nhất còn khoẻ
         Assert.Equal([benchCbWeak.PlayerId], t.Bench.Select(p => p.PlayerId));
     }
+
+    [Fact]
+    public void Assistant_rests_tired_starters_only_when_a_fresh_same_line_sub_exists()
+    {
+        var gk = new SimPlayer(Guid.NewGuid(), Position.GK, 85, 0);
+        var cbTired = new SimPlayer(Guid.NewGuid(), Position.CB, 80, 1);
+        var cfTired = new SimPlayer(Guid.NewGuid(), Position.CF, 82, 2);
+        var others = Enumerable.Range(3, 8).Select(i => new SimPlayer(Guid.NewGuid(), Position.CMF, 75, i)).ToList();
+        var benchCbTired = new SimPlayer(Guid.NewGuid(), Position.CB, 79, 11);
+        var benchSb = new SimPlayer(Guid.NewGuid(), Position.SB, 72, 12);
+        var benchGk = new SimPlayer(Guid.NewGuid(), Position.GK, 70, 13);
+        var squad = new List<SimPlayer> { gk, cbTired, cfTired }.Concat(others).Concat([benchCbTired, benchSb, benchGk]).ToList();
+        var tired = new HashSet<Guid> { cbTired.PlayerId, cfTired.PlayerId, benchCbTired.PlayerId };
+
+        var t = MatchSim.Lineup(squad, _ => false, tired.Contains);
+
+        Assert.Equal(benchSb.PlayerId, t.Starters[1].PlayerId);       // dự bị cùng tuyến không mệt vào thay
+        Assert.Equal(1, t.Starters[1].Slot);
+        Assert.Equal(cfTired.PlayerId, t.Starters[2].PlayerId);      // không có tiền đạo dự bị khoẻ → vẫn đá
+        Assert.Contains(cbTired.PlayerId, t.Bench.Select(p => p.PlayerId));   // người nghỉ xuống ghế dự bị
+        Assert.Equal(11, t.Starters.Count);
+        Assert.Equal(squad.Count, t.Starters.Count + t.Bench.Count);
+
+        var off = MatchSim.Lineup(squad, _ => false);                // tắt trợ lý → giữ nguyên đội hình
+        Assert.Equal(squad.Take(11).Select(p => p.PlayerId), off.Starters.Select(p => p.PlayerId));
+    }
 }

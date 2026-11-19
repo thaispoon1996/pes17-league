@@ -69,7 +69,7 @@ public sealed class MatchSimService(ClubsDbContext db, IOptionFileStore store, T
     static readonly SimTeam Empty = new([], []);
 
     /// <summary>Đội hình hiện tại theo ô (SlotOrder): 11 đầu đá chính, còn lại dự bị, người chấn thương được thay (<see cref="MatchSim.Lineup"/>);
-    /// OVR hiệu dụng = OVR mùa trừ mệt.</summary>
+    /// CLB người chơi bật <see cref="Club.AutoLineup"/> thì người mệt được cho nghỉ. OVR hiệu dụng = OVR mùa trừ mệt.</summary>
     private async Task<Dictionary<Guid, SimTeam>> TeamsAsync(Guid seasonId, IReadOnlyCollection<Guid> clubs, CancellationToken ct)
     {
         var rows = await (from m in db.SquadMemberships
@@ -79,11 +79,14 @@ public sealed class MatchSimService(ClubsDbContext db, IOptionFileStore store, T
         var ids = rows.Select(r => r.PlayerId).ToList();
         var ovr = await db.PlayerPrices.Where(x => x.SeasonId == seasonId && ids.Contains(x.PlayerId)).ToDictionaryAsync(x => x.PlayerId, x => x.Overall, ct);
         var cond = await db.PlayerConditions.Where(c => ids.Contains(c.PlayerId)).ToDictionaryAsync(c => c.PlayerId, ct);
+        var humans = await MatchOrchestrator.HumanClubsAsync(db, clubs, ct);
+        var rotate = (await db.Clubs.Where(c => clubs.Contains(c.Id) && c.AutoLineup).Select(c => c.Id).ToListAsync(ct)).Where(humans.Contains).ToHashSet();
+        bool Tired(Guid id) => cond.GetValueOrDefault(id)?.Fatigue >= ConditionRules.TiredAt;
         return rows.GroupBy(r => r.ClubId).ToDictionary(g => g.Key, g =>
         {
             var list = g.OrderBy(r => r.SlotOrder).Select((r, i) => new SimPlayer(r.PlayerId, r.Position,
                 ConditionRules.EffectiveOverall(ovr.GetValueOrDefault(r.PlayerId), cond.GetValueOrDefault(r.PlayerId)), i)).ToList();
-            return MatchSim.Lineup(list, id => cond.GetValueOrDefault(id)?.InjuredRounds is > 0);
+            return MatchSim.Lineup(list, id => cond.GetValueOrDefault(id)?.InjuredRounds is > 0, rotate.Contains(g.Key) ? Tired : null);
         });
     }
 }

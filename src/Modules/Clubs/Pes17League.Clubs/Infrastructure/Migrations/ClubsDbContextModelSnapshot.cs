@@ -136,6 +136,9 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("AutoLineup")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Country")
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");

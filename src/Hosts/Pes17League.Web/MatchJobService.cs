@@ -179,6 +179,14 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     /// Career (PO 19/11): mô phỏng các trận không có người chơi, khung này sang khung khác, tới trận kế tiếp của người chơi / hết mùa.
     /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi đang chờ (rồi dừng ở cuối khung đó).
     /// </summary>
+    public const string RolloverTitle = "Sang mùa mới";
+    public bool NextSeason() => Start(RolloverTitle, async ct =>
+    {
+        await using var db = await dbs.CreateDbContextAsync(ct);
+        var r = await new SeasonRolloverService(db, store, clock).NextSeasonAsync(Random.Shared.Next(1, 10_000), "career", Write, ct);
+        Write($"Xong: {r.Season} — giải nghệ {r.Retired}, BOT ký thay {r.Replaced}, {r.Start.Slots} khung / {r.Start.Matches} trận.");
+    });
+
     public bool SimulateCareer(bool includeMine = false) => Start(SimTitle, async ct =>
     {
         await using var db = await dbs.CreateDbContextAsync(ct);

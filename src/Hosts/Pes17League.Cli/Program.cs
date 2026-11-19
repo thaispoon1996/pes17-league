@@ -12,6 +12,7 @@ using Pes17League.Clubs.Infrastructure;
 //   setup-pes17-world WORLD_JSON [--dry]  Career (PO 19/11): mọi giải + cúp quốc gia + C1/C2 thể thức mới (pesdb.py world); mùa chưa đá trận nào thì làm lại; CLB người → BOT
 //   start-pes17-season [SEED [TEN_TK PES_DOI]] [--dry]  bắt đầu mùa Career (kinh tế lương 2‰, lịch, chợ hè), giao CLB cho TEN_TK (web: /su-nghiep)
 //   career-continue [MAX_KHUNG] [--all]  (--all: mô phỏng cả trận người chơi) mô phỏng các trận không có người chơi tới trận kế tiếp của người chơi / hết mùa
+//   career-next-season [SEED]             mùa trước xong → sang mùa mới (tuổi + phát triển, giải nghệ, lên/xuống hạng, C1/C2, lịch, ngân sách)
 //   open-market                           mở chợ tự do PES17 cho mùa chưa xong (cần quỹ ngân sách đã lưu)
 //   move-player PES_CT PES_DOI|free       admin chuyển cầu thủ (mã PES17) sang CLB (mã đội PES17) / thả tự do, qua chợ tự do
 //   set-contracts SO_TRAN                 mùa chưa bắt đầu: hợp đồng nhập từ patch (chưa đá, chưa có lương) + gia hạn mặc định → SO_TRAN trận
@@ -64,6 +65,9 @@ switch (args.FirstOrDefault())
         break;
     case "career-continue":
         await CareerContinueAsync(args.Skip(1).Where(a => a != "--all").Select(int.Parse).FirstOrDefault(500), args.Contains("--all"));
+        break;
+    case "career-next-season":
+        await CareerNextSeasonAsync(args.Length > 1 ? int.Parse(args[1]) : Random.Shared.Next(1, 10_000));
         break;
     case "open-market":
         await OpenMarketAsync();
@@ -257,6 +261,17 @@ async Task CareerContinueAsync(int maxSlots, bool all)
         Console.WriteLine($"Dừng ở trận của người chơi: khung {x.Number} {x.Name} – {x.Away} ({f})");
     }
     foreach (var e in r.Errors.Take(10)) Console.WriteLine($"  LỖI {e}");
+}
+
+async Task CareerNextSeasonAsync(int seed)
+{
+    await using var db = Db();
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var r = await new SeasonRolloverService(db, store, clock).NextSeasonAsync(seed, "cli", line => Console.WriteLine($"  {sw.Elapsed:mm\\:ss} {line}"));
+    Console.WriteLine($"{r.Season}: {r.Players} cầu thủ cộng tuổi, giải nghệ {r.Retired} (hoãn {r.Deferred}), BOT ký thay {r.Replaced}; "
+        + $"{r.Start.Slots} khung / {r.Start.Matches} trận, quỹ {r.Start.Fund:N0} — {sw.Elapsed:mm\\:ss}");
+    if (r.MyRetired.Count > 0) Console.WriteLine($"  CLB người chơi giải nghệ: {string.Join(", ", r.MyRetired)}");
+    foreach (var m in r.Moves) Console.WriteLine($"  {m}");
 }
 
 async Task OpenMarketAsync()

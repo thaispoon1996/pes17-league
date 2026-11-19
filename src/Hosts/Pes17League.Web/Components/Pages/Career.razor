@@ -40,7 +40,12 @@
     <div class="stack">
     <section class="panel">
         <h2><span class="ms ic" aria-hidden="true">fast_forward</span>Tiếp tục mùa giải</h2>
-        @if (Jobs.Running && Jobs.Title == MatchJobService.SimTitle)
+        @if (Jobs.Running && Jobs.Title == MatchJobService.RolloverTitle)
+        {
+            <p><span class="ui-spin" aria-hidden="true"></span> Đang sang mùa mới (vài phút)…</p>
+            <pre class="muted">@string.Join("\n", Jobs.Log.TakeLast(6))</pre>
+        }
+        else if (Jobs.Running && Jobs.Title == MatchJobService.SimTitle)
         {
             <p><span class="ui-spin" aria-hidden="true"></span> Đang mô phỏng các trận…</p>
             <pre class="muted">@string.Join("\n", Jobs.Log.TakeLast(6))</pre>
@@ -51,7 +56,16 @@
         }
         else if (current is null)
         {
-            <p><b>Mùa giải đã kết thúc.</b> Xem <a href="bxh">BXH</a> và <a href="giai">các giải</a>.</p>
+            <p><b>@seasonName đã kết thúc</b>@(myPos is { } fp ? $" — hạng {fp} {leagueName}" : "").@(champion.Count > 0 ? $" Vô địch: {string.Join(", ", champion)} 🏆" : "")</p>
+            @if (canNext)
+            {
+                <p class="muted">Sang mùa mới: cầu thủ thêm 1 tuổi (trẻ phát triển, già sa sút), một số giải nghệ, lên/xuống hạng và suất C1/C2 theo BXH, lịch và ngân sách mùa mới.</p>
+                <button class="primary wide" data-confirm="Sang mùa mới? Không quay lại được." @onclick="NextSeason"><span class="ms ic" aria-hidden="true">event_repeat</span>Sang mùa mới</button>
+            }
+            else
+            {
+                <p class="muted">Xem <a href="bxh">BXH</a> và <a href="giai">các giải</a>.</p>
+            }
         }
         else if (current.BotLeft > 0 || current.MineFixture is null)
         {
@@ -66,9 +80,12 @@
                 <button class="btn" data-confirm="Mô phỏng trận này (không đá trong game)?" @onclick="() => Simulate(true)"><span class="ms ic" aria-hidden="true">casino</span>Mô phỏng trận này</button>
             </p>
         }
-        @if (!Jobs.Running && Jobs.Title == MatchJobService.SimTitle && Jobs.Log.Count > 0)
+        <label class="muted" style="display:flex;align-items:center;gap:8px;margin-top:12px" title="Khi mô phỏng trận của bạn: cầu thủ đá chính mệt (≥ @ConditionRules.TiredAt) được cho nghỉ nếu có dự bị cùng tuyến khoẻ. Không sửa đội hình bạn đã lưu.">
+            <input type="checkbox" style="width:auto;margin:0;flex:none" checked="@autoLineup" @onchange="ToggleAuto" /> Trợ lý xoay vòng đội hình khi mô phỏng (người mệt nghỉ)
+        </label>
+        @if (!Jobs.Running && Jobs.Title is MatchJobService.SimTitle or MatchJobService.RolloverTitle && Jobs.Log.Count > 0)
         {
-            <details><summary class="muted">Lần mô phỏng trước</summary><pre class="muted">@string.Join("\n", Jobs.Log.TakeLast(12))</pre></details>
+            <details><summary class="muted">@(Jobs.Title == MatchJobService.RolloverTitle ? "Lần sang mùa vừa rồi" : "Lần mô phỏng trước")</summary><pre class="muted">@string.Join("\n", Jobs.Log.TakeLast(12))</pre></details>
         }
     </section>
     <section class="panel">
@@ -208,8 +225,9 @@
 }
 
 @code {
-    Guid? me, seasonId;
-    bool loaded, taken, starting;
+    Guid? me, seasonId, clubId;
+    bool loaded, taken, starting, autoLineup = true, canNext;
+    List<string> champion = [];
     string? club, seasonName, league, error;
     CareerClubChoice? pick;
     IReadOnlyList<CareerClubChoice> choices = [];
@@ -250,16 +268,24 @@
         if (me is { } id)
         {
             var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
-                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name, c.LogoPath }).FirstOrDefaultAsync();
+                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name, c.LogoPath, c.AutoLineup }).FirstOrDefaultAsync();
             if (mine is not null)
             {
                 club = mine.Name;
+                clubId = mine.Id;
+                autoLineup = mine.AutoLineup;
                 clubLogo = mine.LogoPath;
                 budget = await db.Ledger.Where(e => e.ClubId == mine.Id).SumAsync(e => e.Amount);
                 var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync()
                     ?? await db.Seasons.Where(s => s.Status == SeasonStatus.Finished).OrderByDescending(s => s.Number).FirstOrDefaultAsync();
                 seasonName = season?.Name;
                 if (season is not null) await LoadClubAsync(db, season.Id, mine.Id);
+                champion = [.. cups.Where(c => c.State.Contains("Vô địch")).Select(c => c.Name)];
+                canNext = false;
+                if (season?.Status == SeasonStatus.Finished && myPos == 1 && leagueName is not null) champion.Insert(0, leagueName);
+                if (season?.Status == SeasonStatus.Finished)
+                    canNext = await new SeasonRolloverService(db, Store, Clock).ReadyAsync() is not null
+                        || await new Pes17CareerService(db, Store, Clock).PendingSeasonAsync() is { Number: > 1 };
                 return;
             }
         }
@@ -336,6 +362,20 @@
                 .Select(f => new { f.Id, Mine = (f.HomeClubId == mineId || f.AwayClubId == mineId) && !f.AssistantPlays }).ToListAsync();
             current = new Current(md.Id, md.Number, left.Count(x => !x.Mine), left.FirstOrDefault(x => x.Mine)?.Id);
         }
+    }
+
+    async Task ToggleAuto(ChangeEventArgs e)
+    {
+        if (clubId is not { } id) return;
+        autoLineup = e.Value is true;
+        await using var db = await Dbs.CreateDbContextAsync();
+        await db.Clubs.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.AutoLineup, autoLineup));
+    }
+
+    void NextSeason()
+    {
+        error = null;
+        if (!Jobs.NextSeason()) error = "Máy đang bận, thử lại sau.";
     }
 
     void Simulate(bool mine)
