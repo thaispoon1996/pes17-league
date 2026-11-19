@@ -87,7 +87,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     // Giây còn lại tới giao bóng tính từ lúc vào mỗi bước. Mặc định đo 05/11 (4 trận BOT: boot→menu ~28 s, menu→chọn đội ~50,
     // chọn đội→tải ~35–50, tải→giao bóng ~21); sau mỗi trận PO vào được tới giao bóng thì chỉnh dần theo thực đo (chỉ trong bộ nhớ).
     // "warm" (vào trận nhanh, PO 16/11): tính từ lúc bấm Sẵn sàng; thử pestest-1 16/11: go → chọn xong 2 đội 39 s (ghi bộ nhớ 2 s).
-    private static readonly Dictionary<string, double> Eta = new() { [""] = 140, ["boot"] = 135, ["menu"] = 105, ["warm"] = 95, ["teams"] = 55, ["ready"] = 21, ["loading"] = 21 };
+    private static readonly Dictionary<string, double> Eta = new() { [""] = 245, ["boot"] = 240, ["menu"] = 235, ["warm"] = 220, ["teams"] = 215, ["ready"] = 150, ["loading"] = 150 };   // đo PES17 19/11 (1 trận BOT), tự học thêm sau mỗi trận
     private readonly Dictionary<string, DateTimeOffset> _stageTimes = [];
 
     /// <summary>Ước lượng giây từ lúc bấm Sẵn sàng tới giao bóng.</summary>
@@ -121,8 +121,8 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     /// <summary>Đã xin dừng, trận BOT đang đá chưa xong.</summary>
     public bool StopPending => Running && _stop is { IsCancellationRequested: true };
 
-    // Đo khung 1 (06/11, trận BOT): giao bóng → hết giờ 11–12,7 phút; hết giờ → trận sau (đọc điểm, cắt highlight) ~1 phút.
-    private const double BotInPlayMinutes = 12.5, BotAfterMinutes = 1;
+    // Đo PES17 19/11 (1 trận BOT, Match Time 5): giao bóng → hết giờ 13,8 phút (game chạy chậm hơn thời gian thực); hết giờ → xong ~0,2 phút.
+    private const double BotInPlayMinutes = 14, BotAfterMinutes = 0.5;
 
     /// <summary>Đá BOT: ước lượng phút tới khi trận đang đá xong; null = không đá BOT.</summary>
     public int? BotMinutesLeft
@@ -144,8 +144,8 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
         }
     }
 
-    // Đo khung 1 (07/11): 39 trận BOT liền nhau 9 giờ 56 phút → ~15,3 phút/trận kể cả lúc chuyển trận.
-    public const double BotMatchMinutes = 15.3;
+    // Đo PES17 19/11 (1 trận BOT, Match Time 5): khởi động → xong 1075 s ≈ 18 phút/trận (khởi động 4 phút + đá 13,8 phút).
+    public const double BotMatchMinutes = 18;
 
     /// <summary>Đá BOT: ước lượng phút tới khi xong trận đang đá và <paramref name="queued"/> trận BOT chưa đá; null = không đá BOT.</summary>
     public int? BotQueueMinutesLeft(int queued) => BotMinutesLeft is { } m ? m + (int)Math.Ceiling(queued * BotMatchMinutes) : null;
