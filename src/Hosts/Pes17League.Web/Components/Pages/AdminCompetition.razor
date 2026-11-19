@@ -71,7 +71,8 @@
             <label>Số trận mỗi đội <input type="number" min="2" @bind="form.LeaguePhaseMatches" /></label>
             <label>Vào thẳng: hạng 1 tới <input type="number" min="0" @bind="form.DirectKnockoutPlaces" /></label>
             <label>Đá play-off: tới hạng <input type="number" min="0" @bind="form.PlayoffPlaces" /></label>
-            <label>Suất CLB lẻ (ngoài 4 nước) <input type="number" min="0" @bind="form.LooseClubPlaces" /></label>
+            <label>Suất CLB lẻ (CLB châu Âu ngoài giải) <input type="number" min="0" @bind="form.LooseClubPlaces" /></label>
+            <label>Tối đa CLB mỗi nước (trống = không giới hạn) <input type="number" min="1" @bind="form.MaxClubsPerCountry" /></label>
         }
         else if (domesticCup)
         {
@@ -280,6 +281,7 @@
         public int? DirectKnockoutPlaces { get; set; }
         public int? PlayoffPlaces { get; set; }
         public int? LooseClubPlaces { get; set; }
+        public int? MaxClubsPerCountry { get; set; }
 
         bool Continental => Type == CompetitionType.ContinentalCup;
         bool DomesticCup => Type == CompetitionType.DomesticCup;
@@ -306,6 +308,7 @@
             DirectKnockoutPlaces = r.DirectKnockoutPlaces;
             PlayoffPlaces = r.PlayoffPlaces;
             LooseClubPlaces = r.LooseClubPlaces;
+            MaxClubsPerCountry = r.MaxClubsPerCountry;
         }
 
         /// <summary>Luật theo loại: giải quốc gia bỏ phần cúp; cúp châu lục bỏ suất lên/xuống; cúp quốc gia chỉ Legs=1.</summary>
@@ -315,6 +318,7 @@
             {
                 PointsWin = PointsWin, PointsDraw = PointsDraw, PointsLoss = PointsLoss, Legs = Legs, LeaguePhaseTeams = LeaguePhaseTeams,
                 LeaguePhaseMatches = LeaguePhaseMatches, DirectKnockoutPlaces = DirectKnockoutPlaces, PlayoffPlaces = PlayoffPlaces, LooseClubPlaces = LooseClubPlaces,
+                MaxClubsPerCountry = MaxClubsPerCountry,
             },
             CompetitionType.DomesticCup => new() { PointsWin = PointsWin, PointsDraw = PointsDraw, PointsLoss = PointsLoss, Legs = 1 },
             _ => new()

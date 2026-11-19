@@ -18,6 +18,9 @@ công khai. Chắc chắn (đã kiểm chéo đội hình Arsenal):
   PlayerAssignment 16 byte: u32 mã dòng, u32 cầu thủ, u32 đội, u8 số áo, u8 (5 bit thứ tự | 3 bit vai trò), u16 cờ
                     vai trò 2/4/6 (6 = đội trưởng, vd. Henderson Brentford 197 = ô 5 + 6<<5); cờ ≈ người đá phạt (chưa giải)
   leagues <thư-mục> <ra.json>                — CLB 5 giải lớn theo CompetitionEntry ({"ENG": {"name":…, "teams":[mã đội]}, …})
+  world <thư-mục> <ra.json>                  — thế giới Career (PO 19/11): mọi giải VĐQG trong dữ liệu (17 giải, 2 hạng Anh/TBN/Ý/Pháp),
+                                               cúp quốc gia, nước của từng CLB (CLB dự giải = nước của giải; CLB châu Âu ngoài giải = nước
+                                               thật → dự C1/C2 theo sức mạnh; còn lại null = không dự giải nào)
   apply <thư-mục> <squads.json> <ra.bin>
                                              — dựng lại dòng CLB theo đội hình DB ({"mã đội": [[mã cầu thủ, số áo], ...]} theo thứ tự
                                                ô; Pes17League.Cli export-pes17-squads). Đội tuyển + CLB không có trong json giữ nguyên.
@@ -42,6 +45,60 @@ LEAGUES = {9: ("ENG", "Premier League"), 0xB: ("ESP", "La Liga"), 0xA: ("ITA", "
 def competition_entries(raw: bytes) -> list[tuple[int, int]]:
     """(mã giải, mã đội)."""
     return [(struct.unpack_from("<H", raw, i + 10)[0], struct.unpack_from("<I", raw, i)[0]) for i in range(0, len(raw) - 11, 12)]
+
+
+# Thế giới Career (dò 19/11/2026 trên HANO V6): mã giải CompetitionEntry → (nước, hạng, tên, lượt, mã menu giải trong game)
+WORLD_LEAGUES = {
+    9: ("ENG", 1, "Premier League", 2, "eng1"), 66: ("ENG", 2, "Championship", 2, "eng2"),
+    11: ("ESP", 1, "La Liga", 2, "esp1"), 67: ("ESP", 2, "LaLiga 2", 2, "esp2"),
+    10: ("ITA", 1, "Serie A", 2, "ita1"), 69: ("ITA", 2, "Serie B", 2, "ita2"),
+    12: ("FRA", 1, "Ligue 1", 2, "fra1"), 68: ("FRA", 2, "Ligue 2", 2, "fra2"),
+    39: ("GER", 1, "Bundesliga", 2, "peu"), 13: ("NED", 1, "Eredivisie", 2, "ned1"), 14: ("POR", 1, "Liga Portugal", 2, "por1"),
+    21: ("BRA", 1, "Brasileirão", 2, "bra"), 22: ("ARG", 1, "Liga Profesional", 1, "arg"), 23: ("CHI", 1, "Primera División Chile", 2, "chi"),
+    40: ("USA", 1, "MLS", 2, None), 41: ("EGY", 1, "Egyptian Premier League", 2, None), 8: ("MAR", 1, "Botola Pro", 2, None),
+}
+# Cúp quốc gia có trong dữ liệu game (Morocco không có)
+WORLD_CUPS = {
+    "ENG": ("FA Cup", "FA Cup"), "ESP": ("Copa del Rey", "CdR"), "ITA": ("Coppa Italia", "CI"), "FRA": ("Coupe de France", "CdF"),
+    "GER": ("DFB-Pokal", "DFB"), "NED": ("KNVB Beker", "KNVB"), "POR": ("Taça de Portugal", "Taça"), "BRA": ("Copa do Brasil", "CdB"),
+    "ARG": ("Copa Argentina", "CA"), "CHI": ("Copa Chile", "CC"), "USA": ("U.S. Open Cup", "USOC"), "EGY": ("Egypt Cup", "EC"),
+    "MAR": ("Coupe du Trône", "CdT"),
+}
+# Nước CLB (Team +20 u16 & 0x1FF) của CLB châu Âu không thuộc giải nào → dự C1/C2 dạng CLB lẻ
+UEFA_LOOSE = {190: "TUR", 197: "BEL", 232: "SCO", 203: "DEN", 238: "SUI", 211: "GRE", 202: "CZE", 239: "UKR", 200: "CRO", 194: "AUT",
+              208: "FRA"}
+NOT_CLUB = ("classics", "ml default", "old boys")   # đội đặc biệt (huyền thoại, Master League) → không dự giải
+
+
+def team_country(r: bytes) -> int:
+    return struct.unpack_from("<H", r, 20)[0] & 0x1FF
+
+
+def world(d: Path) -> dict:
+    raw = (d / "Team.raw").read_bytes()
+    recs = {struct.unpack_from("<I", raw, i + 8)[0]: raw[i:i + TEAM_SIZE] for i in range(0, len(raw) - TEAM_SIZE + 1, TEAM_SIZE)}
+    info = {t["id"]: t for t in teams(raw)}
+    leagues = {cid: {"comp": cid, "country": c, "tier": t, "name": n, "legs": legs, "menu": m, "teams": []}
+               for cid, (c, t, n, legs, m) in WORLD_LEAGUES.items()}
+    for comp, team in competition_entries((d / "CompetitionEntry.raw").read_bytes()):
+        if comp in leagues and team not in leagues[comp]["teams"]:
+            leagues[comp]["teams"].append(team)
+    country = {}
+    for l in leagues.values():
+        for t in l["teams"]:
+            if t in country:
+                raise SystemExit(f"đội {t} ở 2 giải")
+            country[t] = l["country"]
+    for tid, t in info.items():
+        if t["national"] or tid in country:
+            continue
+        name = t["name"].lower()
+        country[tid] = None if any(x in name for x in NOT_CLUB) else UEFA_LOOSE.get(team_country(recs[tid]))
+    return {
+        "leagues": sorted(leagues.values(), key=lambda l: (l["country"], l["tier"])),
+        "cups": [{"country": c, "name": n, "short": s} for c, (n, s) in WORLD_CUPS.items()],
+        "clubs": {str(k): v for k, v in sorted(country.items())},
+    }
 
 
 POSITIONS = ("GK", "CB", "LB", "RB", "DMF", "CMF", "LMF", "RMF", "AMF", "LWF", "RWF", "SS", "CF")
@@ -245,6 +302,13 @@ def main(argv: list[str]) -> int:
                 out[LEAGUES[comp][0]]["teams"].append(team)
         Path(argv[2]).write_text(json.dumps(out, ensure_ascii=False))
         print({k: len(v["teams"]) for k, v in out.items()})
+        return 0
+    if len(argv) == 3 and argv[0] == "world":
+        w = world(Path(argv[1]))
+        Path(argv[2]).write_text(json.dumps(w, ensure_ascii=False, indent=1))
+        loose = sum(1 for c in w["clubs"].values() if c and c not in {l["country"] for l in w["leagues"]})
+        print(" ".join(f"{l['name']}={len(l['teams'])}" for l in w["leagues"]), f"| cúp {len(w['cups'])} | CLB lẻ châu Âu {loose}",
+              f"| không dự {sum(1 for c in w['clubs'].values() if c is None)}")
         return 0
     if len(argv) == 4 and argv[0] == "apply":
         d = Path(argv[1])

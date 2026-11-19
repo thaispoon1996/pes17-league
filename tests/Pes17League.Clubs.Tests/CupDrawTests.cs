@@ -40,9 +40,9 @@ public class CupDrawTests
         for (var seed = 0; seed < 30; seed++) AssertValid(seeded, CupDraw.LeaguePhase(seeded, 8, new Random(seed)));
         Assert.Equal(CupDraw.LeaguePhase(seeded, 8, new Random(7)), CupDraw.LeaguePhase(seeded, 8, new Random(7)));
         Assert.Throws<ArgumentException>(() => CupDraw.LeaguePhase(seeded.Take(22).ToList(), 8, new Random(0)));
-        // 13 đội cùng nước: nhóm 1, 2 toàn ENG → không có đối thủ khác nhóm hợp lệ.
+        // 13 đội cùng nước: nhóm 1, 2 toàn ENG → không có đối thủ khác nhóm hợp lệ (báo ngay, không tìm kiếm).
         var crowded = seeded.Select((s, i) => (s.Id, i < 13 ? "ENG" : s.Country)).ToList();
-        Assert.Throws<InvalidOperationException>(() => CupDraw.LeaguePhase(crowded, 8, new Random(0)));
+        Assert.Throws<ArgumentException>(() => CupDraw.LeaguePhase(crowded, 8, new Random(0)));
     }
 
     /// <summary>Kiểm 8 vòng league phase: mỗi vòng mỗi đội đúng 1 trận, không quá 2 trận nhà/khách liên tiếp, gộp lại = kết quả bốc thăm hợp lệ.</summary>

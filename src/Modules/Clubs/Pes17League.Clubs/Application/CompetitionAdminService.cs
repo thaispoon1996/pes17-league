@@ -83,7 +83,7 @@ public sealed class CompetitionAdminService(ClubsDbContext db, TimeProvider cloc
         {
             if (r.Legs != 1) e.Add("Cúp quốc gia chỉ đá 1 lượt");
             if (r.LeaguePhaseTeams is not null || r.LeaguePhaseMatches is not null || r.DirectKnockoutPlaces is not null
-                || r.PlayoffPlaces is not null || r.LooseClubPlaces is not null)
+                || r.PlayoffPlaces is not null || r.LooseClubPlaces is not null || r.MaxClubsPerCountry is not null)
                 e.Add("Cúp quốc gia không dùng luật league phase");
             if (r.PromotionPlaces > 0 || r.RelegationPlaces > 0 || r.ContinentalPlaces > 0 || r.SecondaryContinentalPlaces > 0)
                 e.Add("Cúp quốc gia không có lên/xuống hạng hay suất châu Âu");
@@ -102,6 +102,7 @@ public sealed class CompetitionAdminService(ClubsDbContext db, TimeProvider cloc
         else if ((p - d) % 2 != 0) e.Add("Số đội đá play-off phải chẵn");
         else if (KnockoutTeams(r) is not (2 or 4 or 8 or 16)) e.Add("Vào thẳng + thắng play-off phải là 2, 4, 8 hoặc 16 đội");
         if (r.LooseClubPlaces is { } loose && (loose < 0 || loose > n)) e.Add("Suất CLB lẻ phải từ 0 tới số đội");
+        if (r.MaxClubsPerCountry is < 1) e.Add("Tối đa CLB mỗi nước phải từ 1");
         return e;
     }
 

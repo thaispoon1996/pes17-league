@@ -28,6 +28,11 @@ public static class CupDraw
         if (n % pots != 0 || n / pots < 3) throw new ArgumentException($"{n} đội không chia đều được {pots} nhóm (mỗi nhóm ≥ 3)", nameof(seeded));
         var size = n / pots;
         if (seeded.Select(s => s.Id).Distinct().Count() != n) throw new ArgumentException("Đội bị trùng", nameof(seeded));
+        // Điều kiện cần (tránh tìm kiếm vô vọng hàng giờ): k đội một nước gặp nhau tối đa 2 trận/đội (cùng nhóm) → cần ≥ k·(matches − 2) trận
+        // với đội nước khác, mỗi đội nước khác nhận tối đa maxPerCountry đối thủ nước đó.
+        foreach (var g in seeded.Where(s => s.Country is not null).GroupBy(s => s.Country))
+            if (g.Count() * (matches - 2) > maxPerCountry * (n - g.Count()))
+                throw new ArgumentException($"{g.Count()} đội {g.Key}: quá nhiều để bốc thăm (không gặp đội cùng nước, tối đa {maxPerCountry} đối thủ cùng nước)", nameof(seeded));
         for (var attempt = 0; attempt < Attempts; attempt++)
         {
             var draw = new LeaguePhaseSearch(seeded.Select(s => s.Country).ToArray(), size, pots, maxPerCountry, rng);

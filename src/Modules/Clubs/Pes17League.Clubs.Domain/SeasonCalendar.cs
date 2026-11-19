@@ -59,3 +59,24 @@ public static class SeasonCalendar
         })];
     }
 }
+
+/// <summary>
+/// 2 kỳ chuyển nhượng PES17 kiểu Career (PO chọn 19/11/2026): kỳ hè mở từ lúc bắt đầu mùa tới hết khung <see cref="SummerSlots"/>;
+/// kỳ đông <see cref="WinterSlots"/> khung bắt đầu ngay sau nửa mùa. Mở/đóng khi chốt khung (chợ tự do không gắn khung).
+/// </summary>
+public static class Pes17TransferWindows
+{
+    public const int SummerSlots = 6;
+    public const int WinterSlots = 4;
+
+    /// <summary>Khung đầu tiên của kỳ đông (1-based).</summary>
+    public static int WinterStart(int totalSlots) => totalSlots / 2 + 1;
+
+    /// <summary>Chợ có mở trong khung <paramref name="number"/> (1-based) của mùa <paramref name="totalSlots"/> khung không.</summary>
+    public static bool IsOpen(int number, int totalSlots)
+    {
+        if (number <= SummerSlots) return true;
+        var w = WinterStart(totalSlots);
+        return number >= w && number < w + WinterSlots;
+    }
+}

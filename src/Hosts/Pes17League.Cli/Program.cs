@@ -9,6 +9,7 @@ using Pes17League.Clubs.Infrastructure;
 //   import-pes17 PESDB_JSON [TEN_MUA]     tạo mùa (Planned) + nhập toàn bộ CLB PES17 (bỏ đội tuyển) + cầu thủ từ tools/pes17db/pesdb.py export
 //   export-pes17-squads RA_JSON           đội hình hiện tại (patch PES17 mới nhất) → JSON cho tools/pes17db/deploy.sh
 //   setup-pes17-leagues LEAGUES_JSON PES_DOI_PO   mùa chưa xong: 5 giải (pesdb.py leagues) + mùa giải + CLB; PO cầm CLB mã PES_DOI_PO
+//   setup-pes17-world WORLD_JSON [--dry]  Career (PO 19/11): mọi giải + cúp quốc gia + C1/C2 thể thức mới (pesdb.py world); mùa chưa đá trận nào thì làm lại; CLB người → BOT
 //   open-market                           mở chợ tự do PES17 cho mùa chưa xong (cần quỹ ngân sách đã lưu)
 //   move-player PES_CT PES_DOI|free       admin chuyển cầu thủ (mã PES17) sang CLB (mã đội PES17) / thả tự do, qua chợ tự do
 //   set-contracts SO_TRAN                 mùa chưa bắt đầu: hợp đồng nhập từ patch (chưa đá, chưa có lương) + gia hạn mặc định → SO_TRAN trận
@@ -45,6 +46,9 @@ switch (args.FirstOrDefault())
         break;
     case "setup-pes17-leagues" when args.Length >= 3:
         await SetupPes17LeaguesAsync(args[1], int.Parse(args[2]));
+        break;
+    case "setup-pes17-world" when args.Length >= 2:
+        await SetupPes17WorldAsync(args[1], args.Contains("--dry"));
         break;
     case "schedule-preview":
         await SchedulePreviewAsync(args.Length >= 2 ? int.Parse(args[1]) : 1);
@@ -89,7 +93,7 @@ switch (args.FirstOrDefault())
         await SetPasswordAsync(args[1], args[2]);
         break;
     default:
-        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry]");
+        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | setup-pes17-world WORLD_JSON [--dry] | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry]");
         return 2;
 }
 return 0;
@@ -173,6 +177,21 @@ async Task SetupPes17LeaguesAsync(string leaguesPath, int humanPesClub)
     }
     await new ClubAdminService(db, clock, store).SetHumanClubAsync(clubOf[humanPesClub], "cli");
     Console.WriteLine($"PO cầm: {(await db.Clubs.FindAsync(clubOf[humanPesClub]))!.Name}");
+}
+
+async Task SetupPes17WorldAsync(string worldPath, bool dry)
+{
+    await using var db = Db();
+    var world = System.Text.Json.JsonSerializer.Deserialize<Pes17World>(await File.ReadAllBytesAsync(worldPath),
+        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    var r = await new Pes17WorldService(db, clock).SetupAsync(world, "cli", dry);
+    Console.WriteLine($"{(dry ? "(chạy thử) " : "")}làm lại mùa: {r.Reset}, CLB người → BOT: {r.ReleasedClubs}, {r.Countries} nước, {r.Competitions.Count} giải/cúp");
+    foreach (var e in r.Allocation.Editions.OrderBy(e => e.Competition.Type).ThenBy(e => e.Competition.Country).ThenBy(e => e.Competition.Tier))
+        Console.WriteLine($"  {e.Competition.Name}: {e.Clubs.Count} CLB" + (e.Competition.Type == CompetitionType.ContinentalCup
+            ? " — hạt giống 1–5: " + string.Join(", ", e.Clubs.OrderBy(c => c.Seed).Take(5).Select(c => c.Club.Name)) : ""));
+    Console.WriteLine($"  không dự giải: {r.Allocation.Unassigned.Count} CLB" + (r.OutsideLeagues.Count > 0 ? $" (trong đó ngoài giải của nước mình: {string.Join(", ", r.OutsideLeagues)})" : ""));
+    foreach (var n in r.Allocation.Notes) Console.WriteLine($"  ghi chú: {n}");
+    foreach (var e in r.Allocation.Errors) Console.WriteLine($"  LỖI: {e}");
 }
 
 async Task SchedulePreviewAsync(int seed)

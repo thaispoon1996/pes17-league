@@ -388,8 +388,11 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
         md.Status = MatchdayStatus.Settled;
         await new SeasonScheduleService(db, clock, rng).AdvanceAsync(md.SeasonId, ct);
         var next = await db.Matchdays.SingleOrDefaultAsync(x => x.SeasonId == md.SeasonId && x.Number == md.Number + 1, ct);
-        if (next is not null) OpenWindow(md.SeasonId, next, clock.GetUtcNow(), await new Pes17RoundService(db, store, clock).IsPes17SeasonAsync(md.SeasonId, ct));
-        else (await db.Seasons.FindAsync([md.SeasonId], ct))!.Status = SeasonStatus.Finished;
+        var pes17 = await new Pes17RoundService(db, store, clock).IsPes17SeasonAsync(md.SeasonId, ct);
+        if (next is not null) OpenWindow(md.SeasonId, next, clock.GetUtcNow(), pes17);
+        if (next is not null && pes17) await SyncPes17WindowAsync(md.SeasonId, next.Number, ct);
+        else if (pes17) await SyncPes17WindowAsync(md.SeasonId, int.MaxValue, ct);   // hết mùa → đóng chợ
+        if (next is null) (await db.Seasons.FindAsync([md.SeasonId], ct))!.Status = SeasonStatus.Finished;
         await db.SaveChangesAsync(ct);
         return (settlement, next is null);
     }
@@ -410,13 +413,43 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
         md.TransferWindowId = w.Id;
     }
 
+    /// <summary>
+    /// PES17 2 kỳ chuyển nhượng (<see cref="Pes17TransferWindows"/>, PO 19/11): khung <paramref name="number"/> sắp đá nằm trong kỳ → mở chợ tự do
+    /// (chỉ tạo kỳ CN, không tính lại giá/lương/ngân sách như lúc mở chợ đầu mùa); ngoài kỳ → đóng chợ đang mở.
+    /// </summary>
+    private async Task SyncPes17WindowAsync(Guid seasonId, int number, CancellationToken ct)
+    {
+        var total = await db.Matchdays.CountAsync(m => m.SeasonId == seasonId, ct);
+        var now = clock.GetUtcNow();
+        var open = await db.TransferWindows.Where(w => w.SeasonId == seasonId && w.MatchdayId == null && w.Status == TransferWindowStatus.Open).ToListAsync(ct);
+        if (Pes17TransferWindows.IsOpen(number, total))
+        {
+            if (open.Count == 0)
+            {
+                db.TransferWindows.Add(new TransferWindow { SeasonId = seasonId, OpensAt = now, ClosesAt = now + FreeMarketService.Length, Status = TransferWindowStatus.Open });
+                db.AdminAudit.Add(new AdminAuditEntry { At = now, Actor = SeasonScheduleService.SystemActor, EntityType = nameof(Season), EntityId = seasonId,
+                    Action = "OpenTransferWindow", After = JsonSerializer.Serialize(new { Matchday = number }) });
+            }
+            return;
+        }
+        foreach (var w in open)
+        {
+            w.Status = TransferWindowStatus.Closed;
+            w.ClosesAt = now;
+            db.AdminAudit.Add(new AdminAuditEntry { At = now, Actor = SeasonScheduleService.SystemActor, EntityType = nameof(Season), EntityId = seasonId,
+                Action = "CloseTransferWindow", After = JsonSerializer.Serialize(new { Matchday = number }) });
+        }
+    }
+
     /// <summary>Mùa đang đá chưa có kỳ CN mở (mùa bắt đầu trước 17/11, kỳ CN đã đóng khi khoá vòng) → mở 1 kỳ CN suốt mùa.
-    /// PES17: chợ tự do (MatchdayId null) đã mở → trả kỳ đó.</summary>
+    /// PES17: chợ tự do (MatchdayId null) đã mở → trả kỳ đó; chợ đang đóng (ngoài 2 kỳ) → null, không tự mở.</summary>
     public static async Task<TransferWindow?> EnsureFreeTransfersAsync(ClubsDbContext db, Guid seasonId, DateTimeOffset now, CancellationToken ct = default)
     {
         var w = await db.TransferWindows.FirstOrDefaultAsync(x => x.SeasonId == seasonId && x.Status == TransferWindowStatus.Open && x.ClosesAt > now && x.OpensAt <= now, ct);
         if (w is not null) return w;
         if (!await db.Seasons.AnyAsync(x => x.Id == seasonId && x.Status == SeasonStatus.Active, ct)) return null;
+        if (await (from s in db.Seasons join p in db.PatchVersions on s.PatchVersionId equals p.Id
+                   where s.Id == seasonId && p.Name.StartsWith(Pes17RoundService.PatchPrefix) select p.Id).AnyAsync(ct)) return null;
         var md = await db.Matchdays.Where(m => m.SeasonId == seasonId && m.Status != MatchdayStatus.Settled).OrderBy(m => m.Number).FirstOrDefaultAsync(ct);
         if (md is null) return null;
         w = new TransferWindow { SeasonId = seasonId, MatchdayId = md.Id, OpensAt = now, ClosesAt = now.AddYears(5), Status = TransferWindowStatus.Open };

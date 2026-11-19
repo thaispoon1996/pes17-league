@@ -51,6 +51,8 @@ public sealed record CompetitionRules
     public int? PlayoffPlaces { get; init; }
     /// <summary>Suất cho CLB châu Âu lẻ (không thuộc giải quốc gia nào): C1 8, C2 15. Còn thiếu so với N = suất thêm theo OVR (PO chọn 05/11).</summary>
     public int? LooseClubPlaces { get; init; }
+    /// <summary>Tối đa số CLB một nước trong cúp (PO 19/11: 5, như UEFA). Áp cho suất CLB lẻ + suất thêm; null = không giới hạn.</summary>
+    public int? MaxClubsPerCountry { get; init; }
 }
 
 public enum EditionStatus { Draft, Scheduled, Active, Finished }

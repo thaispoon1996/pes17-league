@@ -50,7 +50,10 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
     private static Dictionary<string, List<Competition>> Leagues(IEnumerable<Competition> active) =>
         active.Where(c => c.Type == CompetitionType.DomesticLeague).GroupBy(c => c.Country!).ToDictionary(g => g.Key, g => g.OrderBy(c => c.Tier).ToList());
 
-    public static SeasonAllocation AllocateFirstSeason(IReadOnlyList<Competition> competitions, IReadOnlyList<ClubStrength> clubs)
+    /// <param name="fixedLeagues">PES17 (PO 19/11): thành viên giải quốc nội lấy đúng như trong game (khoá = Competition.Id); nước có giải
+    /// trong đây giữ nguyên, không chia theo OVR. Cúp vẫn chia theo OVR.</param>
+    public static SeasonAllocation AllocateFirstSeason(IReadOnlyList<Competition> competitions, IReadOnlyList<ClubStrength> clubs,
+        IReadOnlyDictionary<Guid, IReadOnlyCollection<Guid>>? fixedLeagues = null)
     {
         var errors = new List<string>();
         var notes = new List<string>();
@@ -61,6 +64,16 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
 
         foreach (var (country, tiers) in leagues.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
+            if (fixedLeagues is not null && tiers.All(t => fixedLeagues.ContainsKey(t.Id)))
+            {
+                foreach (var t in tiers)
+                {
+                    var members = fixedLeagues[t.Id].ToHashSet();
+                    result[t] = byStrength.Where(c => members.Contains(c.ClubId)).ToList();
+                    if (result[t].Count != members.Count) errors.Add($"{t.Name}: {members.Count - result[t].Count} CLB không còn hoạt động");
+                }
+                continue;
+            }
             var pool = byStrength.Where(c => c.Country == country).ToList();
             if (tiers.Count > 2) { errors.Add($"{country}: chưa hỗ trợ quá 2 hạng"); continue; }
             var top = tiers.Count == 1 ? pool.Count : FirstSeasonTopTierTeams.GetValueOrDefault(country, (pool.Count + 1) / 2);
@@ -71,7 +84,10 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
 
         var loose = byStrength.Where(c => c.Country is not null && !leagues.ContainsKey(c.Country)).ToList();
         var topOrder = leagues.Values.Where(t => result.ContainsKey(t[0])).ToDictionary(t => t[0], t => result[t[0]]);
-        var domestic = byStrength.Where(c => c.Country is not null && leagues.ContainsKey(c.Country)).ToList();
+        var placedTop = topOrder.Where(kv => HasCupPlaces(kv.Key)).SelectMany(kv => kv.Value).Select(c => c.ClubId).ToHashSet();
+        // Suất thêm: CLB giải hạng 1 có suất cúp (PES17: không lấy CLB Nam Mỹ/Mỹ/châu Phi vào C1/C2). Mùa đầu PES6 (chia theo OVR): mọi CLB quốc nội.
+        var domestic = fixedLeagues is null ? byStrength.Where(c => c.Country is not null && leagues.ContainsKey(c.Country)).ToList()
+            : byStrength.Where(c => placedTop.Contains(c.ClubId)).ToList();
         FillCups(active, topOrder, loose, (_, inCup) => domestic.Where(c => !inCup.Contains(c.ClubId)), result, errors, notes, "OVR cao nhất chưa có suất");
         FillDomesticCups(active, result, errors);
         return new SeasonAllocation(false, ToEditions(active, result), [.. byStrength.Where(c => c.Country is null)], errors, notes);
@@ -122,7 +138,7 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
             .Concat(ByOvr(looseClubs.Where(c => !record.ContainsKey(c.ClubId)))).ToList();
 
         // Ứng viên suất thêm: CLB hạng 1 mùa trước chưa có suất, theo vị trí rồi điểm/hiệu số/bàn thắng (thứ 7 nhiều điểm nhất đứng đầu).
-        var byPlace = topOrder.Keys.SelectMany(c => tables[c.Id].Select((r, i) => (Row: r, Place: i))).Where(x => byId.ContainsKey(x.Row.Club))
+        var byPlace = topOrder.Keys.Where(HasCupPlaces).SelectMany(c => tables[c.Id].Select((r, i) => (Row: r, Place: i))).Where(x => byId.ContainsKey(x.Row.Club))
             .OrderBy(x => x.Place).ThenByDescending(x => x.Row.Points).ThenByDescending(x => x.Row.GoalDifference).ThenByDescending(x => x.Row.GoalsFor)
             .ThenBy(x => byId[x.Row.Club].Name, StringComparer.Ordinal).Select(x => byId[x.Row.Club]).ToList();
         IEnumerable<ClubStrength> Extra(Competition cup, HashSet<Guid> inCup)
@@ -140,6 +156,9 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
         FillDomesticCups(active, result, errors);
         return new SeasonAllocation(true, ToEditions(active, result), unassigned, errors, notes);
     }
+
+    /// <summary>Giải hạng 1 có suất C1/C2 (giải ngoài châu Âu = 0 suất → CLB không dự cúp châu lục).</summary>
+    private static bool HasCupPlaces(Competition league) => league.Rules.ContinentalPlaces + league.Rules.SecondaryContinentalPlaces > 0;
 
     /// <summary>Cúp quốc gia: mọi CLB hạng 1+2 cùng nước (đã xếp giải quốc nội).</summary>
     private static void FillDomesticCups(List<Competition> active, Dictionary<Competition, List<ClubStrength>> result, List<string> errors)
@@ -164,30 +183,54 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
         if (cups.Count == 0) return;
         int Places(Competition cup, Competition league) => cup.Tier == 1 ? league.Rules.ContinentalPlaces : league.Rules.SecondaryContinentalPlaces;
         var inCup = new HashSet<Guid>();
-        var looseLeft = loose.AsEnumerable();
+        var looseLeft = loose.ToList();
+        var capped = cups.ToDictionary(c => c, _ => new SortedSet<string>(StringComparer.Ordinal));
+        // Trần CLB/nước (MaxClubsPerCountry): CLB lẻ / suất thêm của nước đã đủ trần bị bỏ qua, lấy CLB kế tiếp.
+        bool Fits(Competition cup, ClubStrength c)
+        {
+            if (cup.Rules.MaxClubsPerCountry is not { } max || c.Country is null || result[cup].Count(x => x.Country == c.Country) < max) return true;
+            capped[cup].Add(c.Country);
+            return false;
+        }
         foreach (var cup in cups)
         {
             var entrants = new List<ClubStrength>();
             foreach (var (league, order) in topOrder) entrants.AddRange(order.Where(c => !inCup.Contains(c.ClubId)).Take(Places(cup, league)));
-            var looseTake = cup.Rules.LooseClubPlaces ?? 0;
-            entrants.AddRange(looseLeft.Take(looseTake));
-            looseLeft = looseLeft.Skip(looseTake);
-            inCup.UnionWith(entrants.Select(c => c.ClubId));
             result[cup] = entrants;
+            var looseTake = cup.Rules.LooseClubPlaces ?? 0;
+            foreach (var c in looseLeft.ToList())
+            {
+                if (looseTake == 0) break;
+                if (!Fits(cup, c)) continue;
+                entrants.Add(c);
+                looseLeft.Remove(c);
+                looseTake--;
+            }
+            inCup.UnionWith(entrants.Select(c => c.ClubId));
         }
         var looseSlots = cups.Sum(c => c.Rules.LooseClubPlaces ?? 0);
-        if (loose.Count != looseSlots) errors.Add($"Có {loose.Count} CLB lẻ nhưng các cúp có {looseSlots} suất CLB lẻ: sửa nước CLB hoặc luật cúp");
+        if (loose.Count < looseSlots) errors.Add($"Có {loose.Count} CLB lẻ nhưng các cúp có {looseSlots} suất CLB lẻ: sửa nước CLB hoặc luật cúp");
+        else if (loose.Count > looseSlots)   // PES17: nhiều CLB châu Âu ngoài giải hơn suất → lấy theo thứ tự (thành tích cúp / OVR)
+            notes.Add($"CLB lẻ: {looseSlots}/{loose.Count} CLB dự cúp, {loose.Count - looseSlots} CLB không có suất");
         foreach (var cup in cups)
         {
             var count = cup.Rules.LeaguePhaseTeams is { } n ? n - result[cup].Count : 0;
             if (count < 0) { errors.Add($"{cup.Name}: {result[cup].Count} đội vượt {cup.Rules.LeaguePhaseTeams}"); continue; }
             if (count == 0) continue;
-            var add = extra(cup, inCup).Take(count).ToList();
+            var add = new List<ClubStrength>();
+            foreach (var c in extra(cup, inCup))
+            {
+                if (add.Count == count) break;
+                if (inCup.Contains(c.ClubId) || !Fits(cup, c)) continue;
+                add.Add(c);
+                result[cup].Add(c);
+                inCup.Add(c.ClubId);
+            }
             if (add.Count < count) errors.Add($"{cup.Name}: thiếu {count - add.Count} đội");
             if (add.Count > 0) notes.Add($"{cup.Name}: suất thêm ({extraRule}) — {string.Join(", ", add.Select(c => c.Name))}");
-            result[cup].AddRange(add);
-            inCup.UnionWith(add.Select(c => c.ClubId));
         }
+        foreach (var cup in cups.Where(c => capped[c].Count > 0))
+            notes.Add($"{cup.Name}: đủ trần {cup.Rules.MaxClubsPerCountry} CLB/nước — {string.Join(", ", capped[cup])}");
     }
 
     private static List<EditionAllocation> ToEditions(List<Competition> active, Dictionary<Competition, List<ClubStrength>> result) =>
@@ -203,7 +246,7 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
                           where ids.Contains(e.CompetitionId) && s.Number < season.Number
                           orderby s.Number descending select s).FirstOrDefaultAsync(ct);
         var clubs = await StrengthsAsync(season.Id, patch, ct);
-        if (prev is null) return AllocateFirstSeason(competitions, clubs);
+        if (prev is null) return AllocateFirstSeason(competitions, clubs, await PresetLeaguesAsync(season.Id, competitions, ct));
 
         var editions = await db.Editions.Where(e => e.SeasonId == prev.Id && ids.Contains(e.CompetitionId)).ToListAsync(ct);
         var byComp = competitions.ToDictionary(c => c.Id);
@@ -245,6 +288,18 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
         return AllocateNextSeason(competitions, clubs, tables, cups);
     }
 
+    /// <summary>Mùa đầu PES17: mọi giải quốc nội đang hoạt động đã có CLB trong mùa giải (nhập từ game, <see cref="Pes17WorldService"/>) → giữ
+    /// nguyên thành viên; chưa đủ → null (chia theo OVR như PES6).</summary>
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyCollection<Guid>>?> PresetLeaguesAsync(Guid seasonId, List<Competition> competitions, CancellationToken ct)
+    {
+        var leagueIds = competitions.Where(c => c.Type == CompetitionType.DomesticLeague).Select(c => c.Id).ToList();
+        if (leagueIds.Count == 0) return null;
+        var members = await (from e in db.Editions join x in db.EditionClubs on e.Id equals x.EditionId
+                             where e.SeasonId == seasonId && leagueIds.Contains(e.CompetitionId) select new { e.CompetitionId, x.ClubId }).ToListAsync(ct);
+        var byComp = members.GroupBy(m => m.CompetitionId).ToDictionary(g => g.Key, g => (IReadOnlyCollection<Guid>)[.. g.Select(m => m.ClubId)]);
+        return leagueIds.All(byComp.ContainsKey) ? byComp : null;
+    }
+
     /// <summary>Ghi kết quả <see cref="PreviewAsync"/>: tạo mùa giải còn thiếu, thay toàn bộ CLB + hạt giống. Trả số mùa giải đã ghi.</summary>
     public async Task<int> ApplyAsync(Guid seasonId, string actor, CancellationToken ct = default)
     {
@@ -258,7 +313,7 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
         if (await db.EditionClubs.AnyAsync(x => others.Contains(x.EditionId), ct))
             throw new AdminRuleException("Mùa này còn giải khác (đã lưu trữ) có CLB: xoá CLB khỏi giải đó trước");
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;   // trong giao dịch người gọi (Pes17WorldService)
         foreach (var plan1 in plan.Editions)
         {
             var e = editions.SingleOrDefault(x => x.CompetitionId == plan1.Competition.Id);
@@ -273,7 +328,7 @@ public sealed class DivisionService(ClubsDbContext db, TimeProvider clock)
                 actor);
             await db.SaveChangesAsync(ct);    // xoá trước khi thêm (cùng khoá EditionId + ClubId)
         }
-        await tx.CommitAsync(ct);
+        if (tx is not null) await tx.CommitAsync(ct);
         return plan.Editions.Count;
     }
 
