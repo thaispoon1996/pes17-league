@@ -245,7 +245,7 @@ public sealed class CoachService(ClubsDbContext db, TimeProvider clock)
         c.UpdatedAt = now;
         Money(db, c, -fee, CoachMoney.Course, $"Học phí bằng {CoachRules.Licenses[course.License]}", tick, now);
         CoachLetterService.Write(db, c, LetterKind.Official, LetterFrom.Federation, "Liên đoàn bóng đá", $"Xác nhận ghi danh khoá bằng {CoachRules.Licenses[course.License]}",
-            $"Ông đã ghi danh khoá bằng {CoachRules.Licenses[course.License]}. Thời lượng {course.Rounds} vòng. Học phí {fee:N0} đã thu.", tick, now);
+            $"Ông đã ghi danh khoá bằng {CoachRules.Licenses[course.License]}. Thời lượng {course.Rounds} vòng. Học phí {MoneyText.Format(fee)} đã thu.", tick, now);
         await db.SaveChangesAsync(ct);
         return null;
     }

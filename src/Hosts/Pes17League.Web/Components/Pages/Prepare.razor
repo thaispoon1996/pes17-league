@@ -60,7 +60,7 @@
         @foreach (var (label, hv, av, fmt, more) in new (string, double, double, string, bool)[] {
             ("Bàn thắng mùa này", pv.Home.GoalsFor, pv.Away.GoalsFor, "0", true), ("Thủng lưới", pv.Home.GoalsAgainst, pv.Away.GoalsAgainst, "0", false),
             ("Thắng / trận", pv.Home.Won, pv.Away.Won, "0", true), ("OVR đá chính", pv.Home.StarterOvr, pv.Away.StarterOvr, "0.0", true),
-            ("Giá trị đội hình (tr)", pv.Home.SquadValue / 1e6, pv.Away.SquadValue / 1e6, "0.#", true) })
+            ("Giá trị đội hình (€M)", pv.Home.SquadValue / 1e6, pv.Away.SquadValue / 1e6, "0.#", true) })
         {
             var tot = hv + av;
             var hp = tot <= 0 ? 50 : 100 * hv / tot;

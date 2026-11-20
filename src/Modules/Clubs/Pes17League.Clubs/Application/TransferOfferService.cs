@@ -96,7 +96,7 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
         if (to is null) return;
         var clubs = await db.Clubs.Where(c => c.Id == o.BuyerClubId || c.Id == o.SellerClubId).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
         var player = await db.Players.Where(p => p.Id == o.PlayerId).Select(p => p.Name).SingleOrDefaultAsync(ct) ?? "?";
-        string F(long v) => v.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("vi-VN"));
+        string F(long v) => MoneyText.Format(v);
         string Fill(string t) => t.Replace("{buyer}", clubs.GetValueOrDefault(o.BuyerClubId, "?")).Replace("{seller}", clubs.GetValueOrDefault(o.SellerClubId, "?"))
             .Replace("{player}", player).Replace("{fee}", F(o.Fee)).Replace("{counter}", o.CounterFee is { } c ? F(c) : "");
         await mail.SystemAsync(to, Fill(subject), Fill(body), o.PlayerId, ct: ct);
@@ -239,7 +239,7 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
         if (o.Kind == OfferKind.Loan)
         {
             if (o.SwapPlayerId is not null || o.SellOnPercent != 0 || o.Instalments != 1) return "Mượn không kèm trao đổi, % bán lại hay trả góp.";
-            if (!OfferRules.IsValidLoanFee(fee, p)) return $"Phí mượn tối đa {OfferRules.MaxLoanFeePercent}% giá ({p:N0}).";
+            if (!OfferRules.IsValidLoanFee(fee, p)) return $"Phí mượn tối đa {OfferRules.MaxLoanFeePercent}% giá ({MoneyText.Format(p)}).";
             return null;
         }
         if (o.SellOnPercent is < 0 or > OfferRules.MaxSellOnPercent) return $"% bán lại 0–{OfferRules.MaxSellOnPercent}.";
@@ -253,7 +253,7 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
             swapValue = (await db.PlayerPrices.FindAsync([swap, window!.SeasonId], ct))?.Price ?? 0;
         }
         if (!FeeRules.IsValidNegotiated(fee + swapValue, p))
-            return $"Tổng giá trị (tiền + cầu thủ trao đổi) phải {FeeRules.MinNegotiatedPercent}–{FeeRules.MaxNegotiatedPercent}% giá ({p:N0}).";
+            return $"Tổng giá trị (tiền + cầu thủ trao đổi) phải {FeeRules.MinNegotiatedPercent}–{FeeRules.MaxNegotiatedPercent}% giá ({MoneyText.Format(p)}).";
         return null;
     }
 

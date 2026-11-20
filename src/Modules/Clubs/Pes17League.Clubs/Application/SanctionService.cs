@@ -113,8 +113,8 @@ public sealed class SanctionService(ClubsDbContext db, TimeProvider clock)
 
     public static string Describe(Sanction s) => s.Kind switch
     {
-        SanctionKind.Fine => $"Phạt {s.Amount:N0} tiền",
-        SanctionKind.Bonus => $"Thưởng {s.Amount:N0} tiền",
+        SanctionKind.Fine => $"Phạt {MoneyText.Format(s.Amount)}",
+        SanctionKind.Bonus => $"Thưởng {MoneyText.Format(s.Amount)}",
         SanctionKind.PointsDeduction => $"Trừ {s.Amount} điểm BXH",
         SanctionKind.Ban => $"Cấm chỉ đạo {s.BannedFixtures.Count} trận tới (trợ lý đá thay)",
         _ => "Cảnh cáo",

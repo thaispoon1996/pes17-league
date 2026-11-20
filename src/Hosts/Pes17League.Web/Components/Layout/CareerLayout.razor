@@ -21,7 +21,7 @@ else if (P is null && !(onboarding && OnCareerHome))
 }
 else
 {
-    <div class="cx @(P is null ? "cx-solo" : "")">
+    <div class="cx @(P is null ? "cx-solo" : "")" data-music="@(MusicOn ? "on" : "off")">
         <div class="cx-sky" aria-hidden="true"><i class="beam b1"></i><i class="beam b2"></i><i class="beam b3"></i><canvas class="cx-dust"></canvas></div>
         <header class="cx-top">
             @if (P is { } p)
@@ -48,7 +48,7 @@ else
             {
                 <a class="cx-ibtn" href="thu" aria-label="Hòm thư"><i class="ms" aria-hidden="true">notifications</i>@if (unread > 0) { <em>@unread</em> }</a>
             }
-            <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button>
+            @if (MusicOn) { <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button> }
             <details class="cx-menu">
                 <summary class="cx-ibtn" aria-label="Menu"><i class="ms" aria-hidden="true">menu</i></summary>
                 <div>
@@ -57,20 +57,23 @@ else
                     {
                         <a href="hlv"><i class="ms" aria-hidden="true">badge</i>Hồ sơ HLV</a>
                         <a href="hlv/viec-lam"><i class="ms" aria-hidden="true">work</i>Việc làm HLV</a>
-                        <a href="thu-hlv"><i class="ms" aria-hidden="true">mail</i>Thư HLV@if (coachUnread > 0) { <em class="cx-chip bad" style="margin-left:auto">@coachUnread</em> }</a>
+                        <a href="thu-hlv"><i class="ms" aria-hidden="true">mail</i>Thư HLV @if (coachUnread > 0) { <em class="cx-chip bad" style="margin-left:auto">@coachUnread</em> }</a>
                     }
                     else { <a href="hlv"><i class="ms" aria-hidden="true">person_add</i>Tạo hồ sơ HLV</a> }
                     <a href="" data-enhance-nav="false"><i class="ms" aria-hidden="true">public</i>Trang giải đấu đầy đủ</a>
                     @if (P is not null)
                     {
-                        <a href="thu"><i class="ms" aria-hidden="true">inbox</i>Thư ban tổ chức@if (unread > 0) { <em class="cx-chip bad" style="margin-left:auto">@unread</em> }</a>
+                        <a href="thu"><i class="ms" aria-hidden="true">inbox</i>Thư ban tổ chức @if (unread > 0) { <em class="cx-chip bad" style="margin-left:auto">@unread</em> }</a>
                         <a href="hop-thu"><i class="ms" aria-hidden="true">inbox</i>Hộp thư CLB</a>
                     }
                     <a href="dieu-khien"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</a>
                     @if (admin) { <a href="admin"><i class="ms" aria-hidden="true">settings</i>Quản trị</a> }
                     <div class="cx-snd">
-                        <span class="now" data-snd="now">Nhạc đang tắt</span>
-                        <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
+                        @if (MusicOn)
+                        {
+                            <span class="now" data-snd="now">Nhạc đang tắt</span>
+                            <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
+                        }
                         <label>Hiệu ứng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
                         <label><input type="checkbox" data-snd="sfx" /> Bật âm hiệu ứng</label>
                     </div>
@@ -159,6 +162,9 @@ else
 }
 
 @code {
+    /// <summary>PO 20/11: TẠM tắt nhạc nền career (âm hiệu ứng vẫn kêu). Bật lại: đổi true — career-audio.js đọc data-music trên .cx.</summary>
+    const bool MusicOn = false;
+
     public sealed record Sub(string Feature, string Label, string Href);
     public sealed record Tab(string Id, string Feature, string Label, string Icon, string Href, IReadOnlyList<Sub> Subs);
     public sealed record Intro(string Title, string Text, string Icon, string Href);

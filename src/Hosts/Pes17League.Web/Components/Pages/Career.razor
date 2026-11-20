@@ -441,7 +441,7 @@
                         <div class="cx-stat"><span>Quỹ chuyển nhượng</span><b class="gold">@Fmt.Money(cc.Budget)</b><small>khi bắt đầu</small></div>
                         <div class="cx-stat"><span>Cầu thủ</span><b data-count="@cd.Players.Count">@cd.Players.Count</b></div>
                         <div class="cx-stat"><span>Tuổi TB</span><b>@cd.AvgAge.ToString("0.0")</b></div>
-                        <div class="cx-stat"><span>Lương/trận</span><b>@K(cd.WageBill)</b><small>cả đội</small></div>
+                        <div class="cx-stat"><span>Lương/trận</span><b>@Fmt.Money(cd.WageBill)</b><small>cả đội</small></div>
                     </div>
 
                     <KitStrip ClubId="cd.Id" Name="@cd.Name"><h3>Áo đấu</h3></KitStrip>
@@ -507,7 +507,7 @@
                                     <span class="ps">@p.Position</span>
                                     <span class="who"><b>@p.Name</b><small>@(p.Age is { } a ? $"{a} tuổi · " : "")số @p.Shirt@(p.ContractLeft is { } cl ? $" · HĐ {cl} trận" : "")</small></span>
                                     <span class="cx-ovr tier-@(CardTier(p.Ovr))">@p.Ovr</span>
-                                    <span class="money"><b>@Fmt.Money(p.Price)</b><small>lương @K(p.Wage)</small></span>
+                                    <span class="money"><b>@Fmt.Money(p.Price)</b><small>lương @Fmt.Money(p.Wage)</small></span>
                                 </li>
                             }
                         </ul>
@@ -515,10 +515,10 @@
 
                     <h3>Tài chính</h3>
                     <div class="nums money">
-                        <div class="cx-stat"><span>Vé / trận sân nhà</span><b>@K(cd.TicketIncome)</b><small>@cd.Capacity.ToString("N0") chỗ · @cd.Fans.ToString("N0") fan · vé @cd.TicketPrice</small></div>
-                        <div class="cx-stat"><span>Tài trợ / trận</span><b>@K(cd.Sponsor)</b><small>theo uy tín CLB</small></div>
-                        <div class="cx-stat"><span>Bản quyền TV / trận</span><b>@K(FinanceRules.TvPerRound)</b><small>thưởng thắng +@K(FinanceRules.WinPrize) · hoà +@K(FinanceRules.DrawPrize)</small></div>
-                        <div class="cx-stat"><span>Chi / trận</span><b class="cx-down">−@K(cd.WageBill + cd.Capacity * FinanceRules.UpkeepPerSeat)</b><small>lương @K(cd.WageBill) · bảo trì sân @K(cd.Capacity * FinanceRules.UpkeepPerSeat)</small></div>
+                        <div class="cx-stat"><span>Vé / trận sân nhà</span><b>@Fmt.Money(cd.TicketIncome)</b><small>@cd.Capacity.ToString("N0") chỗ · @cd.Fans.ToString("N0") fan · vé @Fmt.Money(cd.TicketPrice)</small></div>
+                        <div class="cx-stat"><span>Tài trợ / trận</span><b>@Fmt.Money(cd.Sponsor)</b><small>theo uy tín CLB</small></div>
+                        <div class="cx-stat"><span>Bản quyền TV / trận</span><b>@Fmt.Money(FinanceRules.TvPerRound)</b><small>thưởng thắng +@Fmt.Money(FinanceRules.WinPrize) · hoà +@Fmt.Money(FinanceRules.DrawPrize)</small></div>
+                        <div class="cx-stat"><span>Chi / trận</span><b class="cx-down">−@Fmt.Money(cd.WageBill + cd.Capacity * FinanceRules.UpkeepPerSeat)</b><small>lương @Fmt.Money(cd.WageBill) · bảo trì sân @Fmt.Money(cd.Capacity * FinanceRules.UpkeepPerSeat)</small></div>
                     </div>
 
                     <h3>Lịch sử</h3>
@@ -693,8 +693,6 @@
 
     /// <summary>Bước 2: bảng chi tiết CLB đang mở (PO 19/11).</summary>
     CareerClubInfo? clubDetail;
-    /// <summary>Tiền nhỏ (lương, thu chi mỗi trận): dưới 1 tr ghi theo nghìn ("3.5k") cho khỏi thành "0 tr".</summary>
-    static string K(long v) => Math.Abs(v) >= 1_000_000 ? Fmt.Money(v) : (v / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "k";
     static string LineName(PositionGroup g) => g switch { PositionGroup.Goalkeeper => "Thủ môn", PositionGroup.Defender => "Hậu vệ", PositionGroup.Midfielder => "Tiền vệ", _ => "Tiền đạo" };
     /// <summary>Thanh OVR: 50 → 0%, 95 → 100%.</summary>
     static string Pct(double ovr) => Math.Clamp((ovr - 50) / 45 * 100, 0, 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";

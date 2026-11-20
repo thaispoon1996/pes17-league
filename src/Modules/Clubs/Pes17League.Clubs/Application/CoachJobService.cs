@@ -123,7 +123,7 @@ public sealed class CoachJobService(ClubsDbContext db, TimeProvider clock, IOpti
             sent.AnsweredTick = tick;
         }
         CoachLetterService.Write(db, c, LetterKind.Official, LetterFrom.Board, $"{chairman}, chủ tịch {row.Name}", $"Mời thương lượng hợp đồng HLV trưởng",
-            $"{greet}\n\nLương {w0:N0}/vòng, thưởng {app.Bonus:N0} nếu đạt mục tiêu, {app.Seasons} mùa, bồi thường {app.SeverancePct}% lương còn lại nếu bị sa thải.",
+            $"{greet}\n\nLương {MoneyText.Format(w0)}/vòng, thưởng {MoneyText.Format(app.Bonus)} nếu đạt mục tiêu, {app.Seasons} mùa, bồi thường {app.SeverancePct}% lương còn lại nếu bị sa thải.",
             tick, now, row.ClubId, key: "thuong-luong", link: "hlv/viec-lam");
         await db.SaveChangesAsync(ct);
         return app;
@@ -166,7 +166,7 @@ public sealed class CoachJobService(ClubsDbContext db, TimeProvider clock, IOpti
                 a.Patience--;
                 var (w, bb) = CoachRules.Middle(wage, bonus, a.Wage, a.Bonus, seasons, severance, a.BaseWage, max);
                 (a.Wage, a.Bonus, a.Seasons, a.SeverancePct) = (w, bb, seasons, severance);
-                msg = $"Hơi cao. Tôi gặp ông ở giữa: lương {w:N0}/vòng, thưởng {bb:N0}. Ông xem thế nào?";
+                msg = $"Hơi cao. Tôi gặp ông ở giữa: lương {MoneyText.Format(w)}/vòng, thưởng {MoneyText.Format(bb)}. Ông xem thế nào?";
                 break;
             case NegotiationOutcome.Reject:
                 a.Patience--;
@@ -181,7 +181,7 @@ public sealed class CoachJobService(ClubsDbContext db, TimeProvider clock, IOpti
                     clock.GetUtcNow(), a.ClubId, key: "thuong-luong");
                 break;
         }
-        a.Log = $"H|Anh đề nghị lương {wage:N0}/vòng, thưởng {bonus:N0}, {seasons} mùa, bồi thường {severance}%.\nC|{msg}\n{a.Log}";
+        a.Log = $"H|Anh đề nghị lương {MoneyText.Format(wage)}/vòng, thưởng {MoneyText.Format(bonus)}, {seasons} mùa, bồi thường {severance}%.\nC|{msg}\n{a.Log}";
         await db.SaveChangesAsync(ct);
         return (new(outcome, msg), null);
     }
@@ -278,8 +278,8 @@ public sealed class CoachJobService(ClubsDbContext db, TimeProvider clock, IOpti
         var club = await db.Clubs.Where(x => x.Id == clubId).Select(x => x.Name).SingleAsync(ct);
         var chairman = CoachRules.Chairman(clubId);
         CoachLetterService.Write(db, c, LetterKind.Official, LetterFrom.Board, $"{chairman}, chủ tịch {club}", $"Hợp đồng HLV trưởng {club} có hiệu lực",
-            $"Chức danh: HLV trưởng {club}.\nThời hạn: {seasons} mùa (hết mùa {k.EndSeasonNumber}).\nLương: {wage:N0}/vòng, trả vào ví HLV.\n" +
-            $"Thưởng đạt mục tiêu: {bonus:N0}.\nMục tiêu mùa: {k.Objective}" + (k.ExpectedPosition > 0 ? $" (hạng {k.ExpectedPosition})" : "") +
+            $"Chức danh: HLV trưởng {club}.\nThời hạn: {seasons} mùa (hết mùa {k.EndSeasonNumber}).\nLương: {MoneyText.Format(wage)}/vòng, trả vào ví HLV.\n" +
+            $"Thưởng đạt mục tiêu: {MoneyText.Format(bonus)}.\nMục tiêu mùa: {k.Objective}" + (k.ExpectedPosition > 0 ? $" (hạng {k.ExpectedPosition})" : "") +
             $".\nBồi thường nếu bị sa thải: {severance}% lương còn lại.", tick, now, clubId, key: "hop-dong", link: "hlv");
         CoachLetterService.Write(db, c, LetterKind.Info, LetterFrom.Board, $"{chairman}, chủ tịch {club}", "Thư chào mừng của chủ tịch",
             $"Chào mừng ông tới {club}. Ban lãnh đạo kỳ vọng ông hoàn thành mục tiêu {k.Objective.ToLowerInvariant()}. Cửa phòng tôi luôn mở: " +
@@ -322,7 +322,7 @@ public sealed class CoachJobService(ClubsDbContext db, TimeProvider clock, IOpti
     {
         var pay = CoachRules.Severance(k) / 2;
         await LeaveAsync(c, k, CoachContractStatus.Resigned, pay, CoachRules.ResignRep, tick, ct);
-        return ("Chấp thuận", $"Ban lãnh đạo chấp nhận đơn từ chức của ông. Theo thoả thuận, CLB trả {pay:N0} vào ví HLV. Chúc ông thành công ở chặng đường mới.");
+        return ("Chấp thuận", $"Ban lãnh đạo chấp nhận đơn từ chức của ông. Theo thoả thuận, CLB trả {MoneyText.Format(pay)} vào ví HLV. Chúc ông thành công ở chặng đường mới.");
     }
 
     /// <summary>Sa thải: bồi thường theo hợp đồng, danh tiếng −8. Không lưu (trừ bước trả CLB về BOT).</summary>

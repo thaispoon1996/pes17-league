@@ -307,7 +307,7 @@ public sealed class CoachLetterService(ClubsDbContext db, TimeProvider clock)
         var share = conf >= 65 ? 10 : 5;
         var amount = Math.Max(conf >= 65 ? 200_000 : 100_000, Math.Abs(initial) * share / 100 / 100_000 * 100_000);
         db.Ledger.Add(new ClubLedgerEntry { ClubId = k.ClubId, Amount = amount, Reason = LedgerReason.Adjustment, RefType = "CoachRequest", RefId = k.Id, At = now });
-        return ("Chấp thuận", $"Ban lãnh đạo đồng ý bổ sung {amount:N0} vào ngân sách chuyển nhượng. Mong ông dùng đúng chỗ.");
+        return ("Chấp thuận", $"Ban lãnh đạo đồng ý bổ sung {MoneyText.Format(amount)} vào ngân sách chuyển nhượng. Mong ông dùng đúng chỗ.");
     }
 
     async Task<(string, string)> StaffAsync(CoachContract k, int conf, string? role, DateTimeOffset now, CancellationToken ct)
@@ -321,7 +321,7 @@ public sealed class CoachLetterService(ClubsDbContext db, TimeProvider clock)
         await db.SaveChangesAsync(ct);
         var err = await new BoardService(db, clock).SetLevelAsync(k.ClubId, r, level + 1, ct);
         return err is null
-            ? ("Chấp thuận", $"CLB đã chi {fee:N0} nâng {StaffName(role)} lên cấp {level + 1}. Lương nhân viên tính vào quỹ CLB.")
+            ? ("Chấp thuận", $"CLB đã chi {MoneyText.Format(fee)} nâng {StaffName(role)} lên cấp {level + 1}. Lương nhân viên tính vào quỹ CLB.")
             : ("Từ chối", err);
     }
 
@@ -338,7 +338,7 @@ public sealed class CoachLetterService(ClubsDbContext db, TimeProvider clock)
         {
             k.Wage = k.Wage * 110 / 100 / 100 * 100;
             k.Bonus = CoachRules.OfferBonus(k.Wage);
-            return ("Chấp thuận", $"Ban lãnh đạo gia hạn thêm 1 mùa (tới hết mùa {k.EndSeasonNumber}) và tăng lương lên {k.Wage:N0}/vòng.");
+            return ("Chấp thuận", $"Ban lãnh đạo gia hạn thêm 1 mùa (tới hết mùa {k.EndSeasonNumber}) và tăng lương lên {MoneyText.Format(k.Wage)}/vòng.");
         }
         return ("Chấp thuận", $"Ban lãnh đạo gia hạn thêm 1 mùa (tới hết mùa {k.EndSeasonNumber}), giữ nguyên lương.");
     }
@@ -369,6 +369,6 @@ public sealed class CoachLetterService(ClubsDbContext db, TimeProvider clock)
         var fee = CoachRules.CourseFee(CoachRules.Courses[c.CourseLicense - 1], c.Trait) / 2;
         CoachService.Money(db, c, fee, CoachMoney.Course, "CLB tài trợ học phí", tick, now);
         db.Ledger.Add(new ClubLedgerEntry { ClubId = k.ClubId, Amount = -fee, Reason = LedgerReason.Staff, RefType = "CoachCourse", RefId = c.Id, At = now });
-        return ("Chấp thuận", $"CLB trả một nửa học phí ({fee:N0}), đã chuyển vào ví của ông.");
+        return ("Chấp thuận", $"CLB trả một nửa học phí ({MoneyText.Format(fee)}), đã chuyển vào ví của ông.");
     }
 }

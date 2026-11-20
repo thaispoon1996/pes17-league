@@ -69,7 +69,7 @@ public sealed class CoachRoundService(ClubsDbContext db, TimeProvider clock, IOp
             var back = a.Price + a.Price * a.ReturnPermille / 1000;
             CoachService.Money(db, c, back, CoachMoney.Investment, "Đầu tư đáo hạn", tick, now);
             CoachLetterService.Write(db, c, LetterKind.Info, LetterFrom.Agent, "Bạn cũ thời đi học", "Khoản đầu tư đã đáo hạn",
-                $"Khoản góp {a.Price:N0} đã tất toán. Ông nhận về {back:N0} ({(a.ReturnPermille >= 0 ? "lãi" : "lỗ")} {Math.Abs(a.ReturnPermille) / 10.0:0.#}%).", tick, now);
+                $"Khoản góp {MoneyText.Format(a.Price)} đã tất toán. Ông nhận về {MoneyText.Format(back)} ({(a.ReturnPermille >= 0 ? "lãi" : "lỗ")} {Math.Abs(a.ReturnPermille) / 10.0:0.#}%).", tick, now);
             db.CoachAssets.Remove(a);
         }
 
@@ -115,7 +115,7 @@ public sealed class CoachRoundService(ClubsDbContext db, TimeProvider clock, IOp
                 var pay = await new CoachJobService(db, clock, store).SackAsync(c, k, tick, ct);
                 CoachLetterService.Write(db, c, LetterKind.Official, LetterFrom.Board, $"{CoachRules.Chairman(k.ClubId)}, chủ tịch {club}", "Quyết định chấm dứt hợp đồng",
                     $"Ban lãnh đạo {club} quyết định chấm dứt hợp đồng với ông do kết quả không đạt yêu cầu (độ tin cậy {board.Confidence}/100). " +
-                    $"Khoản bồi thường {pay:N0} ({k.SeverancePct}% lương còn lại) đã chuyển vào ví HLV. Ông có thể tìm việc ở CLB khác.", tick, now, k.ClubId, key: "sa-thai", link: "hlv/viec-lam");
+                    $"Khoản bồi thường {MoneyText.Format(pay)} ({k.SeverancePct}% lương còn lại) đã chuyển vào ví HLV. Ông có thể tìm việc ở CLB khác.", tick, now, k.ClubId, key: "sa-thai", link: "hlv/viec-lam");
                 k = null;
             }
             else if (board.Confidence < CoachRules.WarnBelow && c.WarnedTick / 100 != tick / 100)
@@ -134,7 +134,7 @@ public sealed class CoachRoundService(ClubsDbContext db, TimeProvider clock, IOp
             if (conf >= CoachRules.RenewFrom)
             {
                 var l = CoachLetterService.Write(db, c, LetterKind.Decision, LetterFrom.Board, $"{CoachRules.Chairman(k.ClubId)}, chủ tịch {club}", "Đề nghị gia hạn hợp đồng",
-                    $"Hợp đồng của ông hết hạn cuối mùa này. Ban lãnh đạo muốn gia hạn thêm 1 mùa với mức lương {k.Wage * 105 / 100 / 100 * 100:N0}/vòng.", tick, now, k.ClubId, key: "gia-han");
+                    $"Hợp đồng của ông hết hạn cuối mùa này. Ban lãnh đạo muốn gia hạn thêm 1 mùa với mức lương {MoneyText.Format(k.Wage * 105 / 100 / 100 * 100)}/vòng.", tick, now, k.ClubId, key: "gia-han");
                 l.Options = "Đồng ý gia hạn\nTừ chối, rời CLB cuối mùa";
                 l.DefaultOption = 0;
                 l.DeadlineTick = CoachRules.Tick(season.Number, rounds);
@@ -231,7 +231,7 @@ public sealed class CoachRoundService(ClubsDbContext db, TimeProvider clock, IOp
         foreach (var r in rows)
         {
             var l = CoachLetterService.Write(db, c, LetterKind.Decision, LetterFrom.Club, $"{CoachRules.Chairman(r.ClubId)}, chủ tịch {r.Name}", $"Lời mời dẫn dắt {r.Name}",
-                $"{r.Name} ({r.League}) đang tìm HLV trưởng. Mục tiêu: {r.Objective.ToLowerInvariant()}. Lương khởi điểm khoảng {r.Wage:N0}/vòng. " +
+                $"{r.Name} ({r.League}) đang tìm HLV trưởng. Mục tiêu: {r.Objective.ToLowerInvariant()}. Lương khởi điểm khoảng {MoneyText.Format(r.Wage)}/vòng. " +
                 "Nếu quan tâm, mời ông tới thương lượng.", tick, now, r.ClubId, key: "moi-viec", data: $"club={r.ClubId}");
             l.Options = "Mở thương lượng\nTừ chối";
             l.DefaultOption = 1;
@@ -258,7 +258,7 @@ public sealed class CoachRoundService(ClubsDbContext db, TimeProvider clock, IOp
             {
                 CoachService.Money(db, c, k.Bonus, CoachMoney.Bonus, "Thưởng đạt mục tiêu mùa", tick, now);
                 c.FreePoints++;
-                lines.Add($"Đạt mục tiêu: thưởng {k.Bonus:N0} vào ví, thêm 1 điểm năng lực.");
+                lines.Add($"Đạt mục tiêu: thưởng {MoneyText.Format(k.Bonus)} vào ví, thêm 1 điểm năng lực.");
             }
             else lines.Add("Không đạt mục tiêu: không có thưởng.");
             lines.Add($"Danh tiếng {(rep >= 0 ? "tăng" : "giảm")} {Math.Abs(rep)}, hiện {c.Reputation} ({CoachRules.RepTier(c.Reputation)}).");
@@ -278,7 +278,7 @@ public sealed class CoachRoundService(ClubsDbContext db, TimeProvider clock, IOp
                 k.Bonus = CoachRules.OfferBonus(k.Wage);
                 k.RenewAgreed = false;
                 CoachLetterService.Write(db, c, LetterKind.Official, LetterFrom.Board, chairman, "Phụ lục gia hạn hợp đồng",
-                    $"Hợp đồng được gia hạn tới hết mùa {k.EndSeasonNumber}, lương mới {k.Wage:N0}/vòng.", tick, now, k.ClubId, key: "gia-han");
+                    $"Hợp đồng được gia hạn tới hết mùa {k.EndSeasonNumber}, lương mới {MoneyText.Format(k.Wage)}/vòng.", tick, now, k.ClubId, key: "gia-han");
             }
             else
             {

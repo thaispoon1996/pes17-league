@@ -8,9 +8,8 @@ namespace Pes17League.Web;
 /// <summary>Hiển thị hồ sơ HLV career (PO 19/11): tiền ví, mốc vòng, radar năng lực, nhãn thư.</summary>
 public static class CoachUi
 {
-    /// <summary>Tiền ví HLV: lương / chi tiêu vài chục nghìn mỗi vòng nên dưới 1 triệu ghi "nghìn".</summary>
-    public static string Cash(long v) =>
-        Math.Abs(v) >= 1_000_000 ? Fmt.Money(v) : Math.Abs(v) >= 1000 ? (v / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " nghìn" : v.ToString(CultureInfo.InvariantCulture);
+    /// <summary>Tiền ví HLV (lương / chi tiêu vài chục nghìn mỗi vòng → "€35K"); cùng cách ghi với Fmt.Money.</summary>
+    public static string Cash(long v) => MoneyText.Format(v);
 
     public static string Signed(long v) => (v > 0 ? "+" : "") + Cash(v);
 

@@ -319,7 +319,7 @@
                                         </div>
                                         <div class="row">
                                             <label>Gia hạn <input type="number" min="@ContractRules.MinMatches" max="@ContractRules.MaxMatches" @bind="renewMatches" /> trận</label>
-                                            <label>Phí <input type="number" min="0" @bind="renewFeeM" step="0.1" /> tr</label>
+                                            <label>Phí € <input type="number" min="0" @bind="renewFeeM" step="0.1" /> M</label>
                                             <button data-confirm="@($"Gia hạn hợp đồng {p.Name}?")" @onclick="() => Renew(p)">Gia hạn</button>
                                             @if (p.Renewal is { } rs) { <small>(lần gần nhất: @rs)</small> }
                                         </div>

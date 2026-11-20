@@ -444,7 +444,6 @@ public static class Fmt
         return [.. all.Where(z => z.To >= z.From)];
     }
 
-    /// <summary>Tiền: 1.250.000 → "1,25 tr"; ≥ 1 tỷ → "1,2 tỷ".</summary>
     /// <summary>Mức màu chỉ số kiểu FM theo % thang (99 hoặc 8): v5 ≥ 90%, v4 ≥ 80%, v3 ≥ 70%, v2 ≥ 60%, còn lại v1.</summary>
     public static string Tier(int value, int max = 99) => (value * 100 / Math.Max(max, 1)) switch { >= 90 => "v5", >= 80 => "v4", >= 70 => "v3", >= 60 => "v2", _ => "v1" };
 
@@ -472,7 +471,8 @@ public static class Fmt
         Position.DMF => "Tiền vệ phòng ngự", Position.WB => "Hậu vệ chạy cánh", Position.CMF => "Tiền vệ trung tâm", Position.SMF => "Tiền vệ cánh",
         Position.AMF => "Tiền vệ tấn công", Position.WF => "Tiền đạo cánh", Position.SS => "Hộ công", _ => "Trung phong",
     };
-    public static string Money(long v) => Math.Abs(v) >= 1_000_000_000 ? $"{v / 1e9:0.##} tỷ" : $"{v / 1e6:0.##} tr";
+    /// <summary>Tiền: "€8.15M", "€35K", "€1.25B" (MoneyText, PO 20/11).</summary>
+    public static string Money(long v) => MoneyText.Format(v);
 
     /// <summary>Tỷ số trận đã đá: "1 – 1"; chung kết hoà có loạt penalty → "1 – 1 (pen 3–2)" (PO 06/11).</summary>
     public static string Score(int? home, int? away, int? homePens, int? awayPens) =>

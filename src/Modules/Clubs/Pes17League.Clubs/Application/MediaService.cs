@@ -45,8 +45,8 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
             || (o.BuyerClubId == clubId && o.Status == OfferStatus.Countered)).ToListAsync(ct);
         foreach (var o in offers)
             items.Add(o.SellerClubId == clubId
-                ? new(InboxKind.Task, $"Đề nghị mua {playerNames.GetValueOrDefault(o.PlayerId)}", $"{names.GetValueOrDefault(o.BuyerClubId)} trả {o.Fee:N0}. Đồng ý, từ chối hoặc trả giá.", "de-nghi")
-                : new(InboxKind.Task, $"Bị trả giá {playerNames.GetValueOrDefault(o.PlayerId)}", $"{names.GetValueOrDefault(o.SellerClubId)} đòi {o.CounterFee:N0}.", "de-nghi"));
+                ? new(InboxKind.Task, $"Đề nghị mua {playerNames.GetValueOrDefault(o.PlayerId)}", $"{names.GetValueOrDefault(o.BuyerClubId)} trả {MoneyText.Format(o.Fee)}. Đồng ý, từ chối hoặc trả giá.", "de-nghi")
+                : new(InboxKind.Task, $"Bị trả giá {playerNames.GetValueOrDefault(o.PlayerId)}", $"{names.GetValueOrDefault(o.SellerClubId)} đòi {(o.CounterFee is { } cf ? MoneyText.Format(cf) : "")}.", "de-nghi"));
         if (press is not null)
             items.Add(new(InboxKind.Task, "Họp báo sau trận", $"Phóng viên chờ bạn sau trận {press.GoalsFor}–{press.GoalsAgainst} với {press.Opponent}.", null));
 
@@ -81,9 +81,9 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
                 $"Mục tiêu {board.Objective} ({board.League}), hiện hạng {board.Position?.ToString() ?? "—"}/{board.Teams}. Độ tin cậy {board.Confidence}/100.", "ban-lanh-dao"));
         var report = await new FinanceService(db, clock).ReportAsync(seasonId, clubId, ct);
         if (report.Forecast < 0)
-            items.Add(new(InboxKind.Warning, "Ban tài chính cảnh báo", $"Dự báo cuối mùa âm {Math.Abs(report.Forecast):N0}. Giảm lương hoặc tăng doanh thu.", "tai-chinh"));
+            items.Add(new(InboxKind.Warning, "Ban tài chính cảnh báo", $"Dự báo cuối mùa âm {MoneyText.Format(Math.Abs(report.Forecast))}. Giảm lương hoặc tăng doanh thu.", "tai-chinh"));
         else if (report.Rounds.FirstOrDefault() is { } r)
-            items.Add(new(InboxKind.Info, $"Báo cáo tài chính vòng {r.Matchday}", $"Thu chi ròng {r.Net:N0}. Số dư {report.Balance:N0}.", "tai-chinh"));
+            items.Add(new(InboxKind.Info, $"Báo cáo tài chính vòng {r.Matchday}", $"Thu chi ròng {MoneyText.Format(r.Net)}. Số dư {MoneyText.Format(report.Balance)}.", "tai-chinh"));
 
         var article = await (from a in db.MatchArticles join f in db.Fixtures on a.FixtureId equals f.Id
                              where f.HomeClubId == clubId || f.AwayClubId == clubId

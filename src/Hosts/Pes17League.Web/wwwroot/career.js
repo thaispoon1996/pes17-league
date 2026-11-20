@@ -1,8 +1,12 @@
 // UI Career đợt 1 (Stitch "Nocturnal Apex", PO 19/11/2026): bụi sáng, đếm số, pháo giấy khi thắng, hiệu ứng vào trang. Chỉ chạy khi có .cx.
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, useGrouping: false });   // giống Fmt.Money phía server: "4.84 tr"
-  const fmt = (v, kind) => kind === 'money' ? money.format(v / 1e6) + ' tr' : String(Math.round(v));
+  // tiền giống MoneyText.Format phía server (PO 20/11): €8.15M, €35.5K, €1.25B; bậc lấy theo số ĐÍCH để lúc đếm không nhảy K↔M
+  const UNITS = [[1e3, 'K', 1], [1e6, 'M', 2], [1e9, 'B', 2]];
+  const unitOf = a => a < 1000 ? null : UNITS.find(([u, s, d]) => +(a / u).toFixed(d) < 1000 || s === 'B');
+  const money = (v, to) => { const a = Math.abs(v), u = unitOf(Math.abs(to ?? v));
+    return (v < 0 ? '-€' : '€') + (u ? String(+(a / u[0]).toFixed(u[2])) + u[1] : String(Math.round(a))); };
+  const fmt = (v, kind, to) => kind === 'money' ? money(v, to) : String(Math.round(v));
 
   // đếm số: <b data-count="123" data-fmt="money">
   const counted = new WeakMap();
@@ -11,11 +15,11 @@
     if (!Number.isFinite(to) || counted.get(el) === to) return;
     const from = counted.has(el) ? counted.get(el) : (el.dataset.fmt === 'money' ? to : 0);
     counted.set(el, to);
-    if (reduce || from === to) { el.textContent = fmt(to, el.dataset.fmt); return; }
+    if (reduce || from === to) { el.textContent = fmt(to, el.dataset.fmt, to); return; }
     const t0 = performance.now(), dur = 900;
     const step = now => {
       const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-      el.textContent = fmt(from + (to - from) * e, el.dataset.fmt);
+      el.textContent = fmt(from + (to - from) * e, el.dataset.fmt, to);
       if (k < 1 && counted.get(el) === to) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);

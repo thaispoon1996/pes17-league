@@ -5,6 +5,8 @@
   const KEY = 'cx-audio';
   const st = Object.assign({ music: true, sfx: true, mv: 0.45, sv: 0.7 }, (() => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } })());
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { } };
+  // PO 20/11: tạm tắt nhạc nền (CareerLayout.MusicOn = false → .cx[data-music=off]); không đụng lựa chọn đã lưu của người chơi
+  const musicOn = () => st.music && !document.querySelector('.cx[data-music="off"]');
 
   let ctx = null, master, musicBus, sfxBus, verb, delay, noiseBuf, duck = 1;
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
@@ -43,7 +45,7 @@
   function applyVolumes() {
     if (!ctx) return;
     const t = ctx.currentTime;
-    musicBus.gain.cancelScheduledValues(t); musicBus.gain.setTargetAtTime(st.music ? st.mv * .55 * duck : 0, t, .25);
+    musicBus.gain.cancelScheduledValues(t); musicBus.gain.setTargetAtTime(musicOn() ? st.mv * .55 * duck : 0, t, .25);
     sfxBus.gain.setTargetAtTime(st.sfx ? st.sv : 0, t, .05);
   }
   function setDuck(on) { duck = on ? .28 : 1; applyVolumes(); }
@@ -268,7 +270,7 @@
 
   let cur = null, curName = null, curGain = null, step = 0, nextT = 0, timer = null, bed = null;
   function playTrack(name) {
-    if (!ctx || !st.music) { curName = name; return; }
+    if (!ctx || !musicOn()) { curName = name; return; }
     if (cur && curName === name) return;
     const t = ctx.currentTime;
     if (curGain) { const g = curGain; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, .5); setTimeout(() => g.disconnect(), 3000); }
@@ -475,7 +477,7 @@
   function scan() {
     const root = document.querySelector('.cx:not(.cx-boot)');
     label();
-    if (!root) { if (cur) stopMusic(); return; }
+    if (!root || !musicOn()) { if (cur) stopMusic(); if (!root) return; }
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       fire('nav');

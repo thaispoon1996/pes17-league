@@ -313,7 +313,7 @@
         {
             ["to"] = to, ["me"] = myName, ["club"] = myClubName.Length > 0 ? myClubName : myName,
             ["player"] = players.FirstOrDefault(p => p.Id == playerId).Name,
-            ["fee"] = fee is { } f ? f.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("vi-VN")) : null,
+            ["fee"] = fee is { } f ? Fmt.Money(f) : null,
             ["fixture"] = fixtures.FirstOrDefault(x => x.Id == fixtureId).Label,
         };
         subject = MailTemplates.Fill(t.Subject, values);
