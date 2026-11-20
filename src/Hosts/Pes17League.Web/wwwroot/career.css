@@ -1675,7 +1675,18 @@ a.cx-zt:focus-visible, .cx-dme:focus-visible, .cx-dfoot button:focus-visible { o
 .cx .hm-note { margin: 4px 6px 6px; font-size: 12px; color: var(--muted); }
 .cx .hm .cx-form { animation: none; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
 .cx .hm .cx-form .res { background: var(--glass-solid); color: inherit; text-decoration: none; }   /* app.css .res.W/.D/.L tô kín nền */
-.cx .hm .cx-cups { animation: none; }
+/* Cúp đang dự: logo giải lớn (Competition.LogoPath, thiếu thì Crest hiện chữ viết tắt) */
+.cx .hm-cups { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.cx .hm-cup { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 12px 16px; border-radius: 10px; background: var(--glass); border: 1px solid var(--line); }
+.cx .hm-cup .crest { width: 56px; height: 56px; font-size: 16px; filter: drop-shadow(0 0 12px rgba(54, 227, 255, .28)); }
+.cx .hm-cup > span { display: grid; gap: 2px; min-width: 0; }
+.cx .hm-cup b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 italic 18px/1.1 var(--f-display); text-transform: uppercase; color: var(--text); }
+.cx .hm-cup small { font-size: 12px; color: var(--muted); }
+.cx .hm-cup.gold { border-color: var(--gold); box-shadow: 0 0 22px -6px var(--gold); }
+.cx .hm-cup.gold b { color: var(--gold); }
+.cx .hm-cup.gold .crest { filter: drop-shadow(0 0 14px rgba(255, 201, 74, .55)); }
+.cx .hm-cup.out { opacity: .6; }
+.cx .hm-cup.out .crest { filter: grayscale(1); }
 
 /* Ngôi sao đội (thẻ gọn, giữ màu bậc + holo của .cx-star) */
 .cx .hm-star { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px 14px; align-items: center; padding: 14px 16px; color: inherit; text-decoration: none; }
@@ -1685,7 +1696,6 @@ a.cx-zt:focus-visible, .cx-dme:focus-visible, .cx-dfoot button:focus-visible { o
 .cx .hm-star .who > span { display: flex; align-items: center; gap: 8px; }
 .cx .hm-star .cx-ovr { font-size: 38px; }
 .cx .hm-star .ps { margin: 0; vertical-align: 0; font-size: 15px; }
-.cx .hm-star .cx-tier { margin-left: auto; }
 .cx .hm-star .who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 italic 22px/1.05 var(--f-display); text-transform: uppercase; }
 .cx .hm-star .who small { font-size: 12px; color: var(--cyan); }
 .cx .hm-attrs { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }

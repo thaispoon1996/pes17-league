@@ -227,8 +227,11 @@
             {
                 <section class="hm-sec" aria-labelledby="hm-cup">
                     <h2 class="hm-h" id="hm-cup">Cúp</h2>
-                    <div class="cx-cups">
-                        @foreach (var c in cups) { <span class="@(c.State.Contains("Vô địch") ? "gold" : c.State.StartsWith("Bị loại") ? "out" : "")"><b>@c.Name</b>@c.State</span> }
+                    <div class="hm-cups">
+                        @foreach (var c in cups)
+                        {
+                            <div class="hm-cup @(c.State.Contains("Vô địch") ? "gold" : c.State.StartsWith("Bị loại") ? "out" : null)"><Crest Name="@c.Name" Logo="@c.Logo" Large="true" /><span><b>@c.Name</b><small>@c.State</small></span></div>
+                        }
                     </div>
                 </section>
             }
@@ -240,7 +243,7 @@
                     <a class="cx-card cx-star hm-star tier-@s.Tier" href="cau-thu/@s.Id">
                         <span class="pic"><Face Id="s.Id" Name="@s.Name" Size="lg" /></span>
                         <span class="who">
-                            <span><span class="cx-ovr" data-count="@s.Ovr">@s.Ovr</span><span class="ps">@s.Position</span><span class="cx-tier">@TierLabel(s.Tier)</span></span>
+                            <span><span class="cx-ovr" data-count="@s.Ovr">@s.Ovr</span><span class="ps">@s.Position</span></span>
                             <b>@s.Name</b>
                             <small>@s.Why</small>
                         </span>
@@ -719,7 +722,7 @@
     sealed record Current(Guid Id, int Number, int BotLeft, Guid? MineFixture);
     sealed record ResultRow(Guid Id, string Competition, string Opponent, string? OppLogo, bool Home, string Score, string Result);
     sealed record TableRow(int Pos, string Club, string? Logo, int P, int GD, int Pts, bool Mine);
-    sealed record CupRow(string Name, string State);
+    sealed record CupRow(string Name, string State, string? Logo);
     sealed record Star(Guid Id, string Name, string Position, int Ovr, int Tier, string Why, IReadOnlyList<(string Label, int Value, bool Cyan)> Attrs);
     Current? current;
     int slots;
@@ -783,7 +786,6 @@
         : board is { } b ? $"Kỳ vọng hạng {b.ExpectedPosition}" : $"{table.FirstOrDefault(r => r.Mine)?.Pts ?? 0} điểm";
 
     static int Stars(double ovr) => Math.Clamp((int)Math.Round((ovr - 64) / 3), 1, 5);
-    static string TierLabel(int tier) => tier switch { 3 => "Huyền thoại", 2 => "Thẻ vàng", 1 => "Thẻ bạc", _ => "Thẻ đồng" };
 
     (string Label, string Css) Difficulty(CareerClubChoice c)
     {
@@ -878,7 +880,7 @@
                               join h in db.Clubs on f.HomeClubId equals h.Id join w in db.Clubs on f.AwayClubId equals w.Id
                               where m.SeasonId == seasonId && (f.HomeClubId == mineId || f.AwayClubId == mineId)
                               orderby m.Number
-                              select new { F = f, Slot = m.Number, EditionId = e.Id, Comp = comp.Name, comp.Type, Home = h.Name, HomeLogo = h.LogoPath, Away = w.Name, AwayLogo = w.LogoPath })
+                              select new { F = f, Slot = m.Number, EditionId = e.Id, Comp = comp.Name, CompLogo = comp.LogoPath, comp.Type, Home = h.Name, HomeLogo = h.LogoPath, Away = w.Name, AwayLogo = w.LogoPath })
             .AsNoTracking().ToListAsync();
         string Label(string comp, FixtureStage stage, int? leg) => stage == FixtureStage.League ? comp : $"{comp} · {AdminText.SlotKind(stage, leg)}";
 
@@ -933,7 +935,7 @@
         }
 
         // Cúp: đang dự / bị loại / vô địch
-        var cupEditions = fixtures.Where(x => x.Type != CompetitionType.DomesticLeague).GroupBy(x => (x.EditionId, x.Comp)).ToList();
+        var cupEditions = fixtures.Where(x => x.Type != CompetitionType.DomesticLeague).GroupBy(x => (x.EditionId, x.Comp, x.CompLogo)).ToList();
         var editionIds = cupEditions.Select(g => g.Key.EditionId).ToList();
         var stages = (await db.Fixtures.Where(f => f.CompetitionEditionId != null && editionIds.Contains(f.CompetitionEditionId.Value))
                 .Select(f => new { Edition = f.CompetitionEditionId!.Value, f.Stage }).Distinct().ToListAsync())   // Stage lưu dạng chuỗi → so thứ tự ở client
@@ -941,12 +943,12 @@
         cups = [.. cupEditions.Select(g =>
         {
             var open = g.FirstOrDefault(x => x.F.Status != FixtureStatus.Played);
-            if (open is not null) return new CupRow(g.Key.Comp, $"Đang dự · {AdminText.SlotKind(open.F.Stage, open.F.Leg)}");
+            if (open is not null) return new CupRow(g.Key.Comp, $"Đang dự · {AdminText.SlotKind(open.F.Stage, open.F.Leg)}", g.Key.CompLogo);
             var last = g.Last().F;
-            if (last.Stage == FixtureStage.Final) return new CupRow(g.Key.Comp, last.WinnerClubId() == mineId ? "Vô địch" : "Á quân");
+            if (last.Stage == FixtureStage.Final) return new CupRow(g.Key.Comp, last.WinnerClubId() == mineId ? "Vô địch" : "Á quân", g.Key.CompLogo);
             return stages.GetValueOrDefault(g.Key.EditionId) > last.Stage
-                ? new CupRow(g.Key.Comp, $"Bị loại · {AdminText.Stage(last.Stage)}")
-                : new CupRow(g.Key.Comp, $"Chờ vòng sau (đã đá {AdminText.Stage(last.Stage)})");
+                ? new CupRow(g.Key.Comp, $"Bị loại · {AdminText.Stage(last.Stage)}", g.Key.CompLogo)
+                : new CupRow(g.Key.Comp, $"Chờ vòng sau (đã đá {AdminText.Stage(last.Stage)})", g.Key.CompLogo);
         })];
 
         slots = await db.Matchdays.CountAsync(m => m.SeasonId == seasonId);
