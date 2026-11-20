@@ -184,10 +184,6 @@
         }
         else
         {
-            @if (othersFirst > 0)
-            {
-                <p class="muted">Còn @othersFirst trận khác của khung này chưa đá. Máy chưa bật game trước để trang chủ còn mô phỏng được; bấm Sẵn sàng thì vào trận của bạn ngay.</p>
-            }
             <p class="muted">Bấm Sẵn sàng: đội hình được chốt, game khởi động và tự vào trận (~@(Jobs.SecondsToKickoffEstimate) giây, có đếm ngược).</p>
             <button class="primary wide" @onclick="Ready"><span class="ms ic" aria-hidden="true">check_circle</span>Sẵn sàng — chốt đội hình & vào trận</button>
         }
@@ -213,7 +209,6 @@
     FixtureView? fixture;
     MatchSide side;
     bool locked, admin, banned;
-    int othersFirst;
     Timer? tick, touch;
     Guid? me;
     Guid otherManager;
@@ -247,10 +242,6 @@
             Hub.Changed += OnHub;
             touch = new Timer(_ => { if (me is { } id) Hub.Touch(id, myName!); }, null, 0, 5000);   // máy chỉ nhận trận khi 2 HLV đang mở trang
         }
-        // Career (PO 20/11): còn trận khác của khung chưa đá (trang chủ "mô phỏng N trận khác rồi vào trận của bạn") → không dựng sẵn,
-        // tránh giữ máy 30 phút làm kẹt nút mô phỏng. Hết trận khác mới dựng sẵn khi mở trang.
-        if (Shell is not null)
-            othersFirst = await db.Fixtures.CountAsync(f => f.MatchdayId == md.Id && f.Id != FixtureId && f.Status != FixtureStatus.Played);
         Warm();
         if (Shell is not null)
         {
@@ -285,9 +276,9 @@
     /// <summary>Máy rảnh + trận của HLV (không phải admin chọn trận BOT) → dựng sẵn game ngay khi mở trang (PO 16/11).</summary>
     void Warm()
     {
-        if (adminPick || !locked || othersFirst > 0 || Jobs.Running || Jobs.Declined(fixture!.Id) || fixture.Status != FixtureStatus.Scheduled
+        if (adminPick || !locked || Jobs.Running || Jobs.Declined(fixture!.Id) || fixture.Status != FixtureStatus.Scheduled
             || fixture.AssistantPlays || (season!.IsHuman(fixture.Home) && season.IsHuman(fixture.Away))) return;
-        Jobs.PlayHuman(fixture.Id, side, prepare: true);
+        Jobs.PlayHuman(fixture.Id, side, prepare: true, career: Shell is not null);   // career: đá xong tự mô phỏng tiếp (PO 20/11)
     }
 
     void Go()
@@ -320,7 +311,7 @@
         starting = true;
         try
         {
-            if (Jobs.PlayHuman(fixture!.Id, side)) Nav.NavigateTo("vao-tran");
+            if (Jobs.PlayHuman(fixture!.Id, side, career: Shell is not null)) Nav.NavigateTo("vao-tran");
         }
         finally { starting = false; }
     }

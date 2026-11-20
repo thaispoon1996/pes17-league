@@ -11,9 +11,9 @@
    Hết giờ (PO 04/11): stream tự quay về đây → "đang đọc kết quả" rồi tỷ số, bàn thắng, điểm cầu thủ đội mình. *@
 <section class="hero">
     <span class="pill">Trận của tôi</span>
-    <h1>@(Jobs.Title != "Trận của tôi" ? "Chưa vào trận" : Jobs.Stage == "fulltime" || result is not null ? "Kết quả trận" : "Đang vào trận")</h1>
+    <h1>@(result is not null ? "Kết quả trận" : Jobs.Title != "Trận của tôi" ? "Chưa vào trận" : Jobs.Stage == "fulltime" ? "Kết quả trận" : "Đang vào trận")</h1>
 </section>
-@if (Jobs.Title != "Trận của tôi")
+@if (Jobs.Title != "Trận của tôi" && result is null)
 {
     <section class="panel">
         <p class="muted">Chưa có trận nào đang vào.</p>
@@ -139,7 +139,11 @@ else
     /// <summary>Kết quả trận PO khi đã ghi (Played); trước đó null.</summary>
     async Task LoadResultAsync()
     {
-        if (Jobs.HumanFixture is not { } hf || Jobs.Stage != "fulltime") return;
+        if (Jobs.HumanFixture is not { } hf) return;
+        if (result?.FixtureId != hf.FixtureId) result = null;
+        // Trận của tôi đang chạy → chờ hết giờ (đọc lại mỗi lần đổi để có điểm cầu thủ). Máy đã sang việc khác (career tự mô phỏng tiếp
+        // sau trận, PO 20/11) → vẫn hiện kết quả trận vừa đá, đọc 1 lần.
+        if (Jobs.Title == "Trận của tôi" ? Jobs.Stage != "fulltime" : result is not null) return;
         await using var db = await Dbs.CreateDbContextAsync();
         var f = await db.Fixtures.SingleAsync(x => x.Id == hf.FixtureId);
         if (f.Status != FixtureStatus.Played) return;

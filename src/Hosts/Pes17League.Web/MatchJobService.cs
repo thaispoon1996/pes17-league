@@ -177,10 +177,6 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
 
     public const string SimTitle = "Mô phỏng các trận";
 
-    /// <summary>
-    /// Career (PO 19/11): mô phỏng các trận không có người chơi, khung này sang khung khác, tới trận kế tiếp của người chơi / hết mùa.
-    /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi đang chờ (rồi dừng ở cuối khung đó).
-    /// </summary>
     public const string RolloverTitle = "Sang mùa mới";
     public bool NextSeason() => Start(RolloverTitle, async ct =>
     {
@@ -189,11 +185,17 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
         Write($"Xong: {r.Season} — giải nghệ {r.Retired}, BOT ký thay {r.Replaced}, {r.Start.Slots} khung / {r.Start.Matches} trận.");
     });
 
-    public bool SimulateCareer(bool includeMine = false) => Start(SimTitle, async ct =>
+    /// <summary>
+    /// Career (PO 19/11, 20/11 "đá trước, tự mô phỏng sau"): mô phỏng khung này sang khung khác, dừng ở khung có trận kế tiếp của người chơi
+    /// (trước khi mô phỏng trận khác của khung đó) / hết mùa — <see cref="Pes17CareerService.ContinueAsync"/>.
+    /// <paramref name="mineNow"/> = mô phỏng luôn trận của người chơi ở khung đang mở rồi chạy tiếp; <paramref name="includeMine"/> + <paramref name="maxSlots"/>
+    /// = "Chờ 1 vòng" khi chưa có CLB.
+    /// </summary>
+    public bool SimulateCareer(bool mineNow = false, bool includeMine = false, int maxSlots = 500) => Start(SimTitle, async ct =>
     {
         await using var db = await dbs.CreateDbContextAsync(ct);
         var career = new Pes17CareerService(db, store, clock);
-        var r = await career.ContinueAsync(includeMine ? 1 : 500, Write, includeMine, ct);
+        var r = await career.ContinueAsync(maxSlots, Write, includeMine, mineNow, ct);
         foreach (var e in r.Errors.Take(5)) Write($"LỖI {e}");
         Write($"Xong: mô phỏng {r.Simulated} trận" + (r.SeasonFinished ? " — mùa giải đã kết thúc." : "."));
         if (r.MyFixtureId is { } f) Write($"Tới trận của bạn: {Name(f)}");
@@ -230,9 +232,11 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     }
 
     /// <param name="prepare">true: chuẩn bị sẵn tới màn Thiết lập, chờ <see cref="Go"/> (tối đa <see cref="PrepareTimeout"/>).</param>
-    public bool PlayHuman(Guid fixtureId, MatchSide side, bool prepare = false, Action? then = null)
+    /// <param name="career">Career (PO 20/11): trận ghi được kết quả → tự mô phỏng phần còn lại của khung tới trận kế tiếp (<see cref="SimulateCareer"/>).</param>
+    public bool PlayHuman(Guid fixtureId, MatchSide side, bool prepare = false, Action? then = null, bool career = false)
     {
         var go = prepare ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+        var played = false;
         return Start("Trận của tôi", async ct =>
         {
             HumanFixture = (fixtureId, side);
@@ -249,6 +253,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
             {
                 var r = await Orchestrator().PlayFixtureAsync(fixtureId, side, ct: ct, go: go?.Task);
                 Write(r.Played ? "Trận đã ghi kết quả." : $"Chưa ghi kết quả: {r.LastError} (sau {r.Attempts} lần)");
+                played = r.Played;
                 if (r.HighlightError is not null) Write($"Highlight lỗi: {r.HighlightError}");
                 if (r.StatsError is not null) Write($"Thống kê lỗi: {r.StatsError}");
                 if (r.PressError is not null) Write($"Bài tường thuật lỗi: {r.PressError}");
@@ -258,7 +263,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
                 if (go is { Task.IsCompleted: false }) _declined = fixtureId;
                 if (pass.Enabled) await pass.CloseAsync(fixtureId);
             }
-        }, () => { _go = go; _declined = null; }, then);
+        }, () => { _go = go; _declined = null; }, () => { then?.Invoke(); if (career && played) SimulateCareer(); });
     }
 
     /// <summary>Bấm Đá khi đã chuẩn bị: game vào trận ngay (chưa tới màn Thiết lập thì đi tiếp vào thẳng).</summary>

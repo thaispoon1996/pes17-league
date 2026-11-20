@@ -97,11 +97,15 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
 
     /// <summary>
     /// "Tiếp tục" (PO 19/11: trận không có PO thì mô phỏng): mô phỏng lần lượt từng khung đang mở (chốt khung → khung sau tự mở) tới khi gặp
-    /// trận của người chơi chưa đá (dừng, trả trận đó), hết mùa, hoặc khung không tiến được (trận đang đá dở / lỗi ghi kết quả).
-    /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi (người chơi chọn "mô phỏng trận của tôi" / chạy thử cả mùa).
-    /// Đầu mỗi khung chạy chợ BOT (<see cref="BotMarketService"/>, chỉ khi chợ mở).
+    /// khung có trận của người chơi chưa đá, hết mùa, hoặc khung không tiến được (trận đang đá dở / lỗi ghi kết quả).
+    /// PO 20/11 "đá trước, tự mô phỏng sau": gặp khung có trận của người chơi thì dừng NGAY (chưa mô phỏng trận khác của khung đó, trả trận đó);
+    /// người chơi đá xong / chọn mô phỏng thì gọi lại để mô phỏng phần còn lại của khung, chốt khung, chạy tiếp tới trận kế tiếp.
+    /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi ở mọi khung (chạy thử cả mùa / "Chờ 1 vòng" khi chưa có CLB);
+    /// <paramref name="mineNow"/> = chỉ mô phỏng trận của người chơi ở khung đang mở (người chọn "Mô phỏng"), rồi chạy tiếp như thường.
+    /// Đầu mỗi khung chạy chợ BOT (<see cref="BotMarketService"/>, chỉ khi chợ mở, mỗi khung 1 lần).
     /// </summary>
-    public async Task<CareerContinueResult> ContinueAsync(int maxSlots = 500, Action<string>? progress = null, bool includeMine = false, CancellationToken ct = default)
+    public async Task<CareerContinueResult> ContinueAsync(int maxSlots = 500, Action<string>? progress = null, bool includeMine = false,
+        bool mineNow = false, CancellationToken ct = default)
     {
         var sim = new MatchSimService(db, store, clock);
         var market = new BotMarketService(db, clock);
@@ -116,25 +120,31 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
             if (md is null) return new(simulated, slots, null, true, errors);
             var mk = await market.RunAsync(md.Id, ct);
             if (mk.Deals + mk.Offers > 0) progress?.Invoke($"Khung {md.Number}: chợ BOT {mk.Deals} vụ{(mk.Offers > 0 ? $", {mk.Offers} đề nghị mua cầu thủ của bạn" : "")}");
-            var r = await sim.SimulateMatchdayAsync(md.Id, ct: ct);
-            simulated += r.Simulated;
-            errors.AddRange(r.Errors);
-            if (r.Simulated > 0) slots.Add(md.Number);
-            if (r.Simulated > 0) progress?.Invoke($"Khung {md.Number}: mô phỏng {r.Simulated} trận{(r.Settled ? ", đã chốt khung" : "")}");
-            if (r.SeasonFinished) return new(simulated, slots, null, true, errors);
-            var mine = await MyPendingFixtureAsync(md.Id, ct);
-            if (mine is { } myFixture && includeMine)
+            bool any = false, settled = false;
+            while (!settled && await MyPendingFixtureAsync(md.Id, ct) is { } myFixture)
             {
+                if (!includeMine && !(mineNow && i == 0)) return new(simulated, slots, myFixture, false, errors);   // tới lượt người chơi: đá trước
                 var m = await sim.SimulateMatchdayAsync(md.Id, myFixture, ct);
                 simulated += m.Simulated;
                 errors.AddRange(m.Errors);
-                if (m.Simulated > 0) progress?.Invoke($"Khung {md.Number}: trận của bạn {await ScoreLineAsync(myFixture, ct)}{(m.Settled ? ", đã chốt khung" : "")}");
-                if (m.SeasonFinished) return new(simulated, slots, null, true, errors);
                 if (m.Simulated == 0) return new(simulated, slots, myFixture, false, errors);
-                continue;
+                any = true;
+                settled = m.Settled;
+                progress?.Invoke($"Khung {md.Number}: trận của bạn {await ScoreLineAsync(myFixture, ct)}{(m.Settled ? ", đã chốt khung" : "")}");
+                if (m.SeasonFinished) return new(simulated, slots, null, true, errors);
             }
-            if (mine is not null) return new(simulated, slots, mine, false, errors);
-            if (!r.Settled) return new(simulated, slots, null, false, [.. errors, $"Khung {md.Number} chưa chốt được (còn trận đang đá dở hoặc lỗi ghi kết quả)"]);
+            if (!settled)
+            {
+                var r = await sim.SimulateMatchdayAsync(md.Id, ct: ct);
+                simulated += r.Simulated;
+                errors.AddRange(r.Errors);
+                any |= r.Simulated > 0;
+                settled = r.Settled;
+                if (r.Simulated > 0) progress?.Invoke($"Khung {md.Number}: mô phỏng {r.Simulated} trận{(r.Settled ? ", đã chốt khung" : "")}");
+                if (r.SeasonFinished) return new(simulated, slots, null, true, errors);
+            }
+            if (any) slots.Add(md.Number);
+            if (!settled) return new(simulated, slots, null, false, [.. errors, $"Khung {md.Number} chưa chốt được (còn trận đang đá dở hoặc lỗi ghi kết quả)"]);
         }
         return new(simulated, slots, null, false, errors);
     }

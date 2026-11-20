@@ -55,7 +55,7 @@
                             <span class="x"><b>VS</b><small>@(n.HomeId == clubId ? "Sân nhà" : "Sân khách")</small></span>
                             <span class="t @(n.AwayId == clubId ? "me" : null)"><Crest Name="@n.Away" Logo="@n.AwayLogo" Large="true" /><b>@n.Away</b><small>OVR @n.AwayOvr</small><FormDots Form="@n.AwayForm" /></span>
                         </div>
-                        <p class="hm-when"><i class="ms" aria-hidden="true">@(current.MineFixture is not null && current.BotLeft == 0 ? "sports" : "schedule")</i>@WhenLine(n)</p>
+                        <p class="hm-when"><i class="ms" aria-hidden="true">@(current.MineFixture is not null ? "sports" : "schedule")</i>@WhenLine(n)</p>
                     }
                     else
                     {
@@ -289,15 +289,15 @@
                     <button class="cx-cta" data-confirm="Sang mùa mới? Không quay lại được." @onclick="NextSeason"><span><b>Sang mùa mới</b><small>Cầu thủ lên tuổi, lên/xuống hạng, lịch và ngân sách mới</small></span><i class="ms" aria-hidden="true">event_repeat</i></button>
                 }
             }
-            else if (current.BotLeft > 0 || current.MineFixture is null)
+            else if (current.MineFixture is null)
             {
-                <button class="cx-cta" @onclick="() => Simulate(false)"><span><b>Tiếp tục</b><small>@(current.MineFixture is null ? $"Khung {current.Number}: BOT đá {current.BotLeft} trận" : $"Mô phỏng {current.BotLeft} trận khác rồi vào trận của bạn")</small></span><i class="ms fill" aria-hidden="true">play_arrow</i></button>
+                <button class="cx-cta" @onclick="() => Simulate(j => j.SimulateCareer())"><span><b>Tiếp tục</b><small>Khung @current.Number: BOT đá @current.BotLeft trận, máy chạy tới trận kế tiếp của bạn</small></span><i class="ms fill" aria-hidden="true">play_arrow</i></button>
             }
             else
             {
                 <div class="cx-cta-pair">
                     <a class="cx-cta" href="chuan-bi/@current.MineFixture"><span><b>Vào trận</b><small>@next?.Home – @next?.Away · khung @current.Number</small></span><i class="ms fill" aria-hidden="true">sports_esports</i></a>
-                    <button class="cx-cta alt" data-confirm="Mô phỏng trận này (không đá trong game)?" @onclick="() => Simulate(true)" title="Mô phỏng trận của bạn"><i class="ms" aria-hidden="true">casino</i><small>Mô phỏng</small></button>
+                    <button class="cx-cta alt" data-confirm="Mô phỏng trận này (không đá trong game)?" @onclick="() => Simulate(j => j.SimulateCareer(mineNow: true))" title="Mô phỏng trận của bạn"><i class="ms" aria-hidden="true">casino</i><small>Mô phỏng</small></button>
                 </div>
             }
         </div>
@@ -323,7 +323,7 @@
         </div>
         @if (activeSeason)
         {
-            <button class="cx-cta solo" disabled="@Jobs.Running" @onclick="() => Simulate(true)">
+            <button class="cx-cta solo" disabled="@Jobs.Running" @onclick="() => Simulate(j => j.SimulateCareer(includeMine: true, maxSlots: 1))">
                 <span><b>@(Jobs.Running ? "Đang mô phỏng" : "Chờ 1 vòng")</b><small>Máy mô phỏng khung kế tiếp của cả thế giới career</small></span>
                 <i class="ms fill" aria-hidden="true">hourglass_top</i>
             </button>
@@ -790,8 +790,7 @@
     string WhenLine(NextMatch n) => current is not { } c ? ""
         : n.Slot > c.Number ? $"Khung {n.Slot} · còn {n.Slot - c.Number} khung nữa"
         : c.MineFixture is null ? $"Khung {n.Slot} · trợ lý dẫn đội trận này"
-        : c.BotLeft > 0 ? $"Khung {n.Slot} · {c.BotLeft} trận khác đá trước trận của bạn"
-        : $"Khung {n.Slot} · đến lượt bạn: vào trận hoặc mô phỏng";
+        : $"Khung {n.Slot} · đến lượt bạn: vào trận hoặc mô phỏng" + (c.BotLeft > 0 ? $" · {c.BotLeft} trận khác tự mô phỏng sau" : "");   // PO 20/11: đá trước, tự mô phỏng sau
 
     string RankNote(int pos) => prevPos is { } pp
         ? pp == pos ? "Giữ hạng sau vòng vừa qua" : pp > pos ? $"▲ {pp - pos} bậc sau vòng vừa qua" : $"▼ {pos - pp} bậc sau vòng vừa qua"
@@ -1158,10 +1157,10 @@
         if (!Jobs.NextSeason()) error = "Máy đang bận, thử lại sau.";
     }
 
-    void Simulate(bool mine)
+    void Simulate(Func<MatchJobService, bool> start)
     {
         error = null;
-        if (!Jobs.SimulateCareer(mine)) error = "Máy đang bận, thử lại sau.";
+        if (!start(Jobs)) error = "Máy đang bận, thử lại sau.";
     }
 
     bool wasRunning;
