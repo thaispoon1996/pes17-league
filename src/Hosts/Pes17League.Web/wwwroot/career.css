@@ -909,8 +909,8 @@ html[data-cx-scroll] .cx *, html[data-cx-scroll] .cx *::before, html[data-cx-scr
 .cx details.hlv-rule ul { margin: 0; padding-left: 18px; } .cx details.hlv-rule li { margin: 4px 0; } .cx details.hlv-rule b { color: var(--text); }
 
 /* khuôn mặt: khung căn ảnh + tượng 3D */
-.cx .hlv-facegrid { display: grid; gap: 12px; }
-@media (min-width: 600px) { .cx .hlv-facegrid { grid-template-columns: 1fr 1fr; } }
+.cx .hlv-facegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; } .cx .hlv-facegrid > * { min-width: 0; }
+@media (min-width: 600px) { .cx .hlv-facegrid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .cx .cx-crop { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--hrim); background: #0d1630; touch-action: none; cursor: grab; }
 .cx .cx-crop canvas, .cx .cx-crop svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .cx .cx-crop .scanl { position: absolute; left: 0; right: 0; height: 3px; top: 0; background: var(--cyan); box-shadow: 0 0 18px 4px rgba(54,227,255,.7); opacity: 0; }

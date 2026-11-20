@@ -43,6 +43,7 @@
                 <div class="hlv-acts" style="margin-top:10px">
                     <button class="cx-btn gold" disabled="@busy" @onclick="Scan"><i class="ms" aria-hidden="true">face_retouching_natural</i>@(busy ? "Đang quét…" : "Quét khuôn mặt")</button>
                 </div>
+                @if (scanErr is not null) { <p class="cx-msg neg" role="alert" style="margin:8px 0 0;white-space:normal;overflow-wrap:anywhere">@scanErr</p> }
                 @if (scanNote is not null) { <p class="hlv-note">@scanNote</p> }
             </div>
             <div>
@@ -171,7 +172,7 @@
     Guid me;
     int step, reached;
     bool busy, card3d = true, mounted;
-    string? msg, scanNote;
+    string? msg, scanNote, scanErr;
     string name = "", nick = "", nation = "Việt Nam", formation = "4-3-3", style = "Cân bằng";
     int age = 38;
     int[] alloc = [];
@@ -230,12 +231,12 @@
 
     async Task Scan()
     {
-        busy = true; msg = null; scanNote = null;
+        busy = true; msg = null; scanNote = null; scanErr = null;
         StateHasChanged();
         try
         {
             var r = await JS.InvokeAsync<ScanResult>("Coach3d.scan");
-            if (r is not { Ok: true }) { msg = "Chưa có ảnh. Bấm Tải ảnh, căn mặt vào khung rồi quét."; return; }
+            if (r is not { Ok: true }) { scanErr = "Chưa có ảnh. Bấm Tải ảnh, căn mặt vào khung rồi quét. Không có ảnh vẫn dùng được mặt mặc định."; return; }
             var bytes = await Bytes("Coach3d.faceBytes", CoachService.MaxFaceBytes);
             var mesh = await JS.InvokeAsync<string?>("Coach3d.faceMesh");
             await using var db = await Dbs.CreateDbContextAsync();
@@ -245,7 +246,7 @@
             c = await svc.GetAsync(me) ?? c;
             scanNote = r.Real ? $"Đã quét {r.Points} điểm mốc và lưu mặt vào hồ sơ." : "Không tải được bộ quét điểm mốc, đã dán ảnh lên khuôn đầu mẫu và lưu vào hồ sơ.";
         }
-        catch (JSException) { msg = "Quét không thành công. Thử ảnh khác hoặc tải lại trang."; }
+        catch (JSException) { scanErr = "Quét không thành công. Thử ảnh khác hoặc tải lại trang."; }
         catch (JSDisconnectedException) { }
         finally { busy = false; }
     }
