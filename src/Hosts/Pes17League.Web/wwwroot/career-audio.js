@@ -13,7 +13,7 @@
     if (ctx) return true;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
-    ctx = new AC();
+    try { ctx = new AC({ latencyHint: 'playback' }); } catch { ctx = new AC(); }   // bộ đệm lớn hơn → điện thoại ít bị vấp
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = .005; comp.release.value = .25;
     master = ctx.createGain(); master.gain.value = .9; master.connect(comp); comp.connect(ctx.destination);
@@ -21,7 +21,8 @@
     sfxBus = ctx.createGain(); sfxBus.connect(master);
     // vang (impulse tự tạo) + delay chấm
     verb = ctx.createConvolver();
-    const len = ctx.sampleRate * 2.6, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    const lite = matchMedia('(pointer: coarse)').matches, len = ctx.sampleRate * (lite ? 1.6 : 2.6),   // điện thoại: vang ngắn hơn cho nhẹ
+    ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4); }
     verb.buffer = ir;
     const vg = ctx.createGain(); vg.gain.value = .32; verb.connect(vg); vg.connect(master);
@@ -274,7 +275,7 @@
       n.connect(bp); bp.connect(g); send(g, curGain, .3); bed = { n, g };
     }
     step = 0; nextT = t + .1;
-    if (!timer) timer = setInterval(tick, 25);
+    if (!timer) timer = setInterval(tick, 60);
     label();
   }
   function stopMusic() {
@@ -286,7 +287,11 @@
   function tick() {
     if (!cur || !ctx) return;
     const sd = 60 / cur.bpm / 4;
-    while (nextT < ctx.currentTime + .18) { play(step, nextT, sd); nextT += sd; step++; }
+    // lên lịch trước 0,8 s: trang career nhiều animation/Blazor làm luồng chính khựng → lịch ngắn (0,18 s) bị trễ nốt = giật.
+    // Nếu đã tụt lại (máy khựng lâu) thì nhảy qua phần lỡ, không dồn một loạt nốt trễ.
+    const now = ctx.currentTime;
+    if (nextT < now - .05) { const k = Math.ceil((now - nextT) / sd); nextT += k * sd; step += k; }
+    while (nextT < now + .8) { play(step, nextT, sd); nextT += sd; step++; }
   }
   function play(s, t, sd) {
     const tr = cur, out = curGain, bar = Math.floor(s / 16) % 32, p = s % 16;
