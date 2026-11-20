@@ -51,7 +51,8 @@ else
                 <nav class="cx-sub" aria-label="@hz.Title">
                     @foreach (var s in subs)
                     {
-                        <NavLink href="@s.Href" Match="NavLinkMatch.All">@(s.Short ?? s.Label) @if (s.Fresh) { <i class="cx-dot" aria-label="mới"></i> }</NavLink>
+                        @* So theo đường dẫn bỏ ?query (vd thu-hlv?thu=… từ trang chủ vẫn sáng "Thư HLV") *@
+                        <a href="@s.Href" class="@(Path == s.Href ? "active" : null)" aria-current="@(Path == s.Href ? "page" : null)">@(s.Short ?? s.Label) @if (s.Fresh) { <i class="cx-dot" aria-label="mới"></i> }</a>
                     }
                 </nav>
             }
@@ -199,6 +200,9 @@ else
         ["tai-chinh"] = CareerUnlocks.Finance, ["ban-lanh-dao"] = CareerUnlocks.Board, ["tap-luyen"] = CareerUnlocks.Training, ["hoc-vien"] = CareerUnlocks.Academy,
         ["bxh"] = CareerUnlocks.League, ["lich"] = CareerUnlocks.League, ["thong-ke"] = CareerUnlocks.Stats,
     };
+
+    /// <summary>Trang (đường dẫn tương đối, vd "bxh") đã mở khoá chưa; trang không gắn tính năng luôn mở.</summary>
+    public bool CanOpen(string path) => P is null || !PathFeature.TryGetValue(path, out var f) || P.Has(f);
 
     /// <summary>Trạng thái career của người chơi (null = chưa cầm CLB).</summary>
     public CareerProgress? P { get; private set; }

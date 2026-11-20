@@ -20,163 +20,244 @@
 
 @if (club is not null)
 {
-    <div class="cx-home">
-        @* Hồ sơ HLV (PO 19/11): chưa có → nút tạo; ký xong chưa họp báo → mời ra mắt; có rồi → dải HLV *@
-        @if (coach is null || coach.Status == CoachStatus.Creating)
-        {
-            <a class="cx-cta solo" href="hlv" style="margin:0 0 12px"><span><b>Tạo hồ sơ HLV</b><small>Khuôn mặt, xuất thân, năng lực · nhận hợp đồng mặc định với @club</small></span><i class="ms fill" aria-hidden="true">person_add</i></a>
-        }
-        else if (contract is { Launched: false })
-        {
-            <a class="cx-cta solo" href="hlv?ra-mat=1" style="margin:0 0 12px"><span><b>Họp báo ra mắt</b><small>Báo giới đang chờ ở @club</small></span><i class="ms fill" aria-hidden="true">photo_camera</i></a>
-        }
-        else
-        {
-            <a class="hlv-bar" href="hlv" style="color:inherit;text-decoration:none">
-                @if (CoachUi.FaceUrl(coach) is { } fu) { <img src="@fu" alt="" /> } else { <span class="av"><i class="ms" aria-hidden="true">person</i></span> }
-                <div><b>@coach.Name</b>Danh tiếng @coach.Reputation · @CoachUi.License(coach.License)@(contract is { } k0 ? $" · lương {CoachUi.Cash(k0.Wage)}/vòng" : "")</div>
-                @if (coach.FreePoints > 0) { <span class="cx-chip ok">+@coach.FreePoints điểm</span> }
-                <i class="ms" aria-hidden="true" style="color:var(--muted)">chevron_right</i>
-            </a>
-        }
-        @* Thẻ mùa *@
-        <section class="cx-card cx-season" style="--i:0">
-            <div class="row">
-                <span class="cx-label"><i class="ms fill" aria-hidden="true">workspace_premium</i>@seasonName · @(leagueName ?? "Sự nghiệp")</span>
-                <span class="cx-chip live">@(current is { } c0 ? $"Khung {c0.Number}/{slots}" : "Hết mùa")</span>
-            </div>
-            @{ var pct = slots > 0 ? 100.0 * ((current?.Number ?? slots + 1) - 1) / slots : 100; }
-            <div class="cx-track"><div style="width:@pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%"></div></div>
-            <div class="row small">
-                <span>@MarketLine</span>
-                <span>@(myPos is { } mp ? $"Hạng {mp}/{table.Count} · " : "")@tally.W T · @tally.D H · @tally.L B</span>
-            </div>
-        </section>
-
-        @if (current is null)
-        {
-            @* Hết mùa *@
-            <section class="cx-card cx-finale" style="--i:1">
-                <div class="cx-eyebrow">@seasonName đã khép lại</div>
-                <div class="big">@(myPos is { } fp ? $"Hạng {fp}" : "Hết mùa")</div>
-                <p>@leagueName · @tally.W thắng · @tally.D hoà · @tally.L thua</p>
-                <div class="cx-facts">
-                    <div><b>@(champion.Count > 0 ? champion.Count.ToString() : "0")</b><span>Danh hiệu</span></div>
-                    <div><b>@(board?.Verdict ?? "–")</b><span>Ban lãnh đạo</span></div>
-                    <div><b class="@(budget >= 0 ? "cx-up" : "cx-down")">@Fmt.Money(budget)</b><span>Quỹ CLB</span></div>
-                </div>
-                @if (champion.Count > 0) { <p class="cx-trophies">@foreach (var t in champion) { <span><i class="ms fill" aria-hidden="true">emoji_events</i>@t</span> }</p> }
-            </section>
-        }
-        else if (star is { } s)
-        {
-            @* Ngôi sao của đội *@
-            <a class="cx-card cx-star tier-@s.Tier" href="cau-thu/@s.Id" style="--i:1">
-                <div class="cx-star-head">
-                    <div>
-                        <span class="cx-ovr" data-count="@s.Ovr">@s.Ovr</span><span class="ps">@s.Position</span>
-                        <h2>@s.Name</h2>
-                        <p><span class="cx-chip">@s.Why</span></p>
-                    </div>
-                    <span class="cx-tier">@TierLabel(s.Tier)</span>
-                </div>
-                <div class="cx-portrait"><Face Id="s.Id" Name="@s.Name" Size="lg" /><i class="halo" aria-hidden="true"></i></div>
-                <div class="cx-attrs">
-                    @foreach (var (label, v, cyan) in s.Attrs)
-                    {
-                        <div><span>@label</span><b data-count="@v">@v</b><i class="@(cyan ? "c" : "")" style="--v:@v"></i></div>
-                    }
-                </div>
-                <div class="cx-crowd" aria-hidden="true"><i class="ms">volume_up</i>Khán đài đang chờ<span>@for (var k = 0; k < 6; k++) { <i style="--k:@k"></i> }</span></div>
-            </a>
-        }
-
-        @if (current is not null && next is { } n)
-        {
-            <h3 class="cx-h3">Lộ trình tiếp theo <small>@(tasks.Count + (newFeature is null ? 0 : 1)) việc</small></h3>
-            <a class="cx-card cx-next" href="@(current.MineFixture is { } mf ? $"chuan-bi/{mf}" : $"tran/{n.Id}")" style="--i:2">
-                <div class="row">
-                    <span class="cx-label cyan"><i class="cx-pulse" aria-hidden="true"></i>Trận tiếp theo · khung @n.Slot</span>
-                    <span class="cx-chip">@n.Competition</span>
-                </div>
-                <div class="cx-vs">
-                    <span class="t"><Crest Name="@n.Home" Logo="@n.HomeLogo" Large="true" /><b>@n.Home</b><small>OVR @n.HomeOvr</small><FormDots Form="@n.HomeForm" /></span>
-                    <span class="x">VS</span>
-                    <span class="t"><Crest Name="@n.Away" Logo="@n.AwayLogo" Large="true" /><b>@n.Away</b><small>OVR @n.AwayOvr</small><FormDots Form="@n.AwayForm" /></span>
-                </div>
-            </a>
-        }
-
-        @if (newFeature is { } nf && CareerLayout.Intros.TryGetValue(nf, out var nfo))
-        {
-            <a class="cx-card cx-task new" href="@nfo.Href" style="--i:3">
-                <div><span class="cx-label">Mới mở khoá</span><b>@nfo.Title</b><small>@nfo.Text</small></div>
-                <span class="cx-ic gold"><i class="ms fill" aria-hidden="true">lock_open</i></span>
-            </a>
-        }
-        @foreach (var (t, i) in tasks.Select((t, i) => (t, i)))
-        {
-            <a class="cx-card cx-task @(t.Kind == InboxKind.Warning ? "warn" : "")" href="@(t.Link ?? "hop-thu")" style="--i:@(4 + i)">
-                <div><span class="cx-label">@(t.Kind == InboxKind.Warning ? "Cần chú ý" : "Việc cần làm")</span><b>@t.Title</b><small>@t.Body</small></div>
-                <span class="cx-ic"><i class="ms" aria-hidden="true">chevron_right</i></span>
-            </a>
-        }
-
-        @if (board is { } b && current is not null)
-        {
-            <section class="cx-card cx-goal" style="--i:7">
-                <div class="row"><span class="cx-label">Mục tiêu ban lãnh đạo</span><span class="cx-chip @(b.Confidence >= 60 ? "ok" : b.Confidence >= 40 ? "" : "bad")">@b.Verdict</span></div>
-                <b>@b.League: @b.Objective</b>
-                <small>@(b.Position is { } bp ? $"Đang hạng {bp} · kỳ vọng hạng {b.ExpectedPosition}" : $"Kỳ vọng hạng {b.ExpectedPosition}")</small>
-                <div class="cx-track thin"><div style="width:@b.Confidence%"></div></div>
-            </section>
-        }
-
-        @if (table.Count > 0)
-        {
-            <h3 class="cx-h3">@leagueName <a href="bxh">Cả bảng</a></h3>
-            <section class="cx-card cx-table" style="--i:8">
-                @{ var prev = 0; }
-                @foreach (var r in TableSnippet)
-                {
-                    if (r.Pos > prev + 1) { <div class="gap">…</div> }
-                    prev = r.Pos;
-                    <div class="tr @(r.Mine ? "mine" : "")"><span class="p">@r.Pos</span><span class="c"><Crest Name="@r.Club" Logo="@r.Logo" />@r.Club</span><span>@r.P</span><span>@(r.GD > 0 ? "+" : "")@r.GD</span><b>@r.Pts</b></div>
-                }
-            </section>
-        }
-
-        @if (recent.Count > 0)
-        {
-            <h3 class="cx-h3">Phong độ</h3>
-            <div class="cx-form" style="--i:9">
-                @foreach (var x in recent)
-                {
-                    <a class="res @x.Result" href="tran/@x.Id" title="@x.Competition"><b>@x.Score</b><small>@(x.Home ? "vs" : "@") @x.Opponent</small></a>
-                }
-            </div>
-        }
-
-        @if (cups.Count > 0)
-        {
-            <h3 class="cx-h3">Cúp</h3>
-            <div class="cx-cups" style="--i:10">
-                @foreach (var c in cups) { <span class="@(c.State.Contains("Vô địch") ? "gold" : c.State.StartsWith("Bị loại") ? "out" : "")"><b>@c.Name</b>@c.State</span> }
-            </div>
-        }
-
-        <details class="cx-card cx-settings" style="--i:11">
-            <summary><i class="ms" aria-hidden="true">tune</i>Cài đặt mô phỏng</summary>
-            <label title="Khi mô phỏng trận của bạn: cầu thủ đá chính mệt (≥ @ConditionRules.TiredAt) được cho nghỉ nếu có dự bị cùng tuyến khoẻ. Không sửa đội hình bạn đã lưu.">
-                <input type="checkbox" checked="@autoLineup" @onchange="ToggleAuto" /> Trợ lý xoay vòng đội hình khi mô phỏng (người mệt nghỉ)
-            </label>
-            @if (!Jobs.Running && Jobs.Title is MatchJobService.SimTitle or MatchJobService.RolloverTitle && Jobs.Log.Count > 0)
+    @* Trang chủ career "Phòng điều hành" (PO 20/11, phương án A): trận tiếp theo dưới đèn sân, 4 chỉ số CLB, Cần xử lý (gộp thư quyết định,
+       đề nghị, cảnh báo), Vòng vừa qua (chỉ dữ liệu thật), cột mùa giải (lịch, mục tiêu, BXH, phong độ, cúp), ngôi sao đội. Máy tính 2 cột. *@
+    var morale = squadMorale;
+    <div class="hm">
+        <div class="hm-main">
+            @if (current is null)
             {
-                <pre>@string.Join("\n", Jobs.Log.TakeLast(12))</pre>
+                <section class="cx-card cx-finale hm-hero-alt">
+                    <div class="cx-eyebrow">@seasonName đã khép lại</div>
+                    <div class="big">@(myPos is { } fp ? $"Hạng {fp}" : "Hết mùa")</div>
+                    <p>@leagueName · @tally.W thắng · @tally.D hoà · @tally.L thua</p>
+                    <div class="cx-facts">
+                        <div><b>@champion.Count</b><span>Danh hiệu</span></div>
+                        <div><b>@(board?.Verdict ?? "–")</b><span>Ban lãnh đạo</span></div>
+                        <div><b class="@(budget >= 0 ? "cx-up" : "cx-down")">@Fmt.Money(budget)</b><span>Quỹ CLB</span></div>
+                    </div>
+                    @if (champion.Count > 0) { <p class="cx-trophies">@foreach (var t in champion) { <span><i class="ms fill" aria-hidden="true">emoji_events</i>@t</span> }</p> }
+                </section>
             }
-        </details>
+            else
+            {
+                var pct = slots > 0 ? (100.0 * (current.Number - 1) / slots).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) : "0";
+                <a class="hm-hero" href="@(next is null ? null : current.MineFixture is { } mf ? $"chuan-bi/{mf}" : $"tran/{next.Id}")">
+                    <i class="hm-beam l" aria-hidden="true"></i><i class="hm-beam r" aria-hidden="true"></i><i class="hm-pitch" aria-hidden="true"></i>
+                    <div class="hm-top">
+                        <span class="cx-label cyan"><i class="cx-pulse" aria-hidden="true"></i>@(next is null ? "Đã đá hết lịch" : "Trận tiếp theo")</span>
+                        @if (next is { } n0) { <span class="cx-chip">@n0.Competition</span> }
+                    </div>
+                    @if (next is { } n)
+                    {
+                        <div class="hm-vs">
+                            <span class="t @(n.HomeId == clubId ? "me" : null)"><Crest Name="@n.Home" Logo="@n.HomeLogo" Large="true" /><b>@n.Home</b><small>OVR @n.HomeOvr</small><FormDots Form="@n.HomeForm" /></span>
+                            <span class="x"><b>VS</b><small>@(n.HomeId == clubId ? "Sân nhà" : "Sân khách")</small></span>
+                            <span class="t @(n.AwayId == clubId ? "me" : null)"><Crest Name="@n.Away" Logo="@n.AwayLogo" Large="true" /><b>@n.Away</b><small>OVR @n.AwayOvr</small><FormDots Form="@n.AwayForm" /></span>
+                        </div>
+                        <p class="hm-when"><i class="ms" aria-hidden="true">@(current.MineFixture is not null && current.BotLeft == 0 ? "sports" : "schedule")</i>@WhenLine(n)</p>
+                    }
+                    else
+                    {
+                        <p class="hm-when solo">Đội bạn đã đá xong các trận của mùa. Các đội khác còn thi đấu.</p>
+                    }
+                    <div class="hm-season">
+                        <span>@seasonName · @(leagueName ?? "Sự nghiệp")</span><b>Khung @current.Number/@slots</b>
+                        <div class="cx-track thin"><div style="width:@pct%"></div></div>
+                    </div>
+                </a>
+            }
 
-        @* Nút lớn: luôn nói người chơi làm gì tiếp *@
+            <div class="hm-kpis">
+                <a class="hm-kpi" href="@Open("bxh")">
+                    <span class="k"><i class="ms" aria-hidden="true">leaderboard</i>Hạng</span>
+                    @if (myPlayed > 0 && myPos is { } mp)
+                    {
+                        <b class="@(mp <= (board?.ExpectedPosition ?? 0) ? "up" : null)"><span data-count="@mp">@mp</span><small>/@table.Count</small></b>
+                        <span class="s @(prevPos is { } pp0 && pp0 != mp ? (pp0 > mp ? "up" : "down") : null)">@RankNote(mp)</span>
+                    }
+                    else
+                    {
+                        <b class="dim">–</b><span class="s">Chưa đá trận nào@(board is { } b0 ? $" · kỳ vọng hạng {b0.ExpectedPosition}" : "")</span>
+                    }
+                </a>
+                <a class="hm-kpi" href="phong-thay-do">
+                    <span class="k"><i class="ms" aria-hidden="true">mood</i>Tinh thần</span>
+                    @if (morale is { } mo)
+                    {
+                        <b class="@(mo >= 60 ? "up" : mo < 35 ? "down" : null)"><span data-count="@mo">@mo</span><small>/100</small></b>
+                        <span class="s">@MoodWord(mo) · CĐV @fanMood.ToLowerInvariant()</span>
+                    }
+                    else { <b class="dim">–</b><span class="s">Chưa có dữ liệu</span> }
+                </a>
+                <a class="hm-kpi" href="@Open("ban-lanh-dao")">
+                    <span class="k"><i class="ms" aria-hidden="true">domain</i>Ban lãnh đạo</span>
+                    @if (board is { } bd)
+                    {
+                        <b class="@(bd.Confidence >= 60 ? "up" : bd.Confidence < 40 ? "down" : null)"><span data-count="@bd.Confidence">@bd.Confidence</span><small>% tin</small></b>
+                        <span class="s">@bd.Verdict</span>
+                    }
+                    else { <b class="dim">–</b><span class="s">Chưa đánh giá</span> }
+                </a>
+                <a class="hm-kpi" href="@Open("tai-chinh")">
+                    <span class="k"><i class="ms" aria-hidden="true">account_balance</i>Quỹ CLB</span>
+                    <b class="gold @(budget < 0 ? "down" : null)" data-count="@budget" data-fmt="money">@Fmt.Money(budget)</b>
+                    <span class="s">@MarketLine</span>
+                </a>
+            </div>
+
+            <section class="hm-sec" aria-labelledby="hm-todo">
+                <h2 class="hm-h" id="hm-todo">Cần xử lý @if (todo.Count > 0) { <small>@todo.Count</small> }</h2>
+                @if (todo.Count == 0)
+                {
+                    <p class="hm-none"><i class="ms" aria-hidden="true">task_alt</i>@(current is null ? "Không có việc cần xử lý." : "Không có việc gấp. Bấm Tiếp tục để sang khung sau.")</p>
+                }
+                else
+                {
+                    <ul class="hm-list">
+                        @foreach (var t in todo)
+                        {
+                            <li><a class="hm-item t-@t.Tone" href="@t.Href">
+                                <i class="ms ic" aria-hidden="true">@t.Icon</i>
+                                <span class="tx"><b>@t.Title</b>@if (t.Text is not null) { <small>@t.Text</small> }</span>
+                                @if (t.Chip is not null) { <em>@t.Chip</em> }
+                                <i class="ms go" aria-hidden="true">chevron_right</i>
+                            </a></li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            @if (feed.Count > 0)
+            {
+                <section class="hm-sec" aria-labelledby="hm-feed">
+                    <h2 class="hm-h" id="hm-feed">Vòng vừa qua @if (lastSlot is { } ls) { <small>khung @ls</small> }</h2>
+                    <ol class="hm-tl">
+                        @foreach (var f in feed)
+                        {
+                            <li class="t-@f.Tone"><a href="@f.Href">
+                                <i class="ms ic" aria-hidden="true">@f.Icon</i>
+                                <span class="tx"><b>@f.Title</b>@if (f.Text is not null) { <small>@f.Text</small> }</span>
+                            </a></li>
+                        }
+                    </ol>
+                </section>
+            }
+        </div>
+
+        <aside class="hm-side">
+            <div class="hm-coach">
+                @if (coach is null || coach.Status == CoachStatus.Creating)
+                {
+                    <a class="cx-cta solo" href="hlv"><span><b>Tạo hồ sơ HLV</b><small>Khuôn mặt, xuất thân, năng lực · nhận hợp đồng mặc định với @club</small></span><i class="ms fill" aria-hidden="true">person_add</i></a>
+                }
+                else if (contract is { Launched: false })
+                {
+                    <a class="cx-cta solo" href="hlv?ra-mat=1"><span><b>Họp báo ra mắt</b><small>Báo giới đang chờ ở @club</small></span><i class="ms fill" aria-hidden="true">photo_camera</i></a>
+                }
+                else
+                {
+                    <a class="hlv-bar" href="hlv">
+                        @if (CoachUi.FaceUrl(coach) is { } fu) { <img src="@fu" alt="" /> } else { <span class="av"><i class="ms" aria-hidden="true">person</i></span> }
+                        <div><b>@coach.Name</b>Danh tiếng @coach.Reputation · @CoachUi.License(coach.License)@(contract is { } k0 ? $" · lương {CoachUi.Cash(k0.Wage)}/vòng" : "")</div>
+                        @if (coach.FreePoints > 0) { <span class="cx-chip ok">+@coach.FreePoints điểm</span> }
+                        <i class="ms" aria-hidden="true">chevron_right</i>
+                    </a>
+                }
+            </div>
+
+            @if (upcoming.Count > 0)
+            {
+                <section class="hm-sec" aria-labelledby="hm-cal">
+                    <h2 class="hm-h" id="hm-cal">Lịch sắp tới @if (Open("lich") is { } lh) { <a href="@lh">Cả lịch</a> }</h2>
+                    <ul class="hm-fx">
+                        @foreach (var u in upcoming)
+                        {
+                            <li><a href="tran/@u.Id">
+                                <span class="sl">K@(u.Slot)</span>
+                                <Crest Name="@u.Opponent" Logo="@u.Logo" />
+                                <span class="tx"><b>@u.Opponent</b><small>@u.Competition · @(u.Home ? "sân nhà" : "sân khách")</small></span>
+                            </a></li>
+                        }
+                    </ul>
+                </section>
+            }
+
+            @if (board is { } b && current is not null)
+            {
+                <section class="cx-card cx-goal hm-goal">
+                    <div class="row"><span class="cx-label">Mục tiêu ban lãnh đạo</span><span class="cx-chip @(b.Confidence >= 60 ? "ok" : b.Confidence >= 40 ? "" : "bad")">@b.Verdict</span></div>
+                    <b>@b.League: @b.Objective</b>
+                    <small>@(b.Position is { } bp && myPlayed > 0 ? $"Đang hạng {bp} · kỳ vọng hạng {b.ExpectedPosition}" : $"Kỳ vọng hạng {b.ExpectedPosition}")</small>
+                    <div class="cx-track thin"><div style="width:@b.Confidence%"></div></div>
+                </section>
+            }
+
+            @if (table.Count > 0)
+            {
+                <section class="hm-sec" aria-labelledby="hm-bxh">
+                    <h2 class="hm-h" id="hm-bxh">@leagueName @if (Open("bxh") is { } bh) { <a href="@bh">Cả bảng</a> }</h2>
+                    <div class="cx-card cx-table">
+                        @if (myPlayed == 0) { <p class="hm-note">Chưa đá trận nào, bảng đang xếp theo tên.</p> }
+                        @{ var prev = 0; }
+                        @foreach (var r in TableSnippet)
+                        {
+                            if (r.Pos > prev + 1) { <div class="gap">…</div> }
+                            prev = r.Pos;
+                            <div class="tr @(r.Mine ? "mine" : "")"><span class="p">@r.Pos</span><span class="c"><Crest Name="@r.Club" Logo="@r.Logo" />@r.Club</span><span>@r.P</span><span>@(r.GD > 0 ? "+" : "")@r.GD</span><b>@r.Pts</b></div>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (recent.Count > 0)
+            {
+                <section class="hm-sec" aria-labelledby="hm-form">
+                    <h2 class="hm-h" id="hm-form">Phong độ <small>@tally.W T · @tally.D H · @tally.L B</small></h2>
+                    <div class="cx-form">
+                        @foreach (var x in recent)
+                        {
+                            <a class="res @x.Result" href="tran/@x.Id" title="@x.Competition"><b>@x.Score</b><small>@(x.Home ? "vs" : "@") @x.Opponent</small></a>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (cups.Count > 0)
+            {
+                <section class="hm-sec" aria-labelledby="hm-cup">
+                    <h2 class="hm-h" id="hm-cup">Cúp</h2>
+                    <div class="cx-cups">
+                        @foreach (var c in cups) { <span class="@(c.State.Contains("Vô địch") ? "gold" : c.State.StartsWith("Bị loại") ? "out" : "")"><b>@c.Name</b>@c.State</span> }
+                    </div>
+                </section>
+            }
+
+            @if (star is { } s)
+            {
+                <section class="hm-sec" aria-labelledby="hm-star">
+                    <h2 class="hm-h" id="hm-star">Ngôi sao đội</h2>
+                    <a class="cx-card cx-star hm-star tier-@s.Tier" href="cau-thu/@s.Id">
+                        <span class="pic"><Face Id="s.Id" Name="@s.Name" Size="lg" /></span>
+                        <span class="who">
+                            <span><span class="cx-ovr" data-count="@s.Ovr">@s.Ovr</span><span class="ps">@s.Position</span><span class="cx-tier">@TierLabel(s.Tier)</span></span>
+                            <b>@s.Name</b>
+                            <small>@s.Why</small>
+                        </span>
+                        <span class="hm-attrs">
+                            @foreach (var (label, v, cyan) in s.Attrs)
+                            {
+                                <span><b>@v</b><i class="@(cyan ? "c" : "")" style="--v:@v"></i>@label</span>
+                            }
+                        </span>
+                    </a>
+                </section>
+            }
+        </aside>
+    </div>
+
+    <div class="hm-fade" aria-hidden="true"></div>
+    @* Nút lớn: luôn nói người chơi làm gì tiếp *@
         <div class="cx-cta-dock">
             @if (Jobs.Running && Jobs.Title is MatchJobService.SimTitle or MatchJobService.RolloverTitle)
             {
@@ -205,7 +286,6 @@
                 </div>
             }
         </div>
-    </div>
     return;
 }
 @if (me is null) { <p class="cx-msg">Cần đăng nhập tài khoản người chơi để bắt đầu sự nghiệp.</p> return; }
@@ -617,7 +697,7 @@
     [CascadingParameter] public CareerLayout? Shell { get; set; }
 
     Guid? me, seasonId, clubId, appId;
-    bool loaded, taken, starting, autoLineup = true, canNext, activeSeason, applying;
+    bool loaded, taken, starting, canNext, activeSeason, applying;
     Coach? coach;
     CoachContract? contract;
     Season? pendingSeason;
@@ -650,7 +730,18 @@
     List<ResultRow> recent = [];
     List<TableRow> table = [];
     List<CupRow> cups = [];
-    List<InboxItem> tasks = [];
+    sealed record Todo(string Icon, string Tone, string Title, string? Text, string Href, string? Chip);
+    sealed record FeedItem(string Icon, string Tone, string Title, string? Text, string? Href);
+    sealed record Upcoming(Guid Id, int Slot, string Opponent, string? Logo, bool Home, string Competition);
+    List<Todo> todo = [];            // Cần xử lý: thư quyết định, việc, cảnh báo (hết, không cắt 3)
+    List<FeedItem> feed = [];        // Vòng vừa qua: chỉ dữ liệu thật kể từ trận trước của đội
+    List<Upcoming> upcoming = [];    // 3 trận sau trận tiếp theo
+    int? squadMorale, prevPos, lastSlot;
+    int myPlayed;
+    string fanMood = "";
+    Guid? lastFixtureId, leagueEdition;
+    bool lastWasLeague;
+    DateTimeOffset? since;           // lúc đội đá trận trước trận vừa rồi (mốc "vòng vừa qua")
     BoardStatus? board;
     Star? star;
     string? newFeature;
@@ -675,6 +766,21 @@
     string MarketLine => current is null ? "Mùa giải đã xong"
         : marketOpen ? $"Chợ chuyển nhượng mở · còn {marketLeft} khung"
         : marketNext is { } mn ? $"Chợ mở lại ở khung {mn}" : "Chợ đã đóng tới hết mùa";
+
+    /// <summary>Trang chưa mở khoá trong career → không gắn link (thẻ vẫn hiện số liệu).</summary>
+    string? Open(string href) => Shell?.CanOpen(href) == false ? null : href;
+
+    static string MoodWord(int m) => m >= 80 ? "Hưng phấn" : m >= 60 ? "Vui vẻ" : m >= 35 ? "Bình thường" : "Chán nản";
+
+    string WhenLine(NextMatch n) => current is not { } c ? ""
+        : n.Slot > c.Number ? $"Khung {n.Slot} · còn {n.Slot - c.Number} khung nữa"
+        : c.MineFixture is null ? $"Khung {n.Slot} · trợ lý dẫn đội trận này"
+        : c.BotLeft > 0 ? $"Khung {n.Slot} · {c.BotLeft} trận khác đá trước trận của bạn"
+        : $"Khung {n.Slot} · đến lượt bạn: vào trận hoặc mô phỏng";
+
+    string RankNote(int pos) => prevPos is { } pp
+        ? pp == pos ? "Giữ hạng sau vòng vừa qua" : pp > pos ? $"▲ {pp - pos} bậc sau vòng vừa qua" : $"▼ {pos - pp} bậc sau vòng vừa qua"
+        : board is { } b ? $"Kỳ vọng hạng {b.ExpectedPosition}" : $"{table.FirstOrDefault(r => r.Mine)?.Pts ?? 0} điểm";
 
     static int Stars(double ovr) => Math.Clamp((int)Math.Round((ovr - 64) / 3), 1, 5);
     static string TierLabel(int tier) => tier switch { 3 => "Huyền thoại", 2 => "Thẻ vàng", 1 => "Thẻ bạc", _ => "Thẻ đồng" };
@@ -724,12 +830,11 @@
         if (me is { } id)
         {
             var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
-                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name, c.LogoPath, c.AutoLineup }).FirstOrDefaultAsync();
+                              where a.ParticipantId == id && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name, c.LogoPath }).FirstOrDefaultAsync();
             if (mine is not null)
             {
                 club = mine.Name;
                 clubId = mine.Id;
-                autoLineup = mine.AutoLineup;
                 budget = await db.Ledger.Where(e => e.ClubId == mine.Id).SumAsync(e => e.Amount);
                 await new TransferOfferService(db, Clock).ExpireStaleAsync();
                 var season = await db.Seasons.Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).FirstOrDefaultAsync()
@@ -781,6 +886,16 @@
             .Select(x => new NextMatch(x.F.Id, x.Home, x.HomeLogo, x.F.HomeClubId, x.Away, x.AwayLogo, x.F.AwayClubId, Label(x.Comp, x.F.Stage, x.F.Leg), x.Slot)).FirstOrDefault();
 
         var played = fixtures.Where(x => x.F.Status == FixtureStatus.Played && x.F.HomeGoals is not null).ToList();
+        upcoming = [.. fixtures.Where(x => x.F.Status != FixtureStatus.Played).Skip(1).Take(3).Select(x =>
+        {
+            var home = x.F.HomeClubId == mineId;
+            return new Upcoming(x.F.Id, x.Slot, home ? x.Away : x.Home, home ? x.AwayLogo : x.HomeLogo, home, Label(x.Comp, x.F.Stage, x.F.Leg));
+        })];
+        var last = played.LastOrDefault();
+        lastFixtureId = last?.F.Id;
+        lastSlot = last?.Slot;
+        since = played.Count > 1 ? played[^2].F.PlayedAt : null;
+        lastWasLeague = last is { Type: CompetitionType.DomesticLeague } && last.F.Stage == FixtureStage.League;
         string Result(Fixture f) => f.WinnerClubId() is { } w ? (w == mineId ? "W" : "L") : f.HomeGoals == f.AwayGoals ? "D" : (f.HomeGoals > f.AwayGoals) == (f.HomeClubId == mineId) ? "W" : "L";
         tally = (played.Count(x => Result(x.F) == "W"), played.Count(x => Result(x.F) == "D"), played.Count(x => Result(x.F) == "L"));
         recent = [.. played.TakeLast(6).Select(x =>
@@ -802,6 +917,19 @@
             var names = await db.Clubs.Where(c => ids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => new { c.Name, c.LogoPath });
             table = [.. rows.Select((r, i) => new TableRow(i + 1, names[r.Club].Name, names[r.Club].LogoPath, r.Played, r.GoalDifference, r.Points, r.Club == mineId))];
             myPos = table.FirstOrDefault(r => r.Mine)?.Pos;
+            myPlayed = table.FirstOrDefault(r => r.Mine)?.P ?? 0;
+            leagueEdition = league.Id;
+            // Hạng trước vòng vừa qua (chỉ khi trận vừa rồi là trận giải): tính lại BXH bỏ các trận giải từ khung đó trở đi.
+            prevPos = null;
+            if (lastWasLeague && lastSlot is { } ls && myPlayed > 1)
+            {
+                var before = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
+                                    where f.CompetitionEditionId == league.Id && f.Status == FixtureStatus.Played && f.Stage == FixtureStage.League && f.HomeGoals != null && m.Number < ls
+                                    select new PlayedFixture<Guid>(f.HomeClubId, f.AwayClubId, f.HomeGoals!.Value, f.AwayGoals!.Value)).ToListAsync();
+                var prior = Pes17League.Clubs.Domain.Standings.Compute(ids, before, id => names[id].Name, SanctionService.For(await SanctionService.DeductionsAsync(db), league.Id));
+                var idx = prior.ToList().FindIndex(r => r.Club == mineId);
+                prevPos = idx >= 0 ? idx + 1 : null;
+            }
         }
 
         // Cúp: đang dự / bị loại / vô địch
@@ -841,7 +969,8 @@
         board = await new BoardService(db, Clock).StatusAsync(seasonId, mineId);
         await LoadNextAsync(db, seasonId);
         await LoadStarAsync(db, seasonId, mineId);
-        await LoadTasksAsync(db, seasonId, mineId);
+        await LoadDeskAsync(db, seasonId, mineId);
+        await LoadFeedAsync(db, seasonId, mineId);
     }
 
     /// <summary>OVR (TB 11 người cao nhất) và phong độ 5 trận của 2 đội trận tới.</summary>
@@ -889,8 +1018,9 @@
             n > 0 ? $"Ghi {n} bàn mùa này" : "OVR cao nhất đội", attrs);
     }
 
-    /// <summary>Việc cần làm (≤3) từ hộp thư HLV; mục đã có thẻ riêng hoặc trỏ tới tính năng chưa mở thì đưa về hộp thư.</summary>
-    async Task LoadTasksAsync(ClubsDbContext db, Guid seasonId, Guid mineId)
+    /// <summary>Cần xử lý: mục mới mở khoá, thư HLV cần quyết định (theo hạn), việc và cảnh báo từ bàn làm việc (MediaService), thư chưa đọc.
+    /// Mục trỏ tới tính năng chưa mở thì đưa về trang gần nhất.</summary>
+    async Task LoadDeskAsync(ClubsDbContext db, Guid seasonId, Guid mineId)
     {
         var p = Shell?.P;
         string? Gate(string? link) => link switch
@@ -898,21 +1028,114 @@
             null => null,
             "tap-luyen" when p is not null && !p.Has(CareerUnlocks.Training) => null,
             "tai-chinh" when p is not null && !p.Has(CareerUnlocks.Finance) => null,
+            "ban-lanh-dao" when p is not null && !p.Has(CareerUnlocks.Board) => null,
             "chuyen-nhuong" when p is not null && !p.Has(CareerUnlocks.Transfer) => "clb",
             _ => link,
         };
+        static string Icon(InboxItem i) => i.Link switch
+        {
+            "de-nghi" => "handshake",
+            "tap-luyen" when i.Kind == InboxKind.Task => "fitness_center",
+            "tap-luyen" => "healing",
+            "chuyen-nhuong" => "contract_edit",
+            "tai-chinh" => "account_balance",
+            "ban-lanh-dao" => "domain",
+            _ when i.Title.Contains("Họp báo") => "mic",
+            _ when i.Title.Contains("mệt") => "battery_alert",
+            _ when i.Title.Contains("không vui") => "sentiment_dissatisfied",
+            _ => i.Kind == InboxKind.Info ? "pending_actions" : "assignment",
+        };
+
         var desk = await new MediaService(db, Clock).DeskAsync(seasonId, mineId);
-        tasks = [.. desk.Inbox.Where(i => i.Kind != InboxKind.Info && !(i.Link ?? "").StartsWith("chuan-bi"))
-            .OrderBy(i => i.Kind == InboxKind.Task ? 0 : 1).Take(3).Select(i => i with { Link = Gate(i.Link) })];
+        squadMorale = desk.Squad.Count == 0 ? null : (int)Math.Round(desk.Squad.Average(s => s.Morale));
+        fanMood = desk.FanMood;
+        desk_ = desk;
+        todo = [];
         newFeature = p?.Unlocked.Where(p.IsNew).OrderBy(f => CareerUnlocks.Introduced.ToList().IndexOf(f)).LastOrDefault();
+        if (newFeature is { } nf && CareerLayout.Intros.TryGetValue(nf, out var nfo))
+            todo.Add(new("lock_open", "gold", "Mới mở khoá: " + nfo.Title, nfo.Text, nfo.Href, "Mới"));
+
+        if (coach is { Status: not CoachStatus.Creating } co)
+        {
+            var now = await CoachService.NowTickAsync(db);
+            var waiting = await db.CoachLetters.AsNoTracking().Where(l => l.CoachId == co.Id && l.Kind == LetterKind.Decision && l.Chosen == null && !l.Archived)
+                .OrderBy(l => l.DeadlineTick).ToListAsync();
+            foreach (var l in waiting)
+            {
+                int? left = l.DeadlineTick is { } d && d / 100 == now / 100 && d > now ? d - now : null;
+                todo.Add(new("gavel", left is <= 1 ? "red" : "gold", l.Subject, "Thư từ " + l.Sender, $"thu-hlv?thu={l.Id}", left is { } n ? $"Còn {n} vòng" : "Cần quyết định"));
+            }
+            var unread = await db.CoachLetters.CountAsync(l => l.CoachId == co.Id && !l.Outgoing && !l.Read && !l.Archived && !(l.Kind == LetterKind.Decision && l.Chosen == null));
+            if (unread > 0) todo.Add(new("mail", "cyan", $"{unread} thư chưa đọc", "Hòm thư HLV", "thu-hlv", null));
+        }
+
+        // Việc trước, cảnh báo sau; "Chuẩn bị vòng" đã có ở thẻ trận tiếp theo; tin (báo cáo, bài báo, BLĐ) sang Vòng vừa qua / ô chỉ số.
+        foreach (var i in desk.Inbox.Where(i => i.Kind == InboxKind.Task && !(i.Link ?? "").StartsWith("chuan-bi")))
+            todo.Add(new(Icon(i), "gold", i.Title, i.Body, Gate(i.Link) ?? "hop-thu", null));
+        foreach (var i in desk.Inbox.Where(i => i.Kind == InboxKind.Warning))
+            todo.Add(new(Icon(i), "red", i.Title, i.Body, Gate(i.Link) ?? "phong-thay-do", null));
+        foreach (var i in desk.Inbox.Where(i => i.Kind == InboxKind.Info && i.Link is null))
+            todo.Add(new(Icon(i), "cyan", i.Title, i.Body, "clb", null));
     }
 
-    async Task ToggleAuto(ChangeEventArgs e)
+    MediaDesk? desk_;
+
+    /// <summary>Vòng vừa qua: kết quả + bài báo trận vừa rồi, đổi hạng, chỉ số cầu thủ, báo cáo tài chính, học viện, chuyển nhượng trong giải —
+    /// tính từ sau trận trước của đội (since). Không có gì thật thì không thêm dòng.</summary>
+    async Task LoadFeedAsync(ClubsDbContext db, Guid seasonId, Guid mineId)
     {
-        if (clubId is not { } id) return;
-        autoLineup = e.Value is true;
-        await using var db = await Dbs.CreateDbContextAsync();
-        await db.Clubs.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.AutoLineup, autoLineup));
+        feed = [];
+        if (lastFixtureId is not { } lf || recent.LastOrDefault() is not { } r || r.Id != lf) return;
+        var (word, tone) = r.Result switch { "W" => ("Thắng", "green"), "L" => ("Thua", "red"), _ => ("Hoà", "gold") };
+        feed.Add(new("sports_soccer", tone, $"{word} {r.Score} {(r.Home ? "trước" : "trên sân")} {r.Opponent}", r.Competition + (r.Home ? " · sân nhà" : " · sân khách"), $"tran/{r.Id}"));
+        var art = await db.MatchArticles.Where(a => a.FixtureId == lf).OrderByDescending(a => a.PublishedAt).Select(a => new { a.Id, a.Title }).FirstOrDefaultAsync();
+        if (art is not null) feed.Add(new("newspaper", "cyan", art.Title, "Bài báo sau trận", $"tin/{art.Id}"));
+
+        if (prevPos is { } pp && myPos is { } mp)
+        {
+            var pts = table.FirstOrDefault(t => t.Mine)?.Pts ?? 0;
+            feed.Add(pp == mp ? new("trending_flat", "cyan", $"Giữ hạng {mp}", $"{pts} điểm sau {myPlayed} trận", Open("bxh"))
+                : new(pp > mp ? "trending_up" : "trending_down", pp > mp ? "green" : "red", pp > mp ? $"Lên hạng {mp}" : $"Tụt xuống hạng {mp}",
+                    $"Trước vòng này hạng {pp} · {pts} điểm sau {myPlayed} trận", Open("bxh")));
+        }
+
+        var moves = await (from a in db.AttributeChanges join p in db.Players on a.PlayerId equals p.Id
+                           join m in db.SquadMemberships on a.PlayerId equals m.PlayerId
+                           where a.SeasonId == seasonId && m.ClubId == mineId && m.LeftAt == null && a.Source != AttributeChangeSource.Admin && (since == null || a.At > since)
+                           group a by new { p.Id, p.Name } into g select new { g.Key.Name, D = g.Sum(x => x.Delta) }).ToListAsync();
+        string Who(IEnumerable<(string Name, int D)> xs, int n) => "Tổng điểm chỉ số: " + string.Join(", ", xs.Take(3).Select(x => $"{x.Name} {x.D:+0;-0}")) + (n > 3 ? $" và {n - 3} người khác" : "");
+        var ups = moves.Where(x => x.D > 0).OrderByDescending(x => x.D).Select(x => (x.Name, x.D)).ToList();
+        var downs = moves.Where(x => x.D < 0).OrderBy(x => x.D).Select(x => (x.Name, x.D)).ToList();
+        if (ups.Count > 0) feed.Add(new("north_east", "green", $"{ups.Count} cầu thủ tăng chỉ số", Who(ups, ups.Count), Open("clb")));
+        if (downs.Count > 0) feed.Add(new("south_east", "red", $"{downs.Count} cầu thủ giảm chỉ số", Who(downs, downs.Count), Open("clb")));
+
+        if (desk_?.Inbox.FirstOrDefault(i => i.Kind == InboxKind.Info && i.Link == "tai-chinh") is { } fin)
+            feed.Add(new("payments", "gold", fin.Title, fin.Body, Open("tai-chinh")));
+
+        var youth = await db.YouthIntakes.CountAsync(y => y.ClubId == mineId && y.SeasonId == seasonId && (since == null || y.CreatedAt > since));
+        if (youth > 0) feed.Add(new("school", "violet", $"{youth} cầu thủ trẻ mới lên từ học viện", null, Open("hoc-vien")));
+
+        if (leagueEdition is { } le)
+        {
+            var clubs = await db.EditionClubs.Where(x => x.EditionId == le).Select(x => x.ClubId).ToListAsync();
+            var deals = await (from t in db.Transfers join w in db.TransferWindows on t.TransferWindowId equals w.Id join p in db.Players on t.PlayerId equals p.Id
+                               where w.SeasonId == seasonId && t.Status == TransferStatus.Completed && t.CompletedAt != null && (since == null || t.CompletedAt > since)
+                                     && ((t.FromClubId != null && clubs.Contains(t.FromClubId.Value)) || (t.ToClubId != null && clubs.Contains(t.ToClubId.Value)))
+                               orderby t.CompletedAt descending
+                               select new { t.PlayerId, p.Name, t.FromClubId, t.ToClubId, t.Fee, t.Kind }).Take(30).ToListAsync();
+            var ids = deals.SelectMany(d => new[] { d.FromClubId, d.ToClubId }).OfType<Guid>().Distinct().ToList();
+            var names = await db.Clubs.Where(c => ids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
+            string N(Guid? id) => id is { } g ? names.GetValueOrDefault(g) ?? "?" : "tự do";
+            foreach (var d in deals.Take(3))
+            {
+                var mine = d.FromClubId == mineId || d.ToClubId == mineId;
+                feed.Add(d.ToClubId is null || d.Kind == TransferKind.Release
+                    ? new("person_remove", mine ? "gold" : "violet", $"{d.Name} rời {N(d.FromClubId)}", "Giải phóng hợp đồng", $"cau-thu/{d.PlayerId}")
+                    : new("swap_horiz", mine ? "gold" : "violet", d.Kind == TransferKind.Loan ? $"{d.Name} được {N(d.ToClubId)} mượn" : $"{d.Name} gia nhập {N(d.ToClubId)}",
+                        $"Từ {N(d.FromClubId)}" + (d.Kind == TransferKind.Loan ? "" : " · " + (d.Fee > 0 ? MoneyText.Format(d.Fee) : "miễn phí")), $"cau-thu/{d.PlayerId}"));
+            }
+            if (deals.Count > 3) feed.Add(new("swap_horiz", "violet", $"Thêm {deals.Count - 3} vụ chuyển nhượng khác trong giải", null, null));
+        }
     }
 
     void NextSeason()

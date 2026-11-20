@@ -1,9 +1,14 @@
 @page "/cai-dat"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
 @inject CurrentUser Me
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject MatchJobService Jobs
 
 <PageTitle>Cài đặt</PageTitle>
 
-@* Cài đặt career (PO 20/11, phương án B): âm thanh (chuyển từ menu ≡; career-audio.js đọc data-snd*, lưu trên trình duyệt), điều khiển game, tài khoản. *@
+@* Cài đặt career (PO 20/11, phương án B): âm thanh (chuyển từ menu ≡; career-audio.js đọc data-snd*, lưu trên trình duyệt), mô phỏng
+   (chuyển từ trang chủ, PO 20/11), điều khiển game, tài khoản. *@
 <div class="st">
     <h1>Cài đặt</h1>
 
@@ -20,6 +25,20 @@
             <label>Âm lượng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
         </div>
     </section>
+
+    @if (clubId is not null)
+    {
+        <section class="hlv-panel st-sec" aria-labelledby="st-sim">
+            <h2 id="st-sim"><i class="ms" aria-hidden="true">tune</i>Mô phỏng trận</h2>
+            <label class="sw" title="Khi mô phỏng trận của bạn: cầu thủ đá chính mệt (≥ @ConditionRules.TiredAt) được cho nghỉ nếu có dự bị cùng tuyến khoẻ. Không sửa đội hình bạn đã lưu.">
+                <input type="checkbox" checked="@autoLineup" @onchange="ToggleAuto" /><span>Trợ lý xoay vòng đội hình</span><small>Khi mô phỏng, cầu thủ quá mệt được nghỉ nếu có dự bị cùng tuyến. Không sửa đội hình bạn đã lưu.</small>
+            </label>
+            @if (!Jobs.Running && Jobs.Title is MatchJobService.SimTitle or MatchJobService.RolloverTitle && Jobs.Log.Count > 0)
+            {
+                <details class="st-log"><summary>Nhật ký lần mô phỏng gần nhất</summary><pre>@string.Join("\n", Jobs.Log.TakeLast(12))</pre></details>
+            }
+        </section>
+    }
 
     <section class="hlv-panel st-sec" aria-labelledby="st-game">
         <h2 id="st-game"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</h2>
@@ -39,16 +58,32 @@
 </div>
 
 @code {
-    bool admin;
+    bool admin, autoLineup = true;
     string? who, profile;
+    Guid? clubId;
 
     protected override async Task OnInitializedAsync()
     {
         admin = await Me.IsAdminAsync();
+        if (await Me.ManagerIdAsync() is { } mid)
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
+                              where a.ParticipantId == mid && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.AutoLineup }).FirstOrDefaultAsync();
+            (clubId, autoLineup) = (mine?.Id, mine?.AutoLineup ?? true);
+        }
         if (await Me.ManagerIdAsync() is not null)
         {
             who = await Me.NameAsync();
             profile = "nguoi-choi/" + await Me.UsernameAsync();
         }
+    }
+
+    async Task ToggleAuto(ChangeEventArgs e)
+    {
+        if (clubId is not { } id) return;
+        autoLineup = e.Value is true;
+        await using var db = await Dbs.CreateDbContextAsync();
+        await db.Clubs.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.AutoLineup, autoLineup));
     }
 }
