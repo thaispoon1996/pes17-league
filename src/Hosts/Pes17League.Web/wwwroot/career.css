@@ -480,6 +480,12 @@ a.cx-card:active { transform: scale(.985); }
 .cx .fm-body { padding: 0; }
 .cx .fm-panel { position: relative; border-radius: 8px; background: var(--glass-solid); border: 1px solid var(--line);
   animation: cx-rise .5s cubic-bezier(.2,.8,.2,1) both; }
+/* Máy tính: .cx-page chỉ rộng 728px mà app.css chia .fm-cols 3 cột theo bề rộng MÀN (≥1000px) → ~230px/cột, sân đội hình + cơ cấu đội hình tràn khung (PO 20/11).
+   Career dùng 2 cột kiểu báo (multi-column: cột ngắn không bị hở như grid). */
+@media (min-width: 1000px) {
+  .cx .fm-cols:not(.fin) { display: block; columns: 2; column-gap: 14px; }
+  .cx .fm-cols:not(.fin) > * { break-inside: avoid; margin: 0 0 14px; }
+}
 .cx .fm-h h2 { font: 800 italic 17px var(--f-display); letter-spacing: .04em; color: var(--text); }
 .cx .fm-info { border-radius: 8px; }
 .cx .table th { font-family: var(--f-display); letter-spacing: .08em; }
