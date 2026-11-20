@@ -150,8 +150,7 @@
     root.querySelectorAll('.cx-result-ov.win .cx-confetti, .cx-signed-ov .cx-confetti').forEach(confetti);
     root.querySelectorAll('.cx-board[data-logo]').forEach(tint);
     hashScroll();
-    const db = root.querySelector('[data-drawer="open"]'), dr = root.querySelector('#cx-drawer');
-    if (db) db.setAttribute('aria-expanded', dr?.hasAttribute('data-open') ? 'true' : 'false');
+    syncSheet(root);
     enter();
   }
   // Link có #mục (vd. hlv#hop-dong từ menu): trang nạp dữ liệu xong mới có mục → cuộn tới khi mục xuất hiện, mỗi địa chỉ 1 lần.
@@ -163,33 +162,46 @@
     let el = null; try { el = document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch { }
     if (!el) return;
     hashDone = key;
-    const top = el.getBoundingClientRect().top + scrollY - (document.querySelector('.cx-top')?.offsetHeight || 0) - 10;
+    const top = el.getBoundingClientRect().top + scrollY - (document.querySelector('.cx-top')?.offsetHeight || 0) - (document.querySelector('.cx-sub')?.offsetHeight || 0) - 10;
     scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
-  // Menu ≡ = ngăn kéo (PO 20/11): mở ngay ở trình duyệt, Blazor chỉ nạp số liệu khu. Đóng: nền tối, nút ×, Esc, chọn mục.
-  function drawer(open, refocus = true) {
-    const d = document.getElementById('cx-drawer'); if (!d) return;
-    const btn = document.querySelector('[data-drawer="open"]');
-    if (open) {
-      d.setAttribute('data-open', ''); btn?.setAttribute('aria-expanded', 'true');
-      d.querySelector('.cx-dbody')?.scrollTo(0, 0);
-      setTimeout(() => d.querySelector('.cx-dhead [data-drawer="close"]')?.focus({ preventScroll: true }), 60);
-    } else if (d.hasAttribute('data-open')) {
-      d.removeAttribute('data-open'); btn?.setAttribute('aria-expanded', 'false');
-      if (refocus) btn?.focus({ preventScroll: true });
+  // Thanh dưới theo khu (PO 20/11, phương án A): bấm ô khu → bảng mục con trượt lên, mở ngay ở trình duyệt; Blazor chỉ nạp số liệu khu.
+  // Đóng: bấm lại ô, nền tối, Esc, chọn mục. Blazor không vẽ data-open / aria-expanded nên vẽ lại không làm bảng tự đóng.
+  const menuEl = () => document.getElementById('cx-menu');
+  const dockBtn = k => document.querySelector(`.cx-dock [data-sheet="${k}"]`);
+  function syncSheet(root) {
+    const m = root.querySelector('#cx-menu'), cur = m?.getAttribute('data-open');
+    if (cur && !m.querySelector('#cxs-' + cur)) { m.removeAttribute('data-open'); }
+    root.querySelectorAll('.cx-dock [data-sheet]').forEach(b => b.setAttribute('aria-expanded', b.dataset.sheet === m?.getAttribute('data-open') ? 'true' : 'false'));
+    root.querySelectorAll('.cx-msheet').forEach(s => s.toggleAttribute('data-open', s.id === 'cxs-' + m?.getAttribute('data-open')));
+  }
+  function sheet(id, refocus = true) {
+    const m = menuEl(); if (!m) return;
+    const cur = m.getAttribute('data-open');
+    const next = id && id !== cur ? document.getElementById('cxs-' + id) : null;
+    if (next) {
+      m.setAttribute('data-open', id);
+      syncSheet(document);
+      const b = dockBtn(id)?.getBoundingClientRect(), r = next.getBoundingClientRect();
+      if (b) next.style.setProperty('--x', Math.round(b.left + b.width / 2 - r.left) + 'px');
+      next.querySelector('.cx-mbody')?.scrollTo(0, 0);
+      setTimeout(() => next.querySelector('a[href], button:not([disabled])')?.focus({ preventScroll: true }), 60);
+    } else if (cur) {
+      m.removeAttribute('data-open');
+      syncSheet(document);
+      if (refocus) dockBtn(cur)?.focus({ preventScroll: true });
     }
   }
   document.addEventListener('click', e => {
-    const t = e.target.closest?.('[data-drawer]');
-    if (t) { drawer(t.dataset.drawer === 'open'); return; }
-    if (e.target.closest?.('#cx-drawer a, #cx-drawer form button')) drawer(false, false);
+    const t = e.target.closest?.('[data-sheet]');
+    if (t) { sheet(t.dataset.sheet === 'close' ? null : t.dataset.sheet, t.dataset.sheet !== 'close'); return; }
+    if (e.target.closest?.('#cx-menu a, #cx-menu form button')) sheet(null, false);
   });
   document.addEventListener('keydown', e => {
-    const d = document.getElementById('cx-drawer');
-    if (!d?.hasAttribute('data-open')) return;
-    if (e.key === 'Escape') { e.preventDefault(); drawer(false); return; }
-    if (e.key !== 'Tab') return;   // giữ Tab trong ngăn kéo
-    const f = [...d.querySelectorAll('a[href], button:not([disabled])')].filter(x => x.offsetParent !== null);
+    const m = menuEl(), cur = m?.getAttribute('data-open'); if (!cur) return;
+    if (e.key === 'Escape') { e.preventDefault(); sheet(null); return; }
+    if (e.key !== 'Tab') return;   // giữ Tab trong bảng đang mở
+    const f = [...(document.getElementById('cxs-' + cur)?.querySelectorAll('a[href], button:not([disabled])') ?? [])].filter(x => x.offsetParent !== null);
     if (!f.length) return;
     const first = f[0], last = f[f.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }

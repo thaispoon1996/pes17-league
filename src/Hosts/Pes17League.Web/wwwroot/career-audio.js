@@ -486,7 +486,7 @@
     const res = root.querySelector('.cx-result-ov'), un = root.querySelector('.cx-unlock-ov'), sg = root.querySelector('.cx-signed-ov');
     for (const [el, f] of [[res, () => fire('result', res.classList.contains('win') ? 'win' : res.classList.contains('loss') ? 'loss' : 'draw')], [sg ? null : un, () => fire('unlock')], [sg, () => fire('signed')]])
       if (el && !seen.has(el)) { seen.add(el); f(); }
-    root.querySelectorAll('.cx-dock a.fly').forEach(a => { if (!seen.has(a)) { seen.add(a); fire('fly'); } });
+    root.querySelectorAll('.cx-dock .fly').forEach(a => { if (!seen.has(a)) { seen.add(a); fire('fly'); } });
     const uv = root.querySelector('.cx-board.unveil');
     if (uv && !seen.has(uv)) { seen.add(uv); fire('unveil'); }
     const any = !!(res || un || sg || uv);
