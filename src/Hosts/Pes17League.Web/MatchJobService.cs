@@ -106,6 +106,8 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     }
     /// <summary>Trận PO đang chuẩn bị sẵn (game đi menu / chờ ở màn Thiết lập), chưa bấm Đá.</summary>
     public bool Preparing => Running && _go is { Task.IsCompleted: false };
+    /// <summary>Lúc tự huỷ dựng sẵn (bắt đầu chuẩn bị + <see cref="PrepareTimeout"/>); chỉ có nghĩa khi <see cref="Preparing"/>.</summary>
+    public DateTimeOffset? PrepareUntil { get; private set; }
     /// <summary>Game đã dựng sẵn, chờ ở màn Chọn đội ("warm"): bấm Sẵn sàng → ghi đội hình vào bộ nhớ, ~95 s tới giao bóng.</summary>
     public bool Ready => Preparing && Stage is "warm" or "ready";
     /// <summary>Đội hình đã chốt: đã bấm Sẵn sàng (hoặc vào thẳng không chuẩn bị) → khoá sửa đội hình trên web.
@@ -275,6 +277,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
 
     private async Task ExpireAsync(Task go, CancellationToken ct)
     {
+        PrepareUntil = clock.GetUtcNow() + PrepareTimeout;
         try { await Task.WhenAny(go, Task.Delay(PrepareTimeout, clock, ct)); } catch (OperationCanceledException) { return; }
         if (go.IsCompleted || ct.IsCancellationRequested) return;
         Write($"Quá {PrepareTimeout.TotalMinutes:0} phút chưa bấm Đá — huỷ chuẩn bị, trả máy.");

@@ -266,6 +266,18 @@
             {
                 <div class="cx-cta busy"><span><b>@(Jobs.Title == MatchJobService.RolloverTitle ? "Đang sang mùa mới" : "Đang mô phỏng")</b><small>@(Jobs.Log.LastOrDefault() ?? "…")</small></span><i class="cx-spin" aria-hidden="true"></i></div>
             }
+            else if (Jobs.Running && Jobs.Title == "Trận của tôi" && Jobs.HumanFixture is { } hf && hf.FixtureId == current?.MineFixture)
+            {
+                @* PO 20/11: máy đang giữ trận của chính mình → nút vào trận, không báo "máy bận" *@
+                @if (Jobs.Preparing)
+                {
+                    <a class="cx-cta" href="chuan-bi/@hf.FixtureId"><span><b>Trận của bạn đã sẵn sàng</b><small>Game chờ ở màn chọn đội@(Jobs.PrepareUntil is { } pu ? $" · tự huỷ lúc {pu.ToLocalTime():HH:mm}" : "")</small></span><i class="ms fill" aria-hidden="true">sports_esports</i></a>
+                }
+                else
+                {
+                    <a class="cx-cta" href="vao-tran"><span><b>Trận của bạn đang diễn ra</b><small>Mở màn hình trận</small></span><i class="ms fill" aria-hidden="true">live_tv</i></a>
+                }
+            }
             else if (Jobs.Running)
             {
                 <div class="cx-cta busy"><span><b>Máy trận đang bận</b><small>@Jobs.Title</small></span><i class="cx-spin" aria-hidden="true"></i></div>
