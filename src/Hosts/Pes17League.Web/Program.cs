@@ -79,7 +79,18 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Cl
 var staticTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 staticTypes.Mappings[".tflite"] = "application/octet-stream";
 staticTypes.Mappings[".mjs"] = "text/javascript";
-app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = staticTypes });
+// CSS/JS của app (không có ?v=) → no-cache: trình duyệt luôn hỏi lại (304 nếu không đổi). Không có header này Safari giữ bản cũ
+// theo heuristic → trang mới đi với CSS cũ (PO 20/11, ô Cúp trang chủ career mất style). lib/ (thư viện ngoài) giữ cache mặc định.
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = staticTypes,
+    OnPrepareResponse = r =>
+    {
+        var path = r.Context.Request.Path;
+        if (!path.StartsWithSegments("/lib") && (path.Value!.EndsWith(".css") || path.Value.EndsWith(".js") || path.Value.EndsWith(".webmanifest")))
+            r.Context.Response.Headers.CacheControl = "no-cache";
+    }
+});
 Directory.CreateDirectory(logos.Dir);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(logos.Dir), RequestPath = LogoStore.RequestPath });
 Directory.CreateDirectory(boards.Dir);
