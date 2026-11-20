@@ -411,15 +411,34 @@
     document.querySelectorAll('[data-snd-vol]').forEach(e => { const k = e.dataset.sndVol; if (document.activeElement !== e) e.value = Math.round((k === 'music' ? st.mv : st.sv) * 100); });
     document.querySelectorAll('[data-snd="sfx"]').forEach(e => { e.checked = st.sfx; });
   }
+  // iPhone: Web Audio mặc định theo nút gạt im lặng (gạt im lặng = câm dù loa to) → chuyển sang kiểu phát media.
+  // iOS 17+: navigator.audioSession; máy cũ: phát kèm 1 thẻ <audio> im lặng lặp lại để iOS chuyển phiên âm thanh.
+  let silentEl = null;
+  function silentWav() {
+    const n = 4410, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), s = (o, x) => { for (let i = 0; i < x.length; i++) v.setUint8(o + i, x.charCodeAt(i)); };
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 44100, true); v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  }
+  function iosPlayback() {
+    try { if (navigator.audioSession) { if (navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; return; } } catch { }
+    const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    if (!ios || silentEl) return;
+    silentEl = new Audio(silentWav()); silentEl.loop = true; silentEl.setAttribute('playsinline', '');
+    silentEl.play().catch(() => { silentEl = null; });
+  }
+  // iOS chỉ mở âm thanh ở thao tác thật (chạm xong / click), không phải touchstart; ra nền về ctx có thể "interrupted"
+  // → mỗi lần chạm đều thử resume lại.
   let unlocked = false;
   function wake() {
-    if (unlocked || !document.querySelector('.cx:not(.cx-boot)')) return;
+    if (!document.querySelector('.cx:not(.cx-boot)')) return;
     if (!init()) return;
+    if (ctx.state !== 'running') { iosPlayback(); ctx.resume().catch(() => { }); }
+    if (unlocked) return;
     unlocked = true;
-    ctx.resume();
     if (st.music) playTrack(trackFor(location.pathname));
   }
-  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, wake, { capture: true, passive: true }));
+  ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, wake, { capture: true, passive: true }));
 
   document.addEventListener('click', e => {
     const b = e.target.closest?.('[data-snd]');
