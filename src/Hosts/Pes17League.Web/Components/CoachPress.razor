@@ -1,0 +1,143 @@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+@* Họp báo ra mắt (PO 19/11): phông logo CLB, tượng HLV 3D đứng bục, 3 câu hỏi báo giới (chỉ hiện giọng điệu, chưa lộ số),
+   chốt xong mới hiện tác động thật (CĐV, tin cậy BLĐ, danh tiếng) + chụp ảnh lưu niệm vào album. *@
+
+<div class="hlv-press" @ref="stage">
+    <div class="wall" aria-hidden="true">@if (ClubLogo is not null) { for (var i = 0; i < 25; i++) { <img src="@ClubLogo" alt="" /> } }</div>
+    <div class="shade" aria-hidden="true"></div>
+    <div class="host" @ref="host"></div>
+    <div class="podium"><Crest Name="@ClubName" Logo="@ClubLogo" Large="true" /></div>
+    <i class="mic m1" aria-hidden="true"></i><i class="mic m2" aria-hidden="true"></i><i class="mic m3" aria-hidden="true"></i>
+    <i class="fl" aria-hidden="true"></i><i class="fl" aria-hidden="true"></i><i class="fl" aria-hidden="true"></i><i class="fl" aria-hidden="true"></i>
+</div>
+
+@if (result is null)
+{
+    var q = CoachRules.Launch[Math.Min(answers.Count, CoachRules.Launch.Length - 1)];
+    <div class="cx-steps" aria-hidden="true" style="margin-top:12px">@for (var i = 0; i < CoachRules.Launch.Length; i++) { <i class="@(i < answers.Count ? "on" : null)"></i> }</div>
+    <div class="hlv-q" @key="answers.Count">
+        <span class="who">@q.Who · câu @(Math.Min(answers.Count + 1, CoachRules.Launch.Length))/@CoachRules.Launch.Length</span>
+        <h3>@Fill(q.Question)</h3>
+        @for (var i = 0; i < q.Answers.Length; i++)
+        {
+            var k = i; var a = q.Answers[k];
+            <button class="hlv-ans" disabled="@busy" @onclick="() => Answer(k)">@Fill(a.Text)<small>Giọng điệu: @a.Tone</small></button>
+        }
+    </div>
+    @if (msg is not null) { <p class="cx-msg neg" role="alert">@msg</p> }
+    <details class="hlv-rule"><summary><i class="ms" aria-hidden="true">expand_more</i>Luật họp báo ra mắt</summary>
+        <div><ul>
+            <li>3 câu hỏi, mỗi câu trả lời đổi tâm trạng CĐV, độ tin cậy ban lãnh đạo và danh tiếng HLV. Số liệu chỉ hiện sau khi trả lời xong.</li>
+            <li>Phần cộng nhân thêm 5% cho mỗi điểm Truyền thông trên 10 (tính cách Được lòng báo chí thêm 10%).</li>
+        </ul></div>
+    </details>
+}
+else
+{
+    var (fans, board, rep) = result.Value;
+    <h2 class="hlv-h">Báo giới ghi nhận</h2>
+    <div class="hlv-tally">
+        <div><span>Khán giả sân nhà</span><b class="@Tone(fans)">@(fans == 0 ? "0" : (fans > 0 ? "+" : "") + (fans / 10.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%</b></div>
+        <div><span>Tin cậy BLĐ</span><b class="@Tone(board)">@CoachUi.Signed(board)</b></div>
+        <div><span>Danh tiếng</span><b class="@Tone(rep)">@CoachUi.Signed(rep)</b></div>
+    </div>
+    @if (photoId is { } pid)
+    {
+        <h2 class="hlv-h">Ảnh lưu niệm</h2>
+        <div class="hlv-album"><figure class="hlv-pol"><img src="hlv/anh/@pid" alt="Ảnh ra mắt @C.Name tại @ClubName" />Ra mắt @ClubName</figure></div>
+    }
+    @if (msg is not null) { <p class="cx-msg neg" role="alert">@msg</p> }
+    <div class="hlv-acts">
+        @if (photoId is null) { <button class="cx-btn ghost" disabled="@busy" @onclick="Photo"><i class="ms" aria-hidden="true">photo_camera</i>@(busy ? "Đang chụp…" : "Chụp ảnh lưu niệm")</button> }
+        <button class="cx-btn gold" @onclick="() => OnDone.InvokeAsync()"><i class="ms" aria-hidden="true">sports</i>Vào phòng điều hành</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Coach C { get; set; } = default!;
+    [Parameter, EditorRequired] public string ClubName { get; set; } = "";
+    [Parameter] public string? ClubLogo { get; set; }
+    [Parameter] public string? Objective { get; set; }
+    [Parameter] public EventCallback OnDone { get; set; }
+
+    readonly List<int> answers = [];
+    (int Fans, int Board, int Rep)? result;
+    Guid? photoId;
+    bool busy, mounted;
+    string? msg;
+    ElementReference stage, host;
+
+    string Fill(string s) => s.Replace("{club}", ClubName).Replace("{objective}", (Objective ?? "").ToLowerInvariant());
+    static string? Tone(int v) => v > 0 ? "cx-up" : v < 0 ? "cx-down" : null;
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (mounted) return;
+        mounted = true;
+        try { await JS.InvokeVoidAsync("Coach3d.show", host, new { face = CoachUi.FaceUrl(C), skin = C.Skin, hair = C.Hair, hc = C.HairColor, @out = C.Outfit, logo = ClubLogo, scarf = true }); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        await Flash();
+    }
+
+    async Task Flash()
+    {
+        try { await JS.InvokeVoidAsync("Coach3d.flash", stage); await JS.InvokeVoidAsync("cxAudio.fire", "flash"); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    async Task Answer(int k)
+    {
+        if (busy || result is not null) return;
+        answers.Add(k);
+        await Flash();
+        if (answers.Count < CoachRules.Launch.Length) return;
+        busy = true;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (f, b, r, err) = await new CoachJobService(db, Clock, Store).LaunchAsync(C.Id, [.. answers]);
+            if (err is not null) { msg = err; answers.Clear(); return; }
+            result = (f, b, r);
+            try { await JS.InvokeVoidAsync("cxAudio.fire", "signed"); } catch (JSException) { }
+        }
+        finally { busy = false; }
+    }
+
+    async Task Photo()
+    {
+        busy = true; msg = null;
+        StateHasChanged();
+        try
+        {
+            var r = await JS.InvokeAsync<IJSStreamReference?>("Coach3d.photo", new
+            {
+                face = CoachUi.FaceUrl(C), skin = C.Skin, hair = C.Hair, hc = C.HairColor, @out = C.Outfit, logo = ClubLogo, name = C.Name,
+                caption = $"HLV trưởng {ClubName}",
+            });
+            if (r is null) { msg = "Không chụp được ảnh trên thiết bị này."; return; }
+            byte[] bytes;
+            await using (r)
+            {
+                await using var s = await r.OpenReadStreamAsync(CoachService.MaxPhotoBytes);
+                using var ms = new MemoryStream();
+                await s.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (id, err) = await new CoachService(db, Clock).AddPhotoAsync(C.ManagerId, $"Ra mắt {ClubName}", bytes);
+            msg = err;
+            photoId = id;
+            await Flash();
+        }
+        catch (JSException) { msg = "Không chụp được ảnh trên thiết bị này."; }
+        catch (JSDisconnectedException) { }
+        finally { busy = false; }
+    }
+}

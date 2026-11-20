@@ -77,7 +77,8 @@ public sealed class YouthService(ClubsDbContext db, TimeProvider clock)
             return $"Trinh sát đang bận ({ScoutRules.MaxPending(level)} việc). Nâng cấp trinh sát để làm song song nhiều hơn.";
         if (await SquadStore.BalanceAsync(db, clubId, ct) < ScoutRules.Fee) return "Không đủ tiền.";
         var now = clock.GetUtcNow();
-        db.ScoutReports.Add(new ScoutReport { ClubId = clubId, PlayerId = playerId, RoundsLeft = ScoutRules.Rounds(level), RequestedAt = now });
+        var haste = await CoachHooks.ForClubAsync(db, clubId, ct) is { } hlv ? CoachRules.ScoutHaste(CoachRules.Effective(hlv, CoachSkill.Scouting)) : 0;   // HLV career: Trinh sát
+        db.ScoutReports.Add(new ScoutReport { ClubId = clubId, PlayerId = playerId, RoundsLeft = Math.Max(0, ScoutRules.Rounds(level) - haste), RequestedAt = now });
         db.Ledger.Add(new ClubLedgerEntry { ClubId = clubId, Amount = -ScoutRules.Fee, Reason = LedgerReason.Staff, RefType = nameof(ScoutReport), RefId = playerId, At = now });
         await db.SaveChangesAsync(ct);
         return null;

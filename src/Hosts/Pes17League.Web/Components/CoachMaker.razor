@@ -1,0 +1,314 @@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+@* Tạo hồ sơ HLV (PO 19/11, làm theo mockup đã duyệt): khuôn mặt + ngoại hình → thông tin → xuất thân (bốc ngẫu nhiên, bốc lại 2 lần)
+   → phân điểm năng lực → thẻ HLV → hoàn tất. Mỗi bước lưu ngay vào hồ sơ đang tạo nên tải lại trang không mất. *@
+
+@if (c is null) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
+<section class="cx-wiz hlv-maker">
+    <div class="cx-steps" aria-hidden="true">@for (var i = 0; i < Steps.Length; i++) { <i class="@(i <= step ? "on" : null)"></i> }</div>
+    <nav class="hlv-sub" aria-label="Các bước tạo HLV">
+        @for (var i = 0; i < Steps.Length; i++)
+        {
+            var k = i;
+            <button class="@(k == step ? "on" : k < reached ? "done" : null)" disabled="@(k > reached || busy)" @onclick="() => Go(k)"><b>@(k + 1)</b>@Steps[k]</button>
+        }
+    </nav>
+
+    @if (step == 0)
+    {
+        <h1>Khuôn mặt HLV</h1>
+        <p class="lead">Tải ảnh chân dung nhìn thẳng, kéo cho mặt nằm gọn trong khung, mắt ngang vạch vàng rồi bấm Quét. Ảnh đã căn được lưu vào hồ sơ, chỉ bạn xem được. Không có ảnh vẫn dùng được mặt mặc định.</p>
+        <div class="hlv-facegrid">
+            <div @ref="cropHost">
+                <div class="cx-crop">
+                    <canvas data-crop width="400" height="400"></canvas>
+                    <canvas data-dots width="400" height="400"></canvas>
+                    <svg viewBox="0 0 400 400" aria-hidden="true">
+                        <path d="M0 0H400V400H0Z M80 188a120 156 0 1 0 240 0a120 156 0 1 0-240 0Z" fill="rgba(7,11,26,.55)" fill-rule="evenodd" />
+                        <ellipse cx="200" cy="188" rx="120" ry="156" fill="none" stroke="#36E3FF" stroke-width="2" stroke-dasharray="6 6" />
+                        <line x1="120" y1="153" x2="280" y2="153" stroke="#FFC94A" stroke-width="1.5" stroke-dasharray="4 4" />
+                    </svg>
+                    <i class="scanl" aria-hidden="true"></i>
+                    <span class="cnt" data-count-label>Điểm mốc 0/478</span>
+                </div>
+                <div class="hlv-tools">
+                    <label class="cx-btn ghost sm"><i class="ms" aria-hidden="true">add_photo_alternate</i>Tải ảnh<input type="file" accept="image/*" data-file hidden /></label>
+                    <i class="ms" aria-hidden="true" style="color:var(--muted)">zoom_in</i>
+                    <input type="range" min="1" max="3" step="0.01" value="1" data-zoom aria-label="Phóng to ảnh" />
+                </div>
+                <div class="hlv-acts" style="margin-top:10px">
+                    <button class="cx-btn gold" disabled="@busy" @onclick="Scan"><i class="ms" aria-hidden="true">face_retouching_natural</i>@(busy ? "Đang quét…" : "Quét khuôn mặt")</button>
+                </div>
+                @if (scanNote is not null) { <p class="hlv-note">@scanNote</p> }
+            </div>
+            <div>
+                <div class="hlv-stage" @ref="stageEl"><i class="ring" aria-hidden="true"></i><span class="hint">Kéo để xoay</span></div>
+                <div class="hlv-opt"><span>Kiểu tóc</span>
+                    <div class="hlv-chips">@foreach (var h in CoachRules.Hairs) { var v = h; <button class="hlv-chip @(c.Hair == v ? "on" : null)" @onclick="() => Look(hair: v)">@CoachUi.HairName(v)</button> }</div>
+                </div>
+                <div class="hlv-opt"><span>Màu tóc</span>
+                    <div class="hlv-chips">@foreach (var h in CoachUi.HairColors) { var v = h; <button class="hlv-sw @(c.HairColor == v ? "on" : null)" style="background:@v" aria-label="Màu tóc @v" @onclick="() => Look(hc: v)"></button> }</div>
+                </div>
+                <div class="hlv-opt"><span>Màu da</span>
+                    <div class="hlv-chips">@foreach (var h in SkinChoices) { var v = h; <button class="hlv-sw @(c.Skin == v ? "on" : null)" style="background:@v" aria-label="Màu da @v" @onclick="() => Look(skin: v)"></button> }</div>
+                </div>
+                <div class="hlv-opt"><span>Trang phục</span>
+                    <div class="hlv-chips">@foreach (var o in CoachRules.Outfits) { var v = o; <button class="hlv-chip @(c.Outfit == v ? "on" : null)" @onclick="() => Look(outfit: v)">@CoachUi.OutfitName(v)</button> }</div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (step == 1)
+    {
+        <h1>Thông tin</h1>
+        <p class="lead">Tên hiện trên báo chí, hợp đồng và phòng điều hành.</p>
+        <div class="hlv-panel">
+            <label class="hlv-field"><span>Họ tên</span><input @bind="name" maxlength="60" autocomplete="off" /></label>
+            <div class="hlv-row2">
+                <label class="hlv-field"><span>Biệt danh (không bắt buộc)</span><input @bind="nick" maxlength="40" autocomplete="off" /></label>
+                <label class="hlv-field"><span>Tuổi (28–70)</span><input type="number" min="28" max="70" @bind="age" /></label>
+            </div>
+            <label class="hlv-field"><span>Quốc tịch</span>
+                <select @bind="nation">@foreach (var n in Nations) { <option value="@n">@n</option> }</select>
+            </label>
+        </div>
+        <h2 class="hlv-h">Sơ đồ ưa thích</h2>
+        <div class="hlv-chips">@foreach (var f in CoachRules.Formations) { var v = f; <button class="hlv-chip @(formation == v ? "on" : null)" @onclick="() => formation = v">@v</button> }</div>
+        <h2 class="hlv-h">Lối chơi</h2>
+        <div class="hlv-chips">@foreach (var s in CoachRules.Styles) { var v = s; <button class="hlv-chip @(style == v ? "on" : null)" @onclick="() => style = v">@v</button> }</div>
+        <p class="hlv-note">Sơ đồ và lối chơi chỉ là sở thích ghi trên hồ sơ. Trận của bạn vẫn đá trên PES 17 thật nên hai mục này không cộng sức mạnh.</p>
+    }
+    else if (step == 2)
+    {
+        var o = CoachRules.Origin(c.Origin); var tr = CoachRules.Trait(c.Trait); var sum = CoachRules.Origins.Sum(x => x.Weight);
+        <h1>Xuất thân</h1>
+        <p class="lead">Bốc ngẫu nhiên. Quyết định danh tiếng, bằng cấp lúc bắt đầu và số điểm năng lực tự phân bổ.</p>
+        <div class="hlv-origin" @key="c.Seed">
+            <i class="ms fill" aria-hidden="true">@o.Icon</i>
+            <b>@o.Name</b>
+            <p>@o.Description</p>
+            <dl>
+                <div><dt>Danh tiếng</dt><dd>@c.Reputation</dd></div>
+                <div><dt>Bằng</dt><dd>@CoachRules.Licenses[c.License]</dd></div>
+                <div><dt>Điểm tự do</dt><dd>@o.FreePoints</dd></div>
+            </dl>
+        </div>
+        <div class="hlv-trait"><i class="ms fill" aria-hidden="true">auto_awesome</i><span><b>Tính cách: @tr.Name</b><small>@tr.Effect</small></span></div>
+        <div class="hlv-acts">
+            <button class="cx-btn ghost" disabled="@(busy || c.Draws >= CoachRules.Rerolls)" data-confirm="Bốc lại xuất thân? Điểm năng lực đã cộng sẽ về gốc." @onclick="Reroll">
+                <i class="ms" aria-hidden="true">casino</i>@(c.Draws >= CoachRules.Rerolls ? "Hết lượt bốc lại" : $"Bốc lại (còn {CoachRules.Rerolls - c.Draws})")
+            </button>
+        </div>
+        <div class="hlv-others">
+            @foreach (var x in CoachRules.Origins)
+            {
+                <div style="@(x.Origin == c.Origin ? "border-color:var(--gold)" : null)"><b>@x.Name</b>Tỉ lệ @(x.Weight * 100 / sum)% · danh tiếng @x.Reputation · @x.FreePoints điểm</div>
+            }
+        </div>
+    }
+    else if (step == 3)
+    {
+        var left = Pool - alloc.Select((v, i) => v - c.BaseSkills[i]).Sum();
+        <h1>Năng lực</h1>
+        <div class="hlv-pool"><b class="@(left == 0 ? "zero" : null)">@left</b><span>điểm còn lại để cộng. Tối đa @CoachRules.CreateCap mỗi mục lúc tạo.</span></div>
+        <div class="hlv-panel">
+            @for (var i = 0; i < CoachRules.SkillCount; i++)
+            {
+                var k = i; var d = CoachRules.SkillDefs[k]; var b = c.BaseSkills[k]; var v = alloc[k]; var cap = Math.Max(CoachRules.CreateCap, b);
+                <div class="hlv-sk">
+                    <h3><i class="ms" aria-hidden="true">@d.Icon</i>@d.Name</h3>
+                    <p>@CoachRules.Describe(d.Skill, v)</p>
+                    <div class="hlv-stp">
+                        <button aria-label="Bớt @d.Name" disabled="@(v <= b)" @onclick="() => alloc[k]--">−</button>
+                        <output>@v</output>
+                        <button aria-label="Cộng @d.Name" disabled="@(v >= cap || left <= 0)" @onclick="() => alloc[k]++">+</button>
+                    </div>
+                    <div class="bar" aria-hidden="true"><i style="width:@(b * 5)%"></i><u style="width:@((v - b) * 5)%"></u></div>
+                </div>
+            }
+        </div>
+        <button class="cx-back" @onclick="() => alloc = [.. c.BaseSkills]"><i class="ms" aria-hidden="true">restart_alt</i>Đặt lại</button>
+        <details class="hlv-rule"><summary><i class="ms" aria-hidden="true">expand_more</i>Luật năng lực</summary>
+            <div><ul>
+                <li>Thang 1–20, mốc <b>10</b> là bình thường (không cộng không trừ).</li>
+                <li>Mỗi mục tác động vào hệ thống đang có: tập luyện, học viện trẻ, tinh thần cầu thủ, thể lực và chấn thương, giá mua cầu thủ, họp báo, trinh sát.</li>
+                <li>Sau khi tạo, mỗi @CoachRules.XpPerPoint điểm kinh nghiệm (thắng 3, hoà 1) hoặc một khoá bằng cho thêm 1 điểm, trần @CoachRules.SkillMax.</li>
+                <li>Căng thẳng từ 70 trở lên làm giảm Con người và Truyền thông; từ 85 giảm thêm Huấn luyện.</li>
+            </ul></div>
+        </details>
+    }
+    else
+    {
+        <h1>Thẻ HLV</h1>
+        <p class="lead">Màu viền theo danh tiếng: đồng, bạc, vàng, huyền thoại. Đang dẫn CLB thì hồ sơ nhận hợp đồng mặc định với CLB đó; chưa có CLB thì đi ứng tuyển.</p>
+        <div class="hlv-cardwrap">
+            <div class="hlv-seg" role="group" aria-label="Kiểu ảnh">
+                <button class="@(card3d ? "on" : null)" @onclick="() => card3d = true">Ảnh 3D</button>
+                <button class="@(!card3d ? "on" : null)" @onclick="() => card3d = false">Ảnh 2D</button>
+            </div>
+            <CoachCard C="c" Live="card3d" ShowBase="true" />
+        </div>
+    }
+
+    @if (msg is not null) { <p class="cx-msg neg" role="alert" style="margin-top:12px">@msg</p> }
+    <div class="hlv-acts">
+        @if (step > 0) { <button class="cx-btn ghost" disabled="@busy" @onclick="() => Go(step - 1)"><i class="ms" aria-hidden="true">arrow_back</i>Quay lại</button> }
+        @if (step < Steps.Length - 1) { <button class="cx-btn gold" disabled="@busy" @onclick="Next">Tiếp<i class="ms" aria-hidden="true">arrow_forward</i></button> }
+        else { <button class="cx-btn gold" disabled="@busy" data-confirm="Hoàn tất hồ sơ HLV? Sau bước này không bốc lại xuất thân hay phân lại điểm được nữa." @onclick="Finish"><i class="ms fill" aria-hidden="true">verified</i>Hoàn tất hồ sơ</button> }
+    </div>
+</section>
+
+@code {
+    /// <summary>Gọi khi hồ sơ đã hoàn tất (hoặc vốn đã hoàn tất).</summary>
+    [Parameter] public EventCallback OnDone { get; set; }
+
+    static readonly string[] Steps = ["Khuôn mặt", "Thông tin", "Xuất thân", "Năng lực", "Thẻ HLV"];
+    Coach? c;
+    Guid me;
+    int step, reached;
+    bool busy, card3d = true, mounted;
+    string? msg, scanNote;
+    string name = "", nick = "", nation = "Việt Nam", formation = "4-3-3", style = "Cân bằng";
+    int age = 38;
+    int[] alloc = [];
+    ElementReference cropHost, stageEl;
+
+    int Pool => CoachRules.Origin(c!.Origin).FreePoints;
+    IEnumerable<string> Nations => CoachUi.Nations.Contains(nation) ? CoachUi.Nations : CoachUi.Nations.Prepend(nation);
+    IEnumerable<string> SkinChoices => CoachUi.SkinTones.Contains(c!.Skin) ? CoachUi.SkinTones : CoachUi.SkinTones.Append(c!.Skin);
+
+    sealed record ScanResult(bool Ok, bool Real, int Points, string? Skin);
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync() ?? Guid.Empty;
+        if (me == Guid.Empty) { msg = "Cần đăng nhập bằng tài khoản người chơi."; return; }
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new CoachService(db, Clock);
+        var got = await svc.GetAsync(me);
+        if (got is null) { var (made, err) = await svc.DrawAsync(me, await Me.NameAsync()); got = made; msg = err; }
+        if (got is { Status: not CoachStatus.Creating }) { await OnDone.InvokeAsync(); return; }
+        c = got;
+        if (c is null) return;
+        (name, nick, age, nation, formation, style) = (c.Name, c.Nickname ?? "", c.Age, c.Nationality, c.Formation, c.Style);
+        alloc = [.. c.Skills];
+        // đã làm dở (lưu sau lúc bốc): cho nhảy thẳng tới bước nào cũng được, mỗi bước lưu riêng
+        reached = c.UpdatedAt > c.CreatedAt.AddSeconds(5) ? Steps.Length - 1 : 0;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (c is null) return;
+        if (step != 0) { mounted = false; return; }
+        if (mounted) return;
+        mounted = true;
+        try
+        {
+            await JS.InvokeVoidAsync("Coach3d.crop", cropHost, CoachUi.FaceUrl(c));
+            await Show();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    Task Show() => JS.InvokeVoidAsync("Coach3d.show", stageEl, new { face = CoachUi.FaceUrl(c!), skin = c!.Skin, hair = c.Hair, hc = c.HairColor, @out = c.Outfit }).AsTask();
+
+    async Task Look(string? hair = null, string? hc = null, string? skin = null, string? outfit = null)
+    {
+        if (c is null) return;
+        var look = new CoachLook(hair ?? c.Hair, hc ?? c.HairColor, outfit ?? c.Outfit, skin ?? c.Skin);
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new CoachService(db, Clock);
+        msg = await svc.SetLookAsync(me, look);
+        c = await svc.GetAsync(me) ?? c;
+        try { await Show(); } catch (JSException) { } catch (JSDisconnectedException) { }
+    }
+
+    async Task Scan()
+    {
+        busy = true; msg = null; scanNote = null;
+        StateHasChanged();
+        try
+        {
+            var r = await JS.InvokeAsync<ScanResult>("Coach3d.scan");
+            if (r is not { Ok: true }) { msg = "Chưa có ảnh. Bấm Tải ảnh, căn mặt vào khung rồi quét."; return; }
+            var bytes = await Bytes("Coach3d.faceBytes", CoachService.MaxFaceBytes);
+            var mesh = await JS.InvokeAsync<string?>("Coach3d.faceMesh");
+            await using var db = await Dbs.CreateDbContextAsync();
+            var svc = new CoachService(db, Clock);
+            msg = await svc.SetFaceAsync(me, bytes, mesh);
+            if (msg is null && r.Skin is { Length: 7 } sk) msg = await svc.SetLookAsync(me, new CoachLook(c!.Hair, c.HairColor, c.Outfit, sk));
+            c = await svc.GetAsync(me) ?? c;
+            scanNote = r.Real ? $"Đã quét {r.Points} điểm mốc và lưu mặt vào hồ sơ." : "Không tải được bộ quét điểm mốc, đã dán ảnh lên khuôn đầu mẫu và lưu vào hồ sơ.";
+        }
+        catch (JSException) { msg = "Quét không thành công. Thử ảnh khác hoặc tải lại trang."; }
+        catch (JSDisconnectedException) { }
+        finally { busy = false; }
+    }
+
+    async Task<byte[]?> Bytes(string fn, long max)
+    {
+        var r = await JS.InvokeAsync<IJSStreamReference?>(fn);
+        if (r is null) return null;
+        await using (r)
+        {
+            await using var s = await r.OpenReadStreamAsync(max);
+            using var ms = new MemoryStream();
+            await s.CopyToAsync(ms);
+            return ms.ToArray();
+        }
+    }
+
+    void Go(int k) { msg = null; step = Math.Clamp(k, 0, Steps.Length - 1); reached = Math.Max(reached, step); }
+
+    async Task Next()
+    {
+        if (c is null) return;
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var svc = new CoachService(db, Clock);
+            if (step == 1) msg = await svc.SaveInfoAsync(me, new CoachInfo(name, nick, age, nation, formation, style));
+            else if (step == 3) msg = await svc.SetSkillsAsync(me, alloc);
+            if (msg is not null) return;
+            c = await svc.GetAsync(me) ?? c;
+            Go(step + 1);
+        }
+        finally { busy = false; }
+    }
+
+    async Task Reroll()
+    {
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (made, err) = await new CoachService(db, Clock).DrawAsync(me);
+            msg = err;
+            if (made is not null) { c = made; alloc = [.. c.Skills]; }
+            try { await JS.InvokeVoidAsync("cxAudio.fire", "unlock"); } catch (JSException) { }
+        }
+        finally { busy = false; }
+    }
+
+    async Task Finish()
+    {
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var svc = new CoachService(db, Clock);
+            if (!alloc.SequenceEqual(c!.Skills) && (msg = await svc.SetSkillsAsync(me, alloc)) is not null) return;
+            msg = await svc.FinishAsync(me);
+            if (msg is not null) return;
+            try { await JS.InvokeVoidAsync("cxAudio.fire", "signed"); } catch (JSException) { }
+            await OnDone.InvokeAsync();
+        }
+        finally { busy = false; }
+    }
+}

@@ -26,6 +26,7 @@ public sealed class ConditionService(ClubsDbContext db, TimeProvider clock)
         var conditions = await db.PlayerConditions.Where(c => ids.Contains(c.PlayerId)).ToDictionaryAsync(c => c.PlayerId, ct);
         var hard = (await db.ClubTrainings.Where(t => t.Intensity == TrainingIntensity.Hard).Select(t => t.ClubId).ToListAsync(ct)).ToHashSet();
         var staff = await BoardService.LevelsAsync(db, ct);   // FM đợt 7: y tế, trợ lý
+        var coaches = await CoachHooks.ByClubAsync(db, ct);   // HLV career: Thể lực – y tế
         var now = clock.GetUtcNow();
         var injuries = 0;
         foreach (var s in squad)
@@ -35,19 +36,20 @@ public sealed class ConditionService(ClubsDbContext db, TimeProvider clock)
             var played = ratings.TryGetValue(s.PlayerId, out var rating);
             var before = c.Fatigue;
             var physio = staff.GetValueOrDefault((s.ClubId, StaffRole.Physio), 1);
+            var fit = coaches.TryGetValue(s.ClubId, out var hlv) ? CoachRules.Effective(hlv, CoachSkill.Fitness) : 10;
             if (c.InjuredRounds > 0 && --c.InjuredRounds == 0) c.Injury = null;
             if (played)
             {
                 c.Fatigue = Math.Min(100, c.Fatigue + ConditionRules.MatchFatigue + (hard.Contains(s.ClubId) ? ConditionRules.HardTrainingFatigue : 0));
                 var roll = ConditionRules.Roll(s.PlayerId, matchdayId);
-                if (c.InjuredRounds == 0 && ConditionRules.Injured(before, roll, StaffRules.PhysioInjuryCut(physio)))
+                if (c.InjuredRounds == 0 && ConditionRules.Injured(before, roll, StaffRules.PhysioInjuryCut(physio) + CoachRules.FitnessInjuryCut(fit)))
                 {
                     c.InjuredRounds = ConditionRules.InjuryRounds(roll);
                     c.Injury = ConditionRules.Injuries[roll % ConditionRules.Injuries.Length];
                     injuries++;
                 }
             }
-            else c.Fatigue = Math.Max(0, c.Fatigue - ConditionRules.RestRecovery - StaffRules.PhysioRecovery(physio));
+            else c.Fatigue = Math.Max(0, c.Fatigue - ConditionRules.RestRecovery - StaffRules.PhysioRecovery(physio) - CoachRules.FitnessRecovery(fit));
             if (c.Morale < 50) c.Morale += StaffRules.AssistantMorale(staff.GetValueOrDefault((s.ClubId, StaffRole.Assistant), 1));
             if (clubPlayed) c.Morale = Math.Clamp(c.Morale + ConditionRules.MoraleDelta(played, rating, diff), 0, 100);
             c.LastMatchdayId = matchdayId;

@@ -1,0 +1,57 @@
+@inject IJSRuntime JS
+@* Thẻ HLV career (PO 19/11): viền theo danh tiếng (đồng/bạc/vàng/huyền thoại), danh tiếng, bằng, mặt (3D khi Live, ảnh phẳng khi không), tên, nhãn, radar năng lực.
+   Tượng 3D là 1 bản dùng chung (coach3d.js) nên mỗi màn chỉ 1 chỗ Live. *@
+@{ var t = CoachRules.RepCard(C.Reputation); var face = CoachUi.FaceUrl(C); }
+<div class="hlv-card" data-t="@t">
+    <div class="in">
+        <div class="hd">
+            <div class="rep">
+                <b>@C.Reputation</b><small>Danh tiếng</small>
+                <span class="tierl">@CoachRules.RepTier(C.Reputation)</span>
+                <span class="lic">@CoachUi.License(C.License)</span>
+            </div>
+            <div class="face" @ref="faceEl">
+                @if (!Live)
+                {
+                    @if (face is not null) { <img class="flat" src="@face" alt="Ảnh mặt @C.Name" /> }
+                    else { <span class="ms" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:96px;color:rgba(255,255,255,.18)">person</span> }
+                }
+            </div>
+        </div>
+        <div class="nm">
+            <b>@C.Name</b>
+            <small>@(string.IsNullOrWhiteSpace(C.Nickname) ? "" : $"\"{C.Nickname}\" · ")@C.Age tuổi · @C.Nationality</small>
+            <div class="tags">
+                <span>@CoachRules.Origin(C.Origin).Name</span><span>@CoachRules.Trait(C.Trait).Name</span><span>@C.Formation</span><span>@C.Style</span>
+                @if (ClubName is not null) { <span>@ClubName</span> }
+            </div>
+        </div>
+        @CoachUi.Radar(C.Skills, ShowBase ? C.BaseSkills : null)
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Coach C { get; set; } = default!;
+    [Parameter] public string? ClubName { get; set; }
+    [Parameter] public string? ClubLogo { get; set; }
+    /// <summary>Gắn tượng 3D vào ô mặt.</summary>
+    [Parameter] public bool Live { get; set; }
+    [Parameter] public bool ShowBase { get; set; }
+
+    ElementReference faceEl;
+    string? shown;
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!Live) { shown = null; return; }
+        var key = $"{C.Id}|{C.UpdatedAt.UtcTicks}|{ClubLogo}";
+        if (key == shown) return;
+        shown = key;
+        try
+        {
+            await JS.InvokeVoidAsync("Coach3d.show", faceEl, new { face = CoachUi.FaceUrl(C), skin = C.Skin, hair = C.Hair, hc = C.HairColor, @out = C.Outfit, logo = ClubLogo, scarf = ClubLogo is not null });
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+}

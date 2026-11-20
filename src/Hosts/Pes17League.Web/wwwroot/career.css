@@ -867,3 +867,275 @@ html[data-cx-scroll] .cx *, html[data-cx-scroll] .cx *::before, html[data-cx-scr
   .cx-pick.club > .cx-chip { display: none; }   /* nhãn độ khó chuyển xuống dòng mục tiêu */
   .cx-pick.club small.goal .dif { display: inline; }
 }
+
+/* ================= Hồ sơ HLV career (PO 19/11: tạo HLV, việc làm, thương lượng, ký, họp báo, hòm thư HLV) ================= */
+.cx { --hrim: rgba(140, 175, 255, .24); }
+.cx .hlv-lead { margin: 0 0 14px; color: var(--muted); font-size: 14px; max-width: 60ch; }
+.cx .hlv-h { margin: 22px 2px 10px; font-size: 22px; }
+.cx .hlv-sub { display: flex; gap: 6px; overflow-x: auto; margin: 12px -16px 8px; padding: 2px 16px 8px; scrollbar-width: none; }
+.cx .hlv-sub button { flex: none; border: 1px solid var(--line); background: var(--glass); border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.cx .hlv-sub button b { color: var(--text); margin-right: 4px; }
+.cx .hlv-sub button.on { border-color: var(--gold); color: var(--gold); } .cx .hlv-sub button.on b { color: var(--gold); }
+.cx .hlv-sub button.done { border-color: rgba(54,227,255,.4); }
+.cx .hlv-sub button:disabled { opacity: .45; cursor: default; }
+.cx .hlv-panel { background: var(--glass-solid); border: 1px solid var(--hrim); border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.cx .hlv-field { display: block; margin-bottom: 12px; }
+.cx .hlv-field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+.cx .hlv-field input, .cx .hlv-field select, .cx .hlv-field textarea { width: 100%; box-sizing: border-box; background: rgba(0,0,0,.25); border: 1px solid var(--hrim); border-radius: 6px;
+  padding: 11px 12px; font: 16px "Be Vietnam Pro", sans-serif; color: var(--text); }
+.cx .hlv-field textarea { min-height: 96px; resize: vertical; }
+.cx .hlv-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cx .hlv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cx .hlv-chip { border: 1px solid var(--line); background: rgba(255,255,255,.04); border-radius: 999px; padding: 7px 13px; font-size: 14px; color: var(--text);
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cx .hlv-chip.on { border-color: var(--gold); background: rgba(255,201,74,.12); color: var(--gold); font-weight: 700; }
+.cx .hlv-chip:disabled { opacity: .4; cursor: default; }
+.cx .hlv-sw { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 2px rgba(255,255,255,.15); cursor: pointer; }
+.cx .hlv-sw.on { border-color: var(--gold); }
+.cx .hlv-opt { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; margin: 10px 0; }
+.cx .hlv-opt > span { font-size: 13px; color: var(--muted); }
+.cx .hlv-note { font-size: 12.5px; color: var(--muted); margin: 8px 2px 0; }
+.cx .cx-btn.sm { min-height: 40px; padding: 0 14px; font-size: 15px; gap: 6px; }
+.cx .cx-btn .ms { font-size: 20px; }
+.cx .cx-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
+.cx .cx-btn.red { background: rgba(255,77,106,.1); border-color: rgba(255,77,106,.5); color: #ffb3c0; }
+.cx .hlv-acts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.cx .hlv-acts .cx-btn { flex: 1; min-width: 140px; }
+.cx details.hlv-rule { border: 1px solid rgba(54,227,255,.25); border-radius: 8px; background: rgba(54,227,255,.04); margin: 14px 0; font-size: 13.5px; }
+.cx details.hlv-rule summary { cursor: pointer; padding: 10px 12px; color: var(--cyan); font-weight: 600; list-style: none; display: flex; gap: 8px; align-items: center; }
+.cx details.hlv-rule summary::-webkit-details-marker { display: none; }
+.cx details.hlv-rule[open] summary .ms { transform: rotate(180deg); }
+.cx details.hlv-rule > div { padding: 0 12px 12px; color: var(--muted); }
+.cx details.hlv-rule ul { margin: 0; padding-left: 18px; } .cx details.hlv-rule li { margin: 4px 0; } .cx details.hlv-rule b { color: var(--text); }
+
+/* khuôn mặt: khung căn ảnh + tượng 3D */
+.cx .hlv-facegrid { display: grid; gap: 12px; }
+@media (min-width: 600px) { .cx .hlv-facegrid { grid-template-columns: 1fr 1fr; } }
+.cx .cx-crop { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--hrim); background: #0d1630; touch-action: none; cursor: grab; }
+.cx .cx-crop canvas, .cx .cx-crop svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cx .cx-crop .scanl { position: absolute; left: 0; right: 0; height: 3px; top: 0; background: var(--cyan); box-shadow: 0 0 18px 4px rgba(54,227,255,.7); opacity: 0; }
+.cx .scanning .cx-crop .scanl { opacity: 1; animation: hlv-scan 1.1s ease-in-out infinite alternate; }
+@keyframes hlv-scan { from { top: 8%; } to { top: 90%; } }
+.cx .cx-crop .cnt { position: absolute; left: 10px; bottom: 10px; font-size: 12px; background: rgba(7,11,26,.8); border-radius: 6px; padding: 3px 8px; color: var(--cyan); opacity: 0; }
+.cx .scanning .cx-crop .cnt, .cx .done .cx-crop .cnt { opacity: 1; }
+.cx .hlv-tools { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.cx .hlv-tools input[type=range] { flex: 1; min-width: 120px; accent-color: var(--gold); }
+.cx .hlv-stage { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--hrim); touch-action: pan-y;
+  background: radial-gradient(70% 60% at 50% 35%, rgba(54,227,255,.18), transparent 70%), radial-gradient(60% 40% at 50% 100%, rgba(255,201,74,.16), transparent 70%), #0a1230; }
+.cx .hlv-stage canvas { display: block; width: 100% !important; height: 100% !important; }
+.cx .hlv-stage .hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 12px; color: var(--muted); pointer-events: none; }
+.cx .hlv-stage .ring { position: absolute; left: 18%; right: 18%; bottom: 6%; height: 12%; border-radius: 50%; border: 1px solid rgba(54,227,255,.35); box-shadow: 0 0 30px rgba(54,227,255,.25) inset; pointer-events: none; }
+.cx img.fb { position: absolute; left: 50%; top: 50%; width: 70%; aspect-ratio: 1; object-fit: cover; border-radius: 50%; transform: translate(-50%, -55%); }
+
+/* xuất thân */
+.cx .hlv-origin { position: relative; border: 1px solid var(--gold); background: var(--glass-solid); border-radius: 10px; padding: 14px; display: grid; grid-template-columns: 52px 1fr; gap: 4px 12px;
+  box-shadow: 0 0 0 1px var(--gold), 0 10px 30px rgba(255,159,28,.15); animation: hlv-pop .45s cubic-bezier(.2, 1.4, .4, 1); }
+.cx .hlv-origin > .ms { grid-row: span 2; width: 52px; height: 52px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, var(--gold), var(--gold-2)); color: #2a1700; font-size: 30px; }
+.cx .hlv-origin > b { font: 800 italic 26px/1.05 var(--f-display); text-transform: uppercase; }
+.cx .hlv-origin > p { margin: 0; font-size: 13.5px; color: var(--muted); grid-column: 2; }
+.cx .hlv-origin dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0 0; }
+.cx .hlv-origin dl div { background: rgba(255,255,255,.04); border-radius: 6px; padding: 6px 8px; }
+.cx .hlv-origin dt { font-size: 11.5px; color: var(--muted); } .cx .hlv-origin dd { margin: 0; font: 800 italic 22px/1.1 var(--f-display); }
+.cx .hlv-trait { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(176,77,255,.45); background: rgba(176,77,255,.08); }
+.cx .hlv-trait .ms { color: var(--violet); } .cx .hlv-trait b { display: block; } .cx .hlv-trait small { color: var(--muted); }
+.cx .hlv-others { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+.cx .hlv-others div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
+.cx .hlv-others div b { display: block; color: var(--text); font-size: 13.5px; }
+@keyframes hlv-pop { from { transform: scale(.94); opacity: 0; } }
+
+/* năng lực */
+.cx .hlv-pool { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 12px; }
+.cx .hlv-pool b { font: 900 italic 56px/1 var(--f-display); color: var(--gold); } .cx .hlv-pool b.zero { color: var(--emerald); }
+.cx .hlv-pool span { color: var(--muted); font-size: 13.5px; }
+.cx .hlv-sk { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 11px 0; border-top: 1px solid var(--line); }
+.cx .hlv-sk:first-child { border-top: 0; }
+.cx .hlv-sk h3 { margin: 0; font: 600 15px "Be Vietnam Pro", sans-serif; text-transform: none; display: flex; gap: 7px; align-items: center; }
+.cx .hlv-sk h3 .ms { font-size: 19px; color: var(--cyan); }
+.cx .hlv-sk p { margin: 0; font-size: 12.5px; color: var(--muted); grid-column: 1; }
+.cx .hlv-sk .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); display: flex; overflow: hidden; margin-top: 6px; }
+.cx .hlv-sk .bar i { background: rgba(54,227,255,.65); } .cx .hlv-sk .bar u { background: linear-gradient(90deg, var(--gold), var(--gold-2)); transition: width .25s; }
+.cx .hlv-stp { grid-row: 1 / 3; grid-column: 2; display: flex; align-items: center; gap: 6px; }
+.cx .hlv-stp button { width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--hrim); background: rgba(255,255,255,.05); color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; }
+.cx .hlv-stp button:disabled { opacity: .3; cursor: default; }
+.cx .hlv-stp output { min-width: 30px; text-align: center; font: 800 italic 26px var(--f-display); }
+
+/* thẻ HLV (bậc theo danh tiếng: đồng/bạc/vàng/huyền thoại) */
+.cx .hlv-cardwrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.cx .hlv-card { --t1: #E3A06A; --t2: #8A4E2B; position: relative; width: min(330px, 100%); padding: 3px; border-radius: 24px 24px 30px 30px; box-sizing: border-box;
+  background: linear-gradient(160deg, var(--t1), var(--t2) 55%, var(--t1)); box-shadow: 0 18px 50px rgba(0,0,0,.5), 0 0 40px color-mix(in srgb, var(--t1) 30%, transparent);
+  animation: hlv-card-in .8s cubic-bezier(.2, .9, .2, 1.1); }
+.cx .hlv-card[data-t=silver] { --t1: #EEF3FB; --t2: #7F8AA3; } .cx .hlv-card[data-t=gold] { --t1: #FFC94A; --t2: #FF9F1C; } .cx .hlv-card[data-t=legend] { --t1: #B04DFF; --t2: #36E3FF; }
+@keyframes hlv-card-in { from { opacity: 0; transform: perspective(800px) rotateY(-35deg) translateY(20px); } }
+.cx .hlv-card > .in { position: relative; overflow: hidden; border-radius: 21px 21px 27px 27px; padding: 14px 14px 10px;
+  background: radial-gradient(90% 55% at 70% 18%, color-mix(in srgb, var(--t1) 28%, transparent), transparent 70%), linear-gradient(170deg, #121d48, #080e24 70%); }
+.cx .hlv-card > .in::after { content: ""; position: absolute; inset: -40%; pointer-events: none; background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.16) 48%, transparent 56%); animation: hlv-holo 4.5s ease-in-out infinite; }
+.cx .hlv-card[data-t=legend] > .in::after { background: linear-gradient(115deg, transparent 35%, rgba(176,77,255,.25) 44%, rgba(54,227,255,.3) 50%, rgba(255,255,255,.2) 53%, transparent 62%); }
+@keyframes hlv-holo { 0%, 40% { transform: translateX(-30%); } 100% { transform: translateX(30%); } }
+.cx .hlv-card .hd { display: grid; grid-template-columns: 86px 1fr; gap: 6px; min-height: 178px; }
+.cx .hlv-card .rep { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-top: 4px; }
+.cx .hlv-card .rep b { font: 900 italic 58px/.9 var(--f-display); color: var(--t1); }
+.cx .hlv-card .rep small { font-size: 11px; color: var(--muted); margin-top: -2px; }
+.cx .hlv-card .lic { font: 800 italic 15px var(--f-display); text-transform: uppercase; border: 1px solid var(--t1); color: var(--t1); border-radius: 6px; padding: 2px 8px; margin-top: 6px; }
+.cx .hlv-card .tierl { font-size: 12px; opacity: .85; }
+.cx .hlv-card .face { position: relative; width: 100%; min-width: 0; height: 178px; border-radius: 12px; overflow: hidden; }
+.cx .hlv-card .face canvas { width: 100% !important; height: 100% !important; }
+.cx .hlv-card .face img.flat { position: absolute; left: 50%; bottom: 0; height: 100%; transform: translateX(-50%); -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
+.cx .hlv-card .nm { position: relative; z-index: 1; text-align: center; border-top: 1px solid color-mix(in srgb, var(--t1) 45%, transparent); margin-top: 6px; padding-top: 8px; }
+.cx .hlv-card .nm b { display: block; font: 900 italic 30px/1 var(--f-display); text-transform: uppercase; overflow-wrap: anywhere; }
+.cx .hlv-card .nm small { color: var(--muted); font-size: 12.5px; }
+.cx .hlv-card .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; margin: 8px 0 2px; }
+.cx .hlv-card .tags span { font-size: 11.5px; border-radius: 999px; padding: 2px 9px; background: rgba(255,255,255,.07); }
+.cx .hlv-radar { display: block; width: 100%; height: auto; margin-top: 4px; }
+.cx .hlv-radar text { font: 600 10.5px "Be Vietnam Pro", sans-serif; fill: var(--muted); }
+.cx .hlv-radar text.v { font: 800 italic 13px var(--f-display); fill: var(--text); }
+.cx .hlv-seg { display: inline-flex; border: 1px solid var(--hrim); border-radius: 8px; overflow: hidden; }
+.cx .hlv-seg button { border: 0; background: transparent; padding: 7px 14px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.cx .hlv-seg button.on { background: rgba(54,227,255,.15); color: var(--cyan); font-weight: 700; }
+
+/* dải HLV (trang chủ career, chọn CLB) */
+.cx .hlv-bar { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--glass-solid); border: 1px solid var(--hrim); margin-bottom: 12px; }
+.cx .hlv-bar img, .cx .hlv-bar .av { width: 40px; height: 40px; flex: none; border-radius: 50%; object-fit: cover; background: #1a2550; display: grid; place-items: center; color: var(--muted); }
+.cx .hlv-bar > div { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); } .cx .hlv-bar > div b { display: block; color: var(--text); font-size: 15px; }
+.cx .hlv-bar .cx-chip { flex: none; }
+
+/* CLB trên thị trường việc làm */
+.cx .hlv-tierhd { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 18px 2px 8px; }
+.cx .hlv-tierhd b { font: 800 italic 24px var(--f-display); text-transform: uppercase; } .cx .hlv-tierhd small { font-size: 12.5px; color: var(--muted); text-align: right; }
+.cx .hlv-tierhd.open small { color: var(--emerald); }
+.cx .hlv-club { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; width: 100%; text-align: left; color: var(--text); border: 1px solid var(--line);
+  background: var(--glass-solid); border-radius: 8px; padding: 9px 11px; margin-bottom: 7px; cursor: pointer; font: inherit; }
+.cx .hlv-club > div b { display: block; font-size: 15px; } .cx .hlv-club > div small { display: block; font-size: 12.5px; color: var(--muted); }
+.cx .hlv-club .r { text-align: right; font-size: 12px; color: var(--muted); } .cx .hlv-club .r b { display: block; font: 800 italic 20px var(--f-display); color: var(--text); }
+.cx .hlv-club.lock { opacity: .55; cursor: not-allowed; } .cx .hlv-club .why { color: var(--crimson) !important; }
+.cx .hlv-club.lock .r .ms { color: var(--crimson); font-size: 22px; }
+.cx .hlv-club.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); background: linear-gradient(100deg, rgba(255,201,74,.12), var(--glass-solid) 60%); }
+
+/* thương lượng với chủ tịch */
+.cx .hlv-chair { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: start; }
+.cx .hlv-chair .av { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 50% 35%, #3a4a8c, #141c44); border: 2px solid var(--gold); }
+.cx .hlv-chair .av .ms { font-size: 38px; color: #e6d9c4; }
+.cx .hlv-bubble { position: relative; background: var(--glass-2); border: 1px solid var(--hrim); border-radius: 4px 14px 14px 14px; padding: 10px 12px; font-size: 14.5px; margin-top: 4px; animation: hlv-pop .35s; }
+.cx .hlv-pips { display: flex; gap: 5px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.cx .hlv-pips i { width: 22px; height: 6px; border-radius: 3px; background: var(--emerald); } .cx .hlv-pips i.x { background: rgba(255,255,255,.12); }
+.cx .hlv-term { padding: 12px 0; border-top: 1px solid var(--line); }
+.cx .hlv-term:first-child { border-top: 0; padding-top: 0; }
+.cx .hlv-term header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cx .hlv-term header span { font-size: 13.5px; color: var(--muted); } .cx .hlv-term header b { font: 800 italic 24px var(--f-display); }
+.cx .hlv-term input[type=range] { width: 100%; accent-color: var(--gold); margin-top: 6px; }
+.cx .hlv-term .hlv-chips { margin-top: 8px; }
+.cx .hlv-term > small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+.cx .hlv-meter { position: relative; height: 10px; border-radius: 5px; margin: 10px 0 4px; opacity: .85; }
+.cx .hlv-meter i { position: absolute; top: -5px; width: 4px; height: 20px; border-radius: 2px; background: #fff; box-shadow: 0 0 8px #fff; transition: left .25s; }
+.cx .hlv-log { font-size: 13.5px; color: var(--muted); margin: 8px 0 0; padding: 0; list-style: none; }
+.cx .hlv-log li { padding: 4px 0; } .cx .hlv-log li.c { color: var(--text); } .cx .hlv-log li.c::before { content: "Chủ tịch: "; color: var(--gold); }
+
+/* ký hợp đồng */
+.cx .hlv-doc { position: relative; overflow: hidden; background: linear-gradient(170deg, rgba(22,34,80,.95), rgba(10,16,40,.97)); border: 1px solid rgba(255,201,74,.45); border-radius: 10px;
+  padding: 18px 16px; box-shadow: 0 0 0 4px rgba(255,201,74,.06), 0 20px 50px rgba(0,0,0,.45); }
+.cx .hlv-doc h2 { margin: 0; text-align: center; font-size: 28px; color: var(--gold); }
+.cx .hlv-doc .parties { text-align: center; color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+.cx .hlv-doc dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+.cx .hlv-doc dt { color: var(--muted); } .cx .hlv-doc dd { margin: 0; text-align: right; font-weight: 600; }
+.cx .hlv-sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.cx .hlv-sigs figure { margin: 0; } .cx .hlv-sigs figcaption { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; }
+.cx .hlv-sigs svg, .cx .hlv-sigs canvas { display: block; width: 100%; height: 80px; }
+.cx .hlv-sigs svg path { fill: none; stroke: #dee1f7; stroke-width: 2; stroke-linecap: round; }
+.cx .hlv-sigs canvas { background: rgba(255,255,255,.04); border-radius: 6px; touch-action: none; cursor: crosshair; }
+.cx .hlv-stamp { position: absolute; right: 22px; bottom: 92px; transform: rotate(-14deg) scale(2.4); opacity: 0; border: 3px solid var(--crimson); color: var(--crimson); border-radius: 8px;
+  padding: 4px 12px; font: 900 italic 30px var(--f-display); text-transform: uppercase; pointer-events: none; }
+.cx .hlv-stamp.on { animation: hlv-stamp .45s cubic-bezier(.3, 1.6, .5, 1) forwards; }
+@keyframes hlv-stamp { to { opacity: .9; transform: rotate(-14deg) scale(1); } }
+
+/* họp báo ra mắt */
+.cx .hlv-press { position: relative; aspect-ratio: 4 / 5; max-height: 62vh; margin: 0 auto; border-radius: 10px; overflow: hidden; border: 1px solid var(--hrim); background: #0b1335; }
+.cx .hlv-press .wall { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(5, 1fr); align-content: start; gap: 18px 10px; padding: 14px; opacity: .22; }
+.cx .hlv-press .wall img { width: 44px; height: 44px; object-fit: contain; justify-self: center; }
+.cx .hlv-press .shade { position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 40%, transparent, rgba(5,8,22,.75)), linear-gradient(transparent 55%, rgba(5,8,22,.6)); }
+.cx .hlv-press .host { position: absolute; left: 0; right: 0; top: 4%; height: 82%; }
+.cx .hlv-press .host canvas { width: 100% !important; height: 100% !important; }
+.cx .hlv-press .podium { position: absolute; left: 14%; right: 14%; bottom: 0; height: 24%; border-radius: 8px 8px 0 0; background: linear-gradient(#18245e, #0b1238); border-top: 2px solid var(--gold); display: grid; place-items: center; }
+.cx .hlv-press .mic { position: absolute; bottom: 23%; width: 6px; height: 34px; background: #222b45; border-radius: 3px; }
+.cx .hlv-press .mic::before { content: ""; position: absolute; left: -5px; top: -14px; width: 16px; height: 20px; border-radius: 8px; background: #3a425c; box-shadow: inset 0 2px 0 rgba(255,255,255,.2); }
+.cx .hlv-press .mic.m1 { left: 40%; transform: rotate(-12deg); } .cx .hlv-press .mic.m2 { left: 49%; } .cx .hlv-press .mic.m3 { left: 58%; transform: rotate(12deg); }
+.cx .hlv-press .fl { position: absolute; width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(#fff, rgba(255,255,255,0) 60%); opacity: 0; pointer-events: none; }
+.cx .hlv-press .fl.go { animation: hlv-flash .5s ease-out; }
+@keyframes hlv-flash { 15% { opacity: 1; } 100% { opacity: 0; } }
+.cx .hlv-q { margin-top: 12px; }
+.cx .hlv-q .who { font-size: 12.5px; color: var(--cyan); }
+.cx .hlv-q h3 { margin: 2px 0 10px; font: 600 17px "Be Vietnam Pro", sans-serif; text-transform: none; }
+.cx .hlv-ans { display: block; width: 100%; text-align: left; color: var(--text); font: inherit; border: 1px solid var(--hrim); background: var(--glass-solid); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+.cx .hlv-ans small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.cx .hlv-ans:disabled { opacity: .4; cursor: default; } .cx .hlv-ans.pick { opacity: 1; border-color: var(--gold); background: rgba(255,201,74,.1); }
+.cx .hlv-tally { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.cx .hlv-tally div { background: var(--glass-solid); border: 1px solid var(--hrim); border-radius: 8px; padding: 8px 10px; }
+.cx .hlv-tally span { display: block; font-size: 11.5px; color: var(--muted); } .cx .hlv-tally b { font: 900 italic 30px var(--f-display); }
+.cx .hlv-album { display: flex; gap: 12px; flex-wrap: wrap; }
+.cx .hlv-pol { background: #f4f1ea; padding: 6px 6px 22px; border-radius: 3px; transform: rotate(-3deg); box-shadow: 0 10px 24px rgba(0,0,0,.45); animation: hlv-pop .5s; color: #333; font-size: 11px; text-align: center; }
+.cx .hlv-pol:nth-child(2n) { transform: rotate(2.5deg); }
+.cx .hlv-pol img { display: block; width: 150px; height: auto; margin-bottom: 4px; }
+
+/* hồ sơ */
+.cx .hlv-dl { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; margin: 0; font-size: 14px; }
+.cx .hlv-dl dt { color: var(--muted); } .cx .hlv-dl dd { margin: 0; text-align: right; font-weight: 600; }
+.cx .hlv-big { font: 900 italic 44px/1 var(--f-display); }
+.cx .hlv-repbar { position: relative; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #8A4E2B 0 25%, #7F8AA3 25% 50%, #FF9F1C 50% 75%, #B04DFF 75%); margin: 12px 0 24px; }
+.cx .hlv-repbar i { position: absolute; top: -6px; width: 6px; height: 24px; border-radius: 3px; background: #fff; box-shadow: 0 0 10px #fff; }
+.cx .hlv-repbar span { position: absolute; top: 16px; font-size: 11px; color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.cx .hlv-lic { display: flex; gap: 6px; margin: 6px 0 10px; }
+.cx .hlv-lic span { flex: 1; text-align: center; padding: 6px 0; border-radius: 6px; border: 1px solid var(--line); font: 800 italic 18px var(--f-display); color: var(--muted); }
+.cx .hlv-lic span.have { border-color: var(--cyan); color: var(--cyan); background: rgba(54,227,255,.08); }
+.cx .hlv-lic span.cur { border-color: var(--gold); color: var(--gold); background: rgba(255,201,74,.1); }
+.cx .hlv-meterbar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; margin: 6px 0; }
+.cx .hlv-meterbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--emerald), var(--gold) 60%, var(--crimson)); background-size: 300px 100%; }
+.cx .hlv-list { list-style: none; margin: 0; padding: 0; }
+.cx .hlv-list li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.cx .hlv-list li:first-child { border-top: 0; }
+.cx .hlv-list li > .ms { color: var(--cyan); } .cx .hlv-list li > span { flex: 1; min-width: 0; } .cx .hlv-list li small { display: block; color: var(--muted); font-size: 12px; }
+.cx .hlv-list li b.amt { font: 800 italic 18px var(--f-display); white-space: nowrap; }
+
+/* hòm thư HLV */
+.cx .hlv-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 6px; scrollbar-width: none; }
+.cx .hlv-tabs button { flex: none; position: relative; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); color: var(--muted);
+  font: 700 13px var(--f-display); text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
+.cx .hlv-tabs button.on { color: var(--n0); background: linear-gradient(90deg, var(--gold), var(--gold-2)); border-color: transparent; }
+.cx .hlv-tabs button em { margin-left: 6px; font-style: normal; color: var(--crimson); } .cx .hlv-tabs button.on em { color: var(--n0); }
+.cx .hlv-mail { display: block; width: 100%; text-align: left; color: var(--text); font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass-solid);
+  margin-bottom: 7px; cursor: pointer; }
+.cx .hlv-mail .top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.cx .hlv-mail .top .ms { font-size: 18px; color: var(--cyan); } .cx .hlv-mail .top span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx .hlv-mail > b { display: block; margin-top: 4px; font-size: 15px; font-weight: 600; }
+.cx .hlv-mail.unread { border-color: rgba(54,227,255,.5); } .cx .hlv-mail.unread > b { font-weight: 800; }
+.cx .hlv-mail.unread .top::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.cx .hlv-mail.decide { border-color: rgba(255,201,74,.55); } .cx .hlv-mail.decide .top .ms { color: var(--gold); }
+.cx .hlv-mail.open { border-color: var(--gold); }
+.cx .hlv-letter { margin: -4px 0 10px; padding: 14px; border: 1px solid var(--hrim); border-top: 0; border-radius: 0 0 8px 8px; background: rgba(16,28,68,.6); }
+.cx .hlv-letter .body { white-space: pre-line; font-size: 14.5px; line-height: 1.6; }
+.cx .hlv-letter .from { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+.cx .hlv-opts { display: grid; gap: 8px; margin-top: 12px; }
+.cx .hlv-opts button { text-align: left; color: var(--text); font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,201,74,.45); background: rgba(255,201,74,.06); cursor: pointer; }
+.cx .hlv-opts button small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.cx .hlv-opts button.chosen { border-color: var(--emerald); background: rgba(61,255,162,.08); }
+.cx .hlv-opts button:disabled { cursor: default; } .cx .hlv-opts button:disabled:not(.chosen) { opacity: .45; }
+.cx .hlv-letter .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.cx .hlv-letter .meta .cx-btn { margin-left: auto; }
+.cx .hlv-empty { text-align: center; padding: 40px 16px; color: var(--muted); }
+.cx .hlv-empty .ms { font-size: 44px; color: rgba(54,227,255,.5); display: block; margin-bottom: 8px; }
+.cx .hlv-compose .hlv-chips { margin-bottom: 12px; }
+.cx .hlv-req { display: grid; gap: 7px; margin-bottom: 12px; }
+.cx .hlv-req button { display: grid; grid-template-columns: 32px 1fr; gap: 2px 10px; align-items: center; text-align: left; color: var(--text); font: inherit; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 8px; background: rgba(255,255,255,.03); cursor: pointer; }
+.cx .hlv-req button .ms { grid-row: span 2; color: var(--cyan); }
+.cx .hlv-req button small { color: var(--muted); font-size: 12px; }
+.cx .hlv-req button.on { border-color: var(--gold); background: rgba(255,201,74,.08); } .cx .hlv-req button.on .ms { color: var(--gold); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cx .hlv-card, .cx .hlv-card > .in::after, .cx .hlv-origin, .cx .hlv-bubble, .cx .hlv-pol, .cx .hlv-stamp.on, .cx .scanning .cx-crop .scanl { animation: none !important; }
+  .cx .hlv-stamp.on { opacity: .9; transform: rotate(-14deg) scale(1); }
+}
+.cx [class*=hlv-] .cx-btn, .cx .cx-btn.sm { gap: 6px; }
+.cx .hlv-ov { place-items: start center; overflow-y: auto; overscroll-behavior: contain; }
+.cx .hlv-ov > .box { width: min(560px, 100%); margin: auto 0; padding: 8px 0 24px; }
+.cx .hlv-ov .x { position: sticky; top: 0; float: right; z-index: 2; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--glass-solid); color: var(--text); cursor: pointer; }
+.cx .hlv-wait { display: grid; place-items: center; gap: 10px; padding: 30px 10px; text-align: center; color: var(--muted); }
+.cx .hlv-club > :first-child { width: 44px; height: 44px; max-width: 44px; object-fit: contain; overflow: hidden; }
+.cx .hlv-club > :first-child img { max-width: 100%; max-height: 100%; object-fit: contain; }

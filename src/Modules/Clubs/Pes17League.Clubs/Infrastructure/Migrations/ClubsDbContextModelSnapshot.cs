@@ -361,6 +361,496 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.ToTable("ClubTrainings", "clubs");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.Coach", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Age")
+                        .HasColumnType("integer");
+
+                    b.Property<int[]>("BaseSkills")
+                        .IsRequired()
+                        .HasColumnType("integer[]");
+
+                    b.Property<int>("CourseLicense")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CourseRoundsLeft")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Draws")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Face")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("FaceMesh")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Formation")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int>("FreePoints")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Hair")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("HairColor")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)");
+
+                    b.Property<int>("License")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Lifestyle")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ManagerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Nationality")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Nickname")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Outfit")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("Reputation")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Seed")
+                        .HasColumnType("integer");
+
+                    b.Property<int[]>("Skills")
+                        .IsRequired()
+                        .HasColumnType("integer[]");
+
+                    b.Property<string>("Skin")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("Stress")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Style")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Trait")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("WarnedTick")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Xp")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManagerId")
+                        .IsUnique();
+
+                    b.ToTable("Coaches", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachApplication", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("BaseWage")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Bonus")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Invited")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Log")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Patience")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Seasons")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SeverancePct")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Wage")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachId", "SeasonId", "ClubId");
+
+                    b.ToTable("CoachApplications", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int?>("MaturesTick")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Price")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("ReturnPermille")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachId");
+
+                    b.ToTable("CoachAssets", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachContract", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Bonus")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("EndSeasonNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EndedTick")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ExpectedPosition")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Launched")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Objective")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<bool>("RenewAgreed")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("RoundsPaid")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Seasons")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SeverancePct")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("SignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("SignedTick")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TotalRounds")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Wage")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachId", "Status");
+
+                    b.ToTable("CoachContracts", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachDrill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Applied")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId", "Applied");
+
+                    b.ToTable("CoachDrills", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachLedgerEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachId");
+
+                    b.ToTable("CoachLedger", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachLetter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("AnsweredTick")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int?>("Chosen")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Data")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<int?>("DeadlineTick")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DefaultOption")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("From")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Key")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Link")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Options")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("Outgoing")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Read")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("ReplyToId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Sender")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachId", "Tick");
+
+                    b.ToTable("CoachLetters", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.CoachPhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Caption")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<Guid>("CoachId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Image")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<int>("Tick")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachId");
+
+                    b.ToTable("CoachPhotos", "clubs");
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.Competition", b =>
                 {
                     b.Property<Guid>("Id")

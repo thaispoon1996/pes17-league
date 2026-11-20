@@ -378,6 +378,24 @@
       I.crowd(sfxBus, t + .6, 3.2, .2);
     },
     fly() { const t = ctx.currentTime; I.whoosh(sfxBus, t, .05); I.bell(sfxBus, t + .5, 84, .04); I.bell(sfxBus, t + .58, 91, .035); },
+    scan() {     // quét mặt HLV: tia quét lên xuống + lách tách điểm mốc
+      const t = ctx.currentTime;
+      for (let k = 0; k < 3; k++) { const o = osc('sawtooth', 220, t + k * .75, t + k * .75 + .7), lp = filt('lowpass', 1400), g = ctx.createGain();
+        o.frequency.exponentialRampToValueAtTime(k % 2 ? 330 : 660, t + k * .75 + .7);
+        g.gain.setValueAtTime(.0001, t + k * .75); g.gain.exponentialRampToValueAtTime(.035, t + k * .75 + .2); g.gain.exponentialRampToValueAtTime(.0001, t + k * .75 + .7);
+        o.connect(lp); lp.connect(g); g.connect(sfxBus); }
+      for (let k = 0; k < 14; k++) I.bell(sfxBus, t + .1 + k * .15, 96 + (k % 3) * 2, .012);
+    },
+    stamp() {    // đóng dấu hợp đồng
+      const t = ctx.currentTime;
+      I.kick(sfxBus, t, .9); const n = noise(t, t + .25), lp = filt('lowpass', 700), g = ctx.createGain();
+      g.gain.setValueAtTime(.3, t); g.gain.exponentialRampToValueAtTime(.001, t + .2); n.connect(lp); lp.connect(g); g.connect(sfxBus);
+    },
+    flash() {    // màn trập máy ảnh họp báo
+      const t = ctx.currentTime;
+      for (const s of [0, .16, .32]) { const n = noise(t + s, t + s + .05), hp = filt('highpass', 2500), g = ctx.createGain();
+        g.gain.setValueAtTime(.18, t + s); g.gain.exponentialRampToValueAtTime(.001, t + s + .045); n.connect(hp); hp.connect(g); g.connect(sfxBus); }
+    },
   };
   const fire = (name, ...a) => { if (!ctx || !st.sfx) return; if (ctx.state === 'suspended') ctx.resume(); try { sfx[name](...a); } catch { } };
 

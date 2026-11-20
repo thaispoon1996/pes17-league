@@ -47,6 +47,8 @@ public sealed class TrainingService(ClubsDbContext db, TimeProvider clock, Price
         var current = await new EconomyService(db, clock, priceOptions).CurrentAttributesAsync(seasonId, ids, ct);
 
         var staff = await BoardService.LevelsAsync(db, ct);   // FM đợt 7: HLV tập luyện
+        var coaches = await CoachHooks.ByClubAsync(db, ct);   // HLV career: Huấn luyện, Phát triển trẻ, bài tập riêng
+        var drills = coaches.Count == 0 ? [] : await db.CoachDrills.Where(d => !d.Applied).ToListAsync(ct);
         var at = clock.GetUtcNow();
         var changed = new HashSet<Guid>();
         foreach (var s in squad)
@@ -69,13 +71,29 @@ public sealed class TrainingService(ClubsDbContext db, TimeProvider clock, Price
             }
 
             static int Growth(int n, int coach) => n > 0 ? n + StaffRules.CoachGrowthBonus(coach) : 0;
+            var growth = Growth(TrainingRules.GrowthFields(age, plan.Intensity), staff.GetValueOrDefault((s.ClubId, StaffRole.Coach), 1));
+            if (growth > 0 && coaches.TryGetValue(s.ClubId, out var hlv)) growth = Math.Max(0, growth + CoachExtra(hlv, s.Id, session, age));
             if (_model.Overall(s.Position, now) < potential)
-                foreach (var f in TrainingRules.Pick(fields, Growth(TrainingRules.GrowthFields(age, plan.Intensity), staff.GetValueOrDefault((s.ClubId, StaffRole.Coach), 1)), s.Id, session)) Move(f, +1);
+                foreach (var f in TrainingRules.Pick(fields, growth, s.Id, session)) Move(f, +1);
+            foreach (var d in drills.Where(d => d.PlayerId == s.Id))
+            {
+                if (d.ClubId == s.ClubId) foreach (var f in TrainingRules.Pick(fields, 1, s.Id, session * 7 + 999)) Move(f, +1);
+                d.Applied = true;
+            }
             foreach (var f in TrainingRules.Pick(TrainingRules.PhysicalFields, TrainingRules.DeclineFields(age, plan.Focus, plan.Intensity), s.Id, session)) Move(f, -1);
         }
         await db.SaveChangesAsync(ct);
         if (changed.Count > 0) await new EconomyService(db, clock, priceOptions).RecalculatePricesAsync(seasonId, ct, changed);
         return changed.Count;
+    }
+
+    /// <summary>HLV career: thêm/bớt 1 chỉ số theo Huấn luyện (mọi cầu thủ đang lên) và Phát triển trẻ (≤ 21 tuổi), tất định theo buổi tập.</summary>
+    internal static int CoachExtra(Coach c, Guid playerId, int session, int age)
+    {
+        static int Chance(int permille, int roll) => permille > 0 && roll < permille ? 1 : permille < 0 && roll < -permille ? -1 : 0;
+        var extra = Chance(CoachRules.TrainingExtraPermille(CoachRules.Effective(c, CoachSkill.Training)), CoachRules.Roll(playerId, session * 3 + 1));
+        if (age <= CoachRules.YouthAge) extra += Chance(CoachRules.YouthExtraPermille(CoachRules.Effective(c, CoachSkill.Youth)), CoachRules.Roll(playerId, session * 3 + 2));
+        return extra;
     }
 
     /// <summary>Bảng tập luyện của CLB: tuổi, chỉ số tổng hiện tại, tiềm năng (sao), tổng đổi chỉ số mùa này (trận + tập).</summary>

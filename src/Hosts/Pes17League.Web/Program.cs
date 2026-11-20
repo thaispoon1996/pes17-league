@@ -203,6 +203,23 @@ app.MapGet(LiveStore.RequestPath + "/{file}", (string file, LiveStore l, HttpCon
     ctx.Response.Headers.CacheControl = playlist ? "no-store" : "no-cache";
     return Results.File(path, playlist ? "application/vnd.apple.mpegurl" : "video/mp2t");
 });
+// Ảnh HLV career (PO 19/11): mặt đã căn + ảnh lưu niệm — chỉ chủ hồ sơ (admin xem mọi hồ sơ)
+static Guid? CoachViewer(HttpContext ctx) => CurrentUser.IsAdmin(ctx.User) ? null
+    : Guid.TryParse(ctx.User.FindFirstValue(CurrentUser.ManagerClaim), out var g) ? g : Guid.Empty;
+app.MapGet("/hlv/anh/mat/{id:guid}", async (Guid id, HttpContext ctx, IDbContextFactory<ClubsDbContext> dbs) =>
+{
+    await using var db = await dbs.CreateDbContextAsync();
+    var img = await new CoachService(db, TimeProvider.System).FaceAsync(CoachViewer(ctx), id);
+    ctx.Response.Headers.CacheControl = "private, max-age=86400";
+    return img is null ? Results.NotFound() : Results.Bytes(img, "image/jpeg");
+});
+app.MapGet("/hlv/anh/{id:guid}", async (Guid id, HttpContext ctx, IDbContextFactory<ClubsDbContext> dbs) =>
+{
+    await using var db = await dbs.CreateDbContextAsync();
+    var img = await new CoachService(db, TimeProvider.System).PhotoAsync(CoachViewer(ctx), id);
+    ctx.Response.Headers.CacheControl = "private, max-age=604800";
+    return img is null ? Results.NotFound() : Results.Bytes(img, "image/jpeg");
+});
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 // Đường dẫn không tồn tại (UI 18/11): trang 404 tiếng Việt thay vì trang trắng của trình duyệt
 app.MapFallback(() => Results.Content(NotFoundHtml, "text/html; charset=utf-8", statusCode: 404));

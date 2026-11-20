@@ -393,6 +393,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
         if (next is not null && pes17) await SyncPes17WindowAsync(md.SeasonId, next.Number, ct);
         else if (pes17) await SyncPes17WindowAsync(md.SeasonId, int.MaxValue, ct);   // hết mùa → đóng chợ
         if (next is null) (await db.Seasons.FindAsync([md.SeasonId], ct))!.Status = SeasonStatus.Finished;
+        await new CoachRoundService(db, clock, store).ApplyRoundAsync(md, next is null, ct);   // HLV career (PO 19/11); giải online không có hồ sơ HLV → bỏ qua
         await db.SaveChangesAsync(ct);
         return (settlement, next is null);
     }

@@ -100,6 +100,11 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
         if (await db.PressConferences.AnyAsync(p => p.FixtureId == fixtureId && p.ClubId == clubId, ct)) return "Đã họp báo trận này.";
         var diff = (f.HomeGoals.Value - f.AwayGoals.Value) * (f.HomeClubId == clubId ? 1 : -1);
         var (morale, fans) = MediaRules.Press(tone, diff);
+        if (await CoachHooks.ForClubAsync(db, clubId, ct) is { } hlv)   // HLV career: Con người (tinh thần), Truyền thông (CĐV)
+        {
+            if (morale > 0) morale = (int)Math.Round(morale * CoachRules.PeopleFactor(CoachRules.Effective(hlv, CoachSkill.People)), MidpointRounding.AwayFromZero);
+            if (fans > 0) fans = (int)Math.Round(fans * CoachRules.MediaFactor(CoachRules.Effective(hlv, CoachSkill.Media), hlv.Trait), MidpointRounding.AwayFromZero);
+        }
         var ids = await db.SquadMemberships.Where(m => m.ClubId == clubId && m.LeftAt == null).Select(m => m.PlayerId).ToListAsync(ct);
         var cond = await db.PlayerConditions.Where(c => ids.Contains(c.PlayerId)).ToDictionaryAsync(c => c.PlayerId, ct);
         var now = clock.GetUtcNow();
@@ -127,6 +132,8 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
         var c = await db.PlayerConditions.FindAsync([playerId], ct);
         if (c is null) db.PlayerConditions.Add(c = new PlayerCondition { PlayerId = playerId });
         var delta = MediaRules.Talk(kind, rating, c.Morale);
+        if (delta > 0 && await CoachHooks.ForClubAsync(db, clubId, ct) is { } hlv)   // HLV career: Con người
+            delta = (int)Math.Round(delta * CoachRules.PeopleFactor(CoachRules.Effective(hlv, CoachSkill.People)), MidpointRounding.AwayFromZero);
         c.Morale = Math.Clamp(c.Morale + delta, 0, 100);
         c.UpdatedAt = clock.GetUtcNow();
         db.PlayerTalks.Add(new PlayerTalk { PlayerId = playerId, ClubId = clubId, RoundKey = key, Kind = kind, MoraleDelta = delta, At = c.UpdatedAt });

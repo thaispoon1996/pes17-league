@@ -68,6 +68,14 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
     public DbSet<EditionClub> EditionClubs => Set<EditionClub>();
     public DbSet<AdminAuditEntry> AdminAudit => Set<AdminAuditEntry>();
     public DbSet<Sanction> Sanctions => Set<Sanction>();
+    public DbSet<Coach> Coaches => Set<Coach>();
+    public DbSet<CoachContract> CoachContracts => Set<CoachContract>();
+    public DbSet<CoachApplication> CoachApplications => Set<CoachApplication>();
+    public DbSet<CoachLedgerEntry> CoachLedger => Set<CoachLedgerEntry>();
+    public DbSet<CoachLetter> CoachLetters => Set<CoachLetter>();
+    public DbSet<CoachPhoto> CoachPhotos => Set<CoachPhoto>();
+    public DbSet<CoachAsset> CoachAssets => Set<CoachAsset>();
+    public DbSet<CoachDrill> CoachDrills => Set<CoachDrill>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -172,6 +180,65 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
             e.HasIndex(x => new { x.FixtureId, x.ClubId }).IsUnique();
             e.Property(x => x.Tone).HasConversion<string>().HasMaxLength(20);
         });
+        // HLV career (PO 19/11): hồ sơ, hợp đồng, ứng tuyển, ví, hòm thư riêng, ảnh, tài sản, bài tập riêng.
+        b.Entity<Coach>(e =>
+        {
+            e.HasIndex(x => x.ManagerId).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(60);
+            e.Property(x => x.Nickname).HasMaxLength(40);
+            e.Property(x => x.Nationality).HasMaxLength(40);
+            e.Property(x => x.Formation).HasMaxLength(10);
+            e.Property(x => x.Style).HasMaxLength(40);
+            e.Property(x => x.Hair).HasMaxLength(20);
+            e.Property(x => x.HairColor).HasMaxLength(9);
+            e.Property(x => x.Outfit).HasMaxLength(20);
+            e.Property(x => x.Skin).HasMaxLength(9);
+            e.Property(x => x.Origin).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Trait).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+        });
+        b.Entity<CoachContract>(e =>
+        {
+            e.HasIndex(x => new { x.CoachId, x.Status });
+            e.Property(x => x.Objective).HasMaxLength(60);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+        });
+        b.Entity<CoachApplication>(e =>
+        {
+            e.HasIndex(x => new { x.CoachId, x.SeasonId, x.ClubId });
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+        });
+        b.Entity<CoachLedgerEntry>(e =>
+        {
+            e.HasIndex(x => x.CoachId);
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Note).HasMaxLength(200);
+        });
+        b.Entity<CoachLetter>(e =>
+        {
+            e.HasIndex(x => new { x.CoachId, x.Tick });
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.From).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Sender).HasMaxLength(120);
+            e.Property(x => x.Subject).HasMaxLength(160);
+            e.Property(x => x.Body).HasMaxLength(4000);
+            e.Property(x => x.Key).HasMaxLength(40);
+            e.Property(x => x.Options).HasMaxLength(1000);
+            e.Property(x => x.Data).HasMaxLength(400);
+            e.Property(x => x.Link).HasMaxLength(200);
+        });
+        b.Entity<CoachPhoto>(e =>
+        {
+            e.HasIndex(x => x.CoachId);
+            e.Property(x => x.Caption).HasMaxLength(160);
+        });
+        b.Entity<CoachAsset>(e =>
+        {
+            e.HasIndex(x => x.CoachId);
+            e.Property(x => x.Key).HasMaxLength(40);
+        });
+        b.Entity<CoachDrill>(e => e.HasIndex(x => new { x.ClubId, x.Applied }));
+
         b.Entity<PlayerTalk>(e =>
         {
             e.HasIndex(x => new { x.PlayerId, x.RoundKey }).IsUnique();

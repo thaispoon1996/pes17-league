@@ -1,0 +1,231 @@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+@* Thương lượng → ký hợp đồng HLV trưởng (PO 19/11 thay bước "gặp chủ tịch"). Chủ tịch 3 lần kiên nhẫn; Đàm phán ≥ 13 thấy vùng chủ tịch chịu chi.
+   Ký bằng ngón tay / chuột, đóng dấu rồi mới gọi SignAsync (mùa chờ bắt đầu → dựng career, khoảng nửa phút). *@
+
+@if (app is null) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
+@{ var chairman = CoachRules.Chairman(app.ClubId); var said = Said(); }
+
+@if (app.Status == CoachApplicationStatus.Refused)
+{
+    <div class="hlv-panel">
+        <div class="hlv-chair"><div class="av"><i class="ms fill" aria-hidden="true">person</i></div>
+            <div><b>@chairman</b><div class="hlv-bubble">@said</div></div></div>
+    </div>
+    <p class="cx-msg neg">@Club đã rút lời mời và không thương lượng lại trong mùa này.</p>
+    <div class="hlv-acts"><button class="cx-btn ghost" @onclick="() => OnClosed.InvokeAsync()"><i class="ms" aria-hidden="true">arrow_back</i>Chọn CLB khác</button></div>
+}
+else if (app.Status == CoachApplicationStatus.Open)
+{
+    var b0 = CoachRules.OfferBonus(app.BaseWage);
+    var wStep = Math.Max(100, app.BaseWage * 2 / 100 / 100 * 100);
+    var bStep = Math.Max(100, b0 * 5 / 100 / 100 * 100);
+    var ratio = CoachRules.Ratio(wage, bonus, seasons, severance, app.BaseWage);
+    <div class="hlv-panel">
+        <div class="hlv-chair">
+            <div class="av"><i class="ms fill" aria-hidden="true">person</i></div>
+            <div>
+                <b>@chairman</b> <small style="color:var(--muted)">Chủ tịch @Club</small>
+                <div class="hlv-bubble" @key="said">@said</div>
+                <div class="hlv-pips" aria-label="Kiên nhẫn còn @app.Patience/@CoachRules.Patience">Kiên nhẫn
+                    @for (var i = 0; i < CoachRules.Patience; i++) { <i class="@(i < app.Patience ? null : "x")"></i> }
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="hlv-panel">
+        <div class="hlv-term">
+            <header><span>Lương mỗi vòng</span><b>@CoachUi.Cash(wage)</b></header>
+            <input type="range" min="@(app.BaseWage * 8 / 10)" max="@(app.BaseWage * 16 / 10)" step="@wStep" @bind="wage" @bind:event="oninput" aria-label="Lương mỗi vòng" />
+            <small>Chủ tịch đang đề nghị @CoachUi.Cash(app.Wage). Khung đàm phán @CoachUi.Cash(app.BaseWage * 8 / 10)–@CoachUi.Cash(app.BaseWage * 16 / 10).</small>
+        </div>
+        <div class="hlv-term">
+            <header><span>Thưởng đạt mục tiêu</span><b>@CoachUi.Cash(bonus)</b></header>
+            <input type="range" min="@(b0 / 2)" max="@(b0 * 2)" step="@bStep" @bind="bonus" @bind:event="oninput" aria-label="Thưởng đạt mục tiêu" />
+            <small>Trả vào ví cuối mùa nếu đạt mục tiêu: @(Objective ?? "theo ban lãnh đạo").</small>
+        </div>
+        <div class="hlv-term">
+            <header><span>Thời hạn</span><b>@seasons mùa</b></header>
+            <div class="hlv-chips">@for (var y = 1; y <= 3; y++) { var v = y; <button class="hlv-chip @(seasons == v ? "on" : null)" @onclick="() => seasons = v">@v mùa</button> }</div>
+        </div>
+        <div class="hlv-term">
+            <header><span>Bồi thường khi bị sa thải</span><b>@severance%</b></header>
+            <div class="hlv-chips">@foreach (var s in new[] { 25, 50, 100 }) { var v = s; <button class="hlv-chip @(severance == v ? "on" : null)" @onclick="() => severance = v">@v% lương còn lại</button> }</div>
+        </div>
+        @if (CoachRules.Effective(C, CoachSkill.Negotiation) >= 13)
+        {
+            var max = CoachJobService.MaxFor(C);
+            <div class="hlv-meter" style="background:linear-gradient(90deg,var(--emerald) 0 @(Pc(max))%,var(--gold) 0 @(Pc(max + .15))%,var(--crimson) 0)" aria-hidden="true">
+                <i style="left:calc(@(Pc(ratio))% - 2px)"></i>
+            </div>
+            <small style="color:var(--muted);font-size:12.5px">Đàm phán @CoachRules.Effective(C, CoachSkill.Negotiation): xanh = chủ tịch đồng ý, vàng = trả giá ở giữa, đỏ = bác.</small>
+        }
+        else
+        {
+            <small style="color:var(--muted);font-size:12.5px">Đàm phán từ 13 trở lên mới đọc được vùng chủ tịch chịu chi.</small>
+        }
+    </div>
+    @if (msg is not null) { <p class="cx-msg neg" role="alert">@msg</p> }
+    <div class="hlv-acts">
+        <button class="cx-btn ghost" disabled="@busy" @onclick="Accept"><i class="ms" aria-hidden="true">handshake</i>Nhận đề nghị hiện tại</button>
+        <button class="cx-btn gold" disabled="@busy" @onclick="Propose"><i class="ms" aria-hidden="true">send</i>Gửi đề nghị</button>
+    </div>
+    <button class="cx-back" disabled="@busy" data-confirm="Rút khỏi thương lượng với @Club?" @onclick="Withdraw"><i class="ms" aria-hidden="true">logout</i>Rút lui</button>
+    <details class="hlv-rule"><summary><i class="ms" aria-hidden="true">expand_more</i>Luật thương lượng</summary>
+        <div><ul>
+            <li>Chủ tịch có <b>@CoachRules.Patience lần kiên nhẫn</b>. Đòi quá tay mỗi lần mất 1. Hết kiên nhẫn: rút lời mời, CLB không mời lại mùa này.</li>
+            <li>Mức chịu tối đa = 110% gói ban đầu, cộng 2% cho mỗi điểm Đàm phán trên 10.</li>
+            <li>Đòi vượt mức tối đa không quá 15%: chủ tịch trả giá ở giữa.</li>
+            <li>Bồi thường khi bị sa thải = % lương phần còn lại của hợp đồng, trả vào ví HLV.</li>
+        </ul></div>
+    </details>
+    @if (Lines().Skip(1).Any())
+    {
+        <h2 class="hlv-h">Diễn biến</h2>
+        <ul class="hlv-log">@foreach (var l in Lines().Skip(1)) { <li class="@(l.Chair ? "c" : null)">@l.Text</li> }</ul>
+    }
+}
+else
+{
+    <div class="hlv-doc">
+        <h2>Hợp đồng HLV trưởng</h2>
+        <p class="parties">@Club và @C.Name</p>
+        <dl>
+            <dt>Lương mỗi vòng</dt><dd>@CoachUi.Cash(app.Wage)</dd>
+            <dt>Thưởng đạt mục tiêu</dt><dd>@CoachUi.Cash(app.Bonus)</dd>
+            <dt>Thời hạn</dt><dd>@app.Seasons mùa</dd>
+            <dt>Bồi thường khi bị sa thải</dt><dd>@app.SeverancePct% lương còn lại</dd>
+            @if (Objective is not null) { <dt>Mục tiêu</dt><dd>@Objective</dd> }
+        </dl>
+        <div class="hlv-sigs">
+            <figure><svg viewBox="0 0 120 34" aria-hidden="true"><path d="M4 24 C14 6 20 6 18 20 C16 30 26 12 34 14 C40 16 34 28 42 24 C50 20 52 8 58 10 C64 12 56 26 64 24 C74 22 80 14 90 16 C98 18 104 22 116 12" /></svg><figcaption>@chairman</figcaption></figure>
+            <figure><canvas @ref="padEl" aria-label="Ô ký tên"></canvas><figcaption>@C.Name, ký vào ô trên</figcaption></figure>
+        </div>
+        <span class="hlv-stamp @(stamped ? "on" : null)" aria-hidden="true">Đã ký</span>
+    </div>
+    @if (msg is not null) { <p class="cx-msg neg" role="alert" style="margin-top:12px">@msg</p> }
+    @if (signing)
+    {
+        <div class="cx-board-prog" role="status">
+            <div><b>@(Starting ? "Đang dựng mùa giải" : "Đang hoàn tất thủ tục")</b><span>@(Starting ? "Ghi lịch cả mùa, mở chợ hè (khoảng nửa phút)" : "Bàn giao đội bóng")</span></div>
+            <i aria-hidden="true"></i>
+        </div>
+    }
+    else
+    {
+        <div class="hlv-acts">
+            <button class="cx-btn ghost" @onclick="Clear"><i class="ms" aria-hidden="true">ink_eraser</i>Ký lại</button>
+            <button class="cx-btn gold" @onclick="Sign"><i class="ms fill" aria-hidden="true">draw</i>Ký hợp đồng</button>
+        </div>
+        <button class="cx-back" data-confirm="Rút khỏi hợp đồng với @Club?" @onclick="Withdraw"><i class="ms" aria-hidden="true">logout</i>Rút lui</button>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid AppId { get; set; }
+    [Parameter, EditorRequired] public Coach C { get; set; } = default!;
+    [Parameter, EditorRequired] public string Club { get; set; } = "";
+    [Parameter] public string? Objective { get; set; }
+    /// <summary>Ký xong sẽ dựng career mới (mùa chờ bắt đầu) → báo khoảng nửa phút.</summary>
+    [Parameter] public bool Starting { get; set; }
+    [Parameter] public EventCallback OnSigning { get; set; }
+    [Parameter] public EventCallback OnSigned { get; set; }
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    CoachApplication? app;
+    long wage, bonus;
+    int seasons, severance;
+    bool busy, stamped, signing, padReady;
+    string? msg;
+    ElementReference padEl;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (app?.Id == AppId) return;
+        await Reload();
+    }
+
+    async Task Reload()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        app = await db.CoachApplications.AsNoTracking().SingleOrDefaultAsync(a => a.Id == AppId && a.CoachId == C.Id);
+        if (app is not null) (wage, bonus, seasons, severance) = (app.Wage, app.Bonus, app.Seasons, app.SeverancePct);
+        if (app?.Status != CoachApplicationStatus.Agreed) padReady = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (app?.Status != CoachApplicationStatus.Agreed || padReady || signing) return;
+        padReady = true;
+        try { await JS.InvokeVoidAsync("Coach3d.pad", padEl); } catch (JSException) { } catch (JSDisconnectedException) { }
+    }
+
+    static string Pc(double v) => (Math.Clamp((v - .8) / .8, 0, 1) * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    record Line(bool Chair, string Text);
+    IEnumerable<Line> Lines() => (app?.Log ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        .Select(l => l.Length > 2 && l[1] == '|' ? new Line(l[0] == 'C', l[2..]) : new Line(false, l));
+    string Said() => Lines().FirstOrDefault(l => l.Chair)?.Text ?? "";
+
+    async Task Propose()
+    {
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (reply, err) = await new CoachJobService(db, Clock, Store).ProposeAsync(C.Id, AppId, wage, bonus, seasons, severance);
+            msg = err;
+            await Reload();
+            await Sfx(reply?.Outcome switch { NegotiationOutcome.Accept => "unlock", NegotiationOutcome.WalkAway => "error", _ => "click" });
+        }
+        finally { busy = false; }
+    }
+
+    async Task Accept()
+    {
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            msg = await new CoachJobService(db, Clock, Store).AcceptAsync(C.Id, AppId);
+            await Reload();
+            if (msg is null) await Sfx("unlock");
+        }
+        finally { busy = false; }
+    }
+
+    async Task Withdraw()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        await new CoachJobService(db, Clock, Store).WithdrawAsync(C.Id, AppId);
+        await OnClosed.InvokeAsync();
+    }
+
+    async Task Clear() { try { await JS.InvokeVoidAsync("Coach3d.clearPad", padEl); } catch (JSException) { } }
+
+    async Task Sign()
+    {
+        msg = null;
+        int ink;
+        try { ink = await JS.InvokeAsync<int>("Coach3d.inked", padEl); } catch (JSException) { ink = 99; }
+        if (ink < 4) { msg = "Ký tên vào ô bên phải trước đã."; return; }
+        stamped = true;
+        StateHasChanged();
+        await Sfx("stamp");
+        await Task.Delay(700);
+        signing = true;
+        await OnSigning.InvokeAsync();
+        StateHasChanged();
+        await using var db = await Dbs.CreateDbContextAsync();
+        msg = await new CoachJobService(db, Clock, Store).SignAsync(C.Id, AppId, $"career:{C.ManagerId}");
+        if (msg is not null) { signing = false; stamped = false; padReady = false; await Reload(); return; }
+        await Sfx("signed");
+        await OnSigned.InvokeAsync();
+    }
+
+    async Task Sfx(string name) { try { await JS.InvokeVoidAsync("cxAudio.fire", name); } catch (JSException) { } catch (JSDisconnectedException) { } }
+}

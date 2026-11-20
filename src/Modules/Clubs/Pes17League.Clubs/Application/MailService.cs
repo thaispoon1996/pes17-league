@@ -62,6 +62,17 @@ public sealed class MailService(ClubsDbContext db, TimeProvider clock)
     public async Task SystemAsync(Guid? managerId, string subject, string body, Guid? playerId = null, Guid? fixtureId = null, CancellationToken ct = default)
     {
         if (managerId is null) return;
+        // HLV career (PO 19/11): người chơi có hồ sơ HLV → thư chính thức vào hòm thư HLV thay vì hòm thư giải online.
+        if (await db.Coaches.FirstOrDefaultAsync(c => c.ManagerId == managerId && c.Status != CoachStatus.Creating, ct) is { } coach)
+        {
+            var tick = await CoachService.NowTickAsync(db, ct);
+            var club = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human && a.ParticipantId == managerId)
+                .Select(a => (Guid?)a.ClubId).FirstOrDefaultAsync(ct);
+            CoachLetterService.Write(db, coach, LetterKind.Official, playerId is null ? LetterFrom.Federation : LetterFrom.Club, SystemName, subject, body, tick,
+                clock.GetUtcNow(), club, playerId, key: "he-thong", link: fixtureId is { } f ? $"tran/{f}" : playerId is not null ? "de-nghi" : null);
+            await db.SaveChangesAsync(ct);
+            return;
+        }
         await SystemCoreAsync(managerId, subject, body, playerId, fixtureId, ct);
     }
 

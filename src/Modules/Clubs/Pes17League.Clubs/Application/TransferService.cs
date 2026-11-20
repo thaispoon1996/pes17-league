@@ -95,6 +95,9 @@ public sealed class TransferService(ClubsDbContext db, TimeProvider clock, Squad
             var negotiated = fromClub is not null && await SquadStore.IsHumanAsync(db, fromClub.Id, ct);
             if (terms is null && (negotiated ? !FeeRules.IsValidNegotiated(fee, price.Price) : fee != price.Price))
                 return await RejectAsync(transfer, TransferRejectReason.FeeOutOfRange, true, ct);
+            // HLV career (PO 19/11): năng lực Đàm phán đổi phí mua thẳng từ CLB BOT / chợ tự do (−1%/điểm trên 10).
+            if (terms is null && !negotiated && await CoachHooks.BuyDiscountPctAsync(db, toClub.Id, ct) is var disc and not 0)
+                transfer.Fee = fee = CoachRules.Discounted(price.Price, disc);
         }
         var contract = await db.Contracts.SingleOrDefaultAsync(c => c.PlayerId == playerId && c.Status == ContractStatus.Active, ct);
         if (contract?.LoanFromClubId is not null) return await RejectAsync(transfer, TransferRejectReason.OnLoan, true, ct);

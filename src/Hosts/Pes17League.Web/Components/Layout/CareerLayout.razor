@@ -23,40 +23,69 @@ else
 {
     <div class="cx @(P is null ? "cx-solo" : "")">
         <div class="cx-sky" aria-hidden="true"><i class="beam b1"></i><i class="beam b2"></i><i class="beam b3"></i><canvas class="cx-dust"></canvas></div>
-        @if (P is { } p)
-        {
-            <header class="cx-top">
+        <header class="cx-top">
+            @if (P is { } p)
+            {
                 <a class="cx-club" href="su-nghiep">
                     <Crest Name="@p.ClubName" Logo="@p.ClubLogo" />
                     <span><b>@p.ClubName</b><small>@p.SeasonName · @(p.Finished ? "hết mùa" : $"Khung {Math.Max(p.Slot, 1)}/{p.Slots}")</small></span>
                 </a>
                 <span class="cx-coin" title="Quỹ CLB"><i class="ms fill" aria-hidden="true">paid</i><b data-count="@p.Budget" data-fmt="money">@Fmt.Money(p.Budget)</b></span>
+            }
+            else
+            {
+                @* Chưa cầm CLB (tạo HLV, tìm việc, thất nghiệp): đầu trang gọn *@
+                <a class="cx-club" href="su-nghiep">
+                    <i class="ms fill" aria-hidden="true" style="font-size:30px;color:var(--gold)">sports</i>
+                    <span><b>Sự nghiệp HLV</b><small>@(coach switch { null => "Chưa có hồ sơ", CoachStatus.Creating => "Đang tạo hồ sơ", _ => "Chưa có CLB" })</small></span>
+                </a>
+            }
+            @if (coach is CoachStatus.Employed or CoachStatus.Unemployed)
+            {
+                <a class="cx-ibtn" href="thu-hlv" aria-label="Thư HLV"><i class="ms" aria-hidden="true">notifications</i>@if (coachUnread > 0) { <em>@coachUnread</em> }</a>
+            }
+            else if (P is not null)
+            {
                 <a class="cx-ibtn" href="thu" aria-label="Hòm thư"><i class="ms" aria-hidden="true">notifications</i>@if (unread > 0) { <em>@unread</em> }</a>
-                <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button>
-                <details class="cx-menu">
-                    <summary class="cx-ibtn" aria-label="Menu"><i class="ms" aria-hidden="true">menu</i></summary>
-                    <div>
-                        @if (profile is not null) { <a href="@profile"><i class="ms" aria-hidden="true">person</i>@who</a> }
-                        <a href="" data-enhance-nav="false"><i class="ms" aria-hidden="true">public</i>Trang giải đấu đầy đủ</a>
-                        <a href="hop-thu"><i class="ms" aria-hidden="true">inbox</i>Hộp thư HLV</a>
-                        <a href="dieu-khien"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</a>
-                        @if (admin) { <a href="admin"><i class="ms" aria-hidden="true">settings</i>Quản trị</a> }
-                        <div class="cx-snd">
-                            <span class="now" data-snd="now">Nhạc đang tắt</span>
-                            <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
-                            <label>Hiệu ứng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
-                            <label><input type="checkbox" data-snd="sfx" /> Bật âm hiệu ứng</label>
-                        </div>
-                        <form method="post" action="/logout" data-enhance="false"><button><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
+            }
+            <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button>
+            <details class="cx-menu">
+                <summary class="cx-ibtn" aria-label="Menu"><i class="ms" aria-hidden="true">menu</i></summary>
+                <div>
+                    @if (profile is not null) { <a href="@profile"><i class="ms" aria-hidden="true">person</i>@who</a> }
+                    @if (coach is CoachStatus.Employed or CoachStatus.Unemployed)
+                    {
+                        <a href="hlv"><i class="ms" aria-hidden="true">badge</i>Hồ sơ HLV</a>
+                        <a href="hlv/viec-lam"><i class="ms" aria-hidden="true">work</i>Việc làm HLV</a>
+                        <a href="thu-hlv"><i class="ms" aria-hidden="true">mail</i>Thư HLV@if (coachUnread > 0) { <em class="cx-chip bad" style="margin-left:auto">@coachUnread</em> }</a>
+                    }
+                    else { <a href="hlv"><i class="ms" aria-hidden="true">person_add</i>Tạo hồ sơ HLV</a> }
+                    <a href="" data-enhance-nav="false"><i class="ms" aria-hidden="true">public</i>Trang giải đấu đầy đủ</a>
+                    @if (P is not null)
+                    {
+                        <a href="thu"><i class="ms" aria-hidden="true">inbox</i>Thư ban tổ chức@if (unread > 0) { <em class="cx-chip bad" style="margin-left:auto">@unread</em> }</a>
+                        <a href="hop-thu"><i class="ms" aria-hidden="true">inbox</i>Hộp thư CLB</a>
+                    }
+                    <a href="dieu-khien"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</a>
+                    @if (admin) { <a href="admin"><i class="ms" aria-hidden="true">settings</i>Quản trị</a> }
+                    <div class="cx-snd">
+                        <span class="now" data-snd="now">Nhạc đang tắt</span>
+                        <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
+                        <label>Hiệu ứng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
+                        <label><input type="checkbox" data-snd="sfx" /> Bật âm hiệu ứng</label>
                     </div>
-                </details>
-            </header>
+                    <form method="post" action="/logout" data-enhance="false"><button><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
+                </div>
+            </details>
+        </header>
+        @if (P is { } p2)
+        {
             @if (CurrentTab is { Subs.Count: > 1 } tab)
             {
                 <nav class="cx-sub" aria-label="@tab.Label">
                     @foreach (var s in tab.Subs)
                     {
-                        <NavLink href="@s.Href" Match="NavLinkMatch.All">@s.Label @if (p.IsNew(s.Feature)) { <i class="cx-dot" aria-label="mới"></i> }</NavLink>
+                        <NavLink href="@s.Href" Match="NavLinkMatch.All">@s.Label @if (p2.IsNew(s.Feature)) { <i class="cx-dot" aria-label="mới"></i> }</NavLink>
                     }
                 </nav>
             }
@@ -173,14 +202,16 @@ else
 
     bool ready, onboarding, admin;
     Guid? me;
-    int unread;
+    int unread, coachUnread;
+    CoachStatus? coach;
     string? who, profile;
     CareerMatchResult? result;
     string? intro;
     HashSet<string> fresh = [];   // tab vừa mở → hiệu ứng bay xuống thanh menu
 
     string Path => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
-    bool OnCareerHome => Path == "su-nghiep";
+    /// <summary>Trang dùng khung career cả khi chưa cầm CLB: trang chủ career + hồ sơ / việc làm / thư HLV (PO 19/11).</summary>
+    bool OnCareerHome => Path is "su-nghiep" or "hlv" or "hlv/viec-lam" or "thu-hlv";
     IEnumerable<Tab> Tabs => AllTabs;
     IReadOnlyList<Tab> VisibleTabs(CareerProgress p) => [.. AllTabs.Where(t => p.Has(t.Feature)).Select(t => t with { Subs = [.. t.Subs.Where(s => p.Has(s.Feature))] })];
     Tab? CurrentTab => P is { } p ? VisibleTabs(p).FirstOrDefault(t => t.Subs.Any(s => s.Href == Path) || t.Href == Path) : null;
@@ -254,7 +285,7 @@ else
 
     void OnLocation(object? _, LocationChangedEventArgs e) => InvokeAsync(async () =>
     {
-        try { await LoadAsync(first: false); } catch { /* khung phụ: lỗi đọc không chặn trang */ }
+        try { await LoadAsync(first: false); await CountMailAsync(); } catch { /* khung phụ: lỗi đọc không chặn trang */ }
         StateHasChanged();
     });
 
@@ -263,7 +294,7 @@ else
     {
         if (wasRunning && !Jobs.Running)
         {
-            try { await LoadAsync(first: false); } catch { }
+            try { await LoadAsync(first: false); await CountMailAsync(); } catch { }
             StateHasChanged();
         }
         wasRunning = Jobs.Running;
@@ -273,6 +304,15 @@ else
     {
         await using var db = await Dbs.CreateDbContextAsync();
         unread = await new MailService(db, Clock).UnreadAsync(me);
+        coach = me is { } id ? await db.Coaches.AsNoTracking().Where(c => c.ManagerId == id).Select(c => (CoachStatus?)c.Status).FirstOrDefaultAsync() : null;
+        coachUnread = me is { } m && coach is CoachStatus.Employed or CoachStatus.Unemployed ? await new CoachLetterService(db, Clock).UnreadAsync(m) : 0;
+    }
+
+    /// <summary>Trang HLV gọi sau khi đọc thư / tạo hồ sơ để chuông cập nhật.</summary>
+    public async Task RefreshMailAsync()
+    {
+        await CountMailAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     void OnMail() => InvokeAsync(async () => { await CountMailAsync(); StateHasChanged(); });

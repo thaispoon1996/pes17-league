@@ -21,6 +21,24 @@
 @if (club is not null)
 {
     <div class="cx-home">
+        @* Hồ sơ HLV (PO 19/11): chưa có → nút tạo; ký xong chưa họp báo → mời ra mắt; có rồi → dải HLV *@
+        @if (coach is null || coach.Status == CoachStatus.Creating)
+        {
+            <a class="cx-cta solo" href="hlv" style="margin:0 0 12px"><span><b>Tạo hồ sơ HLV</b><small>Khuôn mặt, xuất thân, năng lực · nhận hợp đồng mặc định với @club</small></span><i class="ms fill" aria-hidden="true">person_add</i></a>
+        }
+        else if (contract is { Launched: false })
+        {
+            <a class="cx-cta solo" href="hlv?ra-mat=1" style="margin:0 0 12px"><span><b>Họp báo ra mắt</b><small>Báo giới đang chờ ở @club</small></span><i class="ms fill" aria-hidden="true">photo_camera</i></a>
+        }
+        else
+        {
+            <a class="hlv-bar" href="hlv" style="color:inherit;text-decoration:none">
+                @if (CoachUi.FaceUrl(coach) is { } fu) { <img src="@fu" alt="" /> } else { <span class="av"><i class="ms" aria-hidden="true">person</i></span> }
+                <div><b>@coach.Name</b>Danh tiếng @coach.Reputation · @CoachUi.License(coach.License)@(contract is { } k0 ? $" · lương {CoachUi.Cash(k0.Wage)}/vòng" : "")</div>
+                @if (coach.FreePoints > 0) { <span class="cx-chip ok">+@coach.FreePoints điểm</span> }
+                <i class="ms" aria-hidden="true" style="color:var(--muted)">chevron_right</i>
+            </a>
+        }
         @* Thẻ mùa *@
         <section class="cx-card cx-season" style="--i:0">
             <div class="row">
@@ -191,8 +209,37 @@
     return;
 }
 @if (me is null) { <p class="cx-msg">Cần đăng nhập tài khoản người chơi để bắt đầu sự nghiệp.</p> return; }
-@if (seasonId is null) { <p class="cx-msg">Chưa có mùa nào chờ bắt đầu sự nghiệp.</p> return; }
-@if (taken) { <p class="cx-msg">Sự nghiệp mùa này đã có người cầm CLB.</p> return; }
+@* PO 19/11: tạo hồ sơ HLV trước khi chọn giải / CLB *@
+@if (coach is null || coach.Status == CoachStatus.Creating) { <CoachMaker OnDone="CoachDone" />; return; }
+@if (seasonId is null || taken)
+{
+    @* Thất nghiệp giữa mùa (bị sa thải / hết hạn / từ chức): đi tìm việc, chờ vòng sau *@
+    <div class="cx-wiz">
+        <h1>@(coach.Status == CoachStatus.Unemployed ? "Đang tìm việc" : "Chưa có CLB")</h1>
+        <p class="lead">@(activeSeason ? "Mùa giải vẫn diễn ra. CLB có tin cậy ban lãnh đạo dưới 30 sẽ tìm HLV mới; lời mời gửi vào thư HLV." : "Chưa có mùa nào chờ bắt đầu sự nghiệp.")</p>
+        <a class="hlv-bar" href="hlv" style="color:inherit;text-decoration:none">
+            @if (CoachUi.FaceUrl(coach) is { } fu2) { <img src="@fu2" alt="" /> } else { <span class="av"><i class="ms" aria-hidden="true">person</i></span> }
+            <div><b>@coach.Name</b>Danh tiếng @coach.Reputation · @CoachUi.License(coach.License)</div>
+            <i class="ms" aria-hidden="true" style="color:var(--muted)">chevron_right</i>
+        </a>
+        <div class="hlv-acts">
+            <a class="cx-btn gold" href="hlv/viec-lam"><i class="ms" aria-hidden="true">work</i>Tìm việc</a>
+            <a class="cx-btn ghost" href="thu-hlv"><i class="ms" aria-hidden="true">mail</i>Thư HLV</a>
+        </div>
+        @if (activeSeason)
+        {
+            <button class="cx-cta solo" disabled="@Jobs.Running" @onclick="() => Simulate(true)">
+                <span><b>@(Jobs.Running ? "Đang mô phỏng" : "Chờ 1 vòng")</b><small>Máy mô phỏng khung kế tiếp của cả thế giới career</small></span>
+                <i class="ms fill" aria-hidden="true">hourglass_top</i>
+            </button>
+        }
+        else if (canNext)
+        {
+            <button class="cx-cta solo" disabled="@Jobs.Running" @onclick="NextSeason"><span><b>Sang mùa mới</b><small>Mùa mới mở, mọi CLB chưa có người cầm đều tìm HLV</small></span><i class="ms fill" aria-hidden="true">calendar_month</i></button>
+        }
+    </div>
+    return;
+}
 
 @* Hướng dẫn bắt đầu 3 bước *@
 <div class="cx-wiz">
@@ -358,13 +405,15 @@
         <div class="cx-picks">
             @foreach (var (c, i) in LeagueClubs.Select((c, i) => (c, i)))
             {
-                var d = Difficulty(c);
-                <button class="cx-pick club" style="--i:@i" @onclick="() => OpenClub(c)" aria-haspopup="dialog">
+                var d = Difficulty(c); var jr = jobRows.GetValueOrDefault(c.ClubId);
+                <button class="cx-pick club" style="--i:@i;@(jr?.Lock is not null ? "opacity:.55" : null)" @onclick="() => OpenClub(c)" aria-haspopup="dialog">
                     <Crest Name="@c.Name" Logo="@c.LogoPath" Large="true" />
                     <span><b>@c.Name</b><small>OVR @c.Ovr.ToString("0.0") · đội hình @Fmt.Money(c.SquadValue) · quỹ @Fmt.Money(c.Budget)</small>
                         <small class="goal"><i class="ms" aria-hidden="true">flag</i>Mục tiêu: @Objective(c)<span class="dif @d.Css">@d.Label</span></small>
-                        @if (c.Cups.Count > 0) { <small class="cups">@string.Join(" · ", c.Cups)</small> }</span>
-                    <span class="cx-chip @d.Css">@d.Label</span>
+                        @if (c.Cups.Count > 0) { <small class="cups">@string.Join(" · ", c.Cups)</small> }
+                        @if (jr?.Lock is { } why) { <small style="color:var(--crimson)"><i class="ms fill" aria-hidden="true" style="font-size:14px;vertical-align:-2px">lock</i> @why</small> }
+                        else if (jr is not null) { <small>CLB @CoachRules.Tier(jr.Tier).Name.ToLowerInvariant() · lương đề nghị @CoachUi.Cash(jr.Wage)/vòng</small> }</span>
+                    <span class="cx-chip @(jr?.Lock is not null ? "bad" : d.Css)">@(jr?.Lock is not null ? "Khoá" : jr?.Refused == true ? "Đã từ chối" : d.Label)</span>
                     <i class="ms more" aria-hidden="true">chevron_right</i>
                 </button>
             }
@@ -490,7 +539,18 @@
                     }
 
                     <div class="foot">
-                        <button class="cx-cta" @onclick="() => { pick = cc; clubDetail = null; step = 3; }"><span><b>Chọn CLB này</b><small>Xem thư của chủ tịch @cd.Name</small></span><i class="ms fill" aria-hidden="true">arrow_forward</i></button>
+                        @if (jobRows.GetValueOrDefault(cc.ClubId) is { Lock: { } lk })
+                        {
+                            <p class="cx-msg neg" style="margin:0"><i class="ms fill" aria-hidden="true" style="font-size:16px;vertical-align:-3px">lock</i> @lk. Leo dần từ CLB nhỏ hơn, học bằng ở hồ sơ HLV.</p>
+                        }
+                        else if (jobRows.GetValueOrDefault(cc.ClubId) is { Refused: true })
+                        {
+                            <p class="cx-msg neg" style="margin:0">@cd.Name đã từ chối bạn mùa này.</p>
+                        }
+                        else
+                        {
+                            <button class="cx-cta" disabled="@applying" @onclick="() => Apply(cc)"><span><b>Ứng tuyển</b><small>Thương lượng hợp đồng với chủ tịch @cd.Name</small></span><i class="ms fill" aria-hidden="true">arrow_forward</i></button>
+                        }
                     </div>
                 </section>
             </div>
@@ -535,12 +595,13 @@
                 @foreach (var cup in pk.Cups) { <li><i class="ms fill" aria-hidden="true">emoji_events</i><span>@cup: <b>đi càng xa càng tốt</b></span></li> }
                 <li><i class="ms fill" aria-hidden="true">savings</i><span>Tài chính: <b>không để quỹ âm</b></span></li>
             </ul>
-            <button class="cx-cta solo" data-confirm="Bắt đầu sự nghiệp với @pk.Name?" @onclick="Start">
-                <span><b>Bắt đầu mùa giải</b><small>@pk.Name · @pk.League</small></span>
-                <i class="ms fill" aria-hidden="true">rocket_launch</i>
-            </button>
         }
-        else
+        @* Giữ CoachDeal sống suốt lúc ký (nó tự hiện tiến trình dựng mùa) *@
+        @if (appId is { } aid && coach is not null)
+        {
+            <CoachDeal AppId="aid" C="coach" Club="@pk.Name" Objective="@Objective(pk)" Starting="true" OnSigning="() => starting = true" OnSigned="Signed" OnClosed="() => { appId = null; step = 2; }" />
+        }
+        else if (starting)
         {
             <div class="cx-board-prog" role="status">
                 <div><b>Đang dựng mùa giải</b><span>Ghi lịch cả mùa, mở chợ hè (khoảng nửa phút)</span></div>
@@ -553,8 +614,12 @@
 @code {
     [CascadingParameter] public CareerLayout? Shell { get; set; }
 
-    Guid? me, seasonId, clubId;
-    bool loaded, taken, starting, autoLineup = true, canNext;
+    Guid? me, seasonId, clubId, appId;
+    bool loaded, taken, starting, autoLineup = true, canNext, activeSeason, applying;
+    Coach? coach;
+    CoachContract? contract;
+    Season? pendingSeason;
+    Dictionary<Guid, CoachClubRow> jobRows = [];
     List<string> champion = [];
     string? club, seasonName, league, error;
     CareerClubChoice? pick;
@@ -637,7 +702,7 @@
         if (seasonId is not { } sid) return;
         try { clubDetail = await Q.CareerClubAsync(sid, c.ClubId, Store, Clock); }
         catch (Exception ex) { error = $"Không mở được chi tiết {c.Name}: {ex.Message}"; }
-        if (clubDetail is null) { pick = c; step = 3; }
+        if (clubDetail is null) await Apply(c);
     }
 
     protected override async Task OnInitializedAsync()
@@ -651,6 +716,11 @@
     async Task LoadAsync()
     {
         await using var db = await Dbs.CreateDbContextAsync();
+        if (me is { } mid)
+        {
+            coach = await db.Coaches.AsNoTracking().SingleOrDefaultAsync(c => c.ManagerId == mid);
+            contract = coach is null ? null : await db.CoachContracts.AsNoTracking().FirstOrDefaultAsync(k => k.CoachId == coach.Id && k.Status == CoachContractStatus.Active);
+        }
         if (me is { } id)
         {
             var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
@@ -679,12 +749,20 @@
         var career = new Pes17CareerService(db, Store, Clock);
         var pending = await career.PendingSeasonAsync();
         seasonId = pending?.Id;
-        if (pending is null) return;
+        pendingSeason = pending;
+        activeSeason = await db.Seasons.AnyAsync(s => s.Status == SeasonStatus.Active);
+        if (pending is null)
+        {
+            canNext = !activeSeason && (await new SeasonRolloverService(db, Store, Clock).ReadyAsync() is not null);
+            return;
+        }
         seasonName = pending.Name;
         firstSeason = pending.Number == 1;
         taken = await career.HasCoachAsync();
         if (taken) return;
         choices = await career.ChoicesAsync(pending.Id);
+        if (coach is { Status: not CoachStatus.Creating } cc)
+            jobRows = (await new CoachJobService(db, Clock, Store).ClubsAsync(cc, pending.Id, choices)).ToDictionary(r => r.ClubId);
         leagueLogos = (await Q.EditionsAsync(pending.Id)).Where(e => e.Type == CompetitionType.DomesticLeague).GroupBy(e => e.Name).ToDictionary(g => g.Key, g => g.First().Logo);
     }
 
@@ -874,6 +952,26 @@
         pick = null;
         step = 2;
     }
+
+    /// <summary>PO 19/11: chọn CLB = ứng tuyển → thương lượng với chủ tịch → ký → họp báo ra mắt.</summary>
+    async Task Apply(CareerClubChoice c)
+    {
+        if (coach is null || pendingSeason is null || !jobRows.TryGetValue(c.ClubId, out var row) || applying) return;
+        applying = true; error = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (app, err) = await new CoachJobService(db, Clock, Store).OpenAsync(coach, pendingSeason, row);
+            if (app is null) { error = err; return; }
+            appId = app.Id; pick = c; clubDetail = null; step = 3;
+            if (Shell is not null) await Shell.RefreshMailAsync();
+        }
+        finally { applying = false; }
+    }
+
+    async Task CoachDone() { await LoadAsync(); if (Shell is not null) { await Shell.RefreshAsync(); await Shell.RefreshMailAsync(); } }
+
+    void Signed() => Nav.NavigateTo("hlv?ra-mat=1", forceLoad: true);
 
     async Task Start()
     {

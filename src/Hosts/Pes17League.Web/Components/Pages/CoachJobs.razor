@@ -1,0 +1,148 @@
+@page "/hlv/viec-lam"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject CurrentUser Me
+@inject TimeProvider Clock
+@inject NavigationManager Nav
+
+<PageTitle>Việc làm HLV</PageTitle>
+
+@* Thị trường việc làm HLV (PO 19/11): CLB theo giải, khoá theo danh tiếng + bằng, chỉ CLB đang tìm HLV mới nhận đơn
+   (đầu mùa: mọi CLB không có người cầm; giữa mùa: tin cậy BLĐ < 30). Ứng tuyển → thương lượng → ký → họp báo ra mắt. *@
+@if (!loaded) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
+@if (coach is null || coach.Status == CoachStatus.Creating)
+{
+    <div class="hlv-empty"><i class="ms" aria-hidden="true">badge</i>Cần hoàn tất hồ sơ HLV trước khi tìm việc.<div class="hlv-acts" style="justify-content:center"><a class="cx-btn gold" href="hlv">Tạo hồ sơ HLV</a></div></div>
+    return;
+}
+
+@if (deal is { } d)
+{
+    <button class="cx-back" @onclick="Close"><i class="ms" aria-hidden="true">arrow_back</i>Danh sách CLB</button>
+    <h1 class="hlv-h" style="font-size:34px">@(signing ? "Chào mừng HLV mới" : "Thương lượng")</h1>
+    <div class="hlv-bar"><Crest Name="@d.Club" Logo="@d.Logo" Large="true" /><div><b>@d.Club</b>@d.League</div></div>
+    <CoachDeal AppId="d.AppId" C="coach" Club="@d.Club" Objective="@d.Objective" Starting="starting" OnSigning="() => signing = true" OnSigned="Signed" OnClosed="Close" />
+    return;
+}
+
+<h1 class="hlv-h" style="font-size:34px;margin-top:4px">Việc làm HLV</h1>
+<p class="hlv-lead">@(season is null ? "Chưa có mùa giải để tìm việc. Sang mùa mới trước." : $"{Fmt.Season(season.Name)}. Danh tiếng {coach.Reputation}, {CoachUi.License(coach.License).ToLowerInvariant()}.") CLB lớn chỉ mời khi danh tiếng và bằng đủ chuẩn.</p>
+@if (msg is not null) { <p class="cx-msg neg" role="alert">@msg</p> }
+
+@if (apps.Count > 0)
+{
+    <h2 class="cx-h3">Đang thương lượng</h2>
+    @foreach (var a in apps)
+    {
+        var r = rows.FirstOrDefault(x => x.ClubId == a.ClubId);
+        <button class="hlv-club on" @onclick="() => Open(a.ClubId)">
+            <Crest Name="@(r?.Name ?? "CLB")" Logo="@r?.LogoPath" Large="true" />
+            <div><b>@(r?.Name ?? "CLB")</b><small>@(a.Status == CoachApplicationStatus.Agreed ? "Đã thoả thuận, chờ ký" : $"Chủ tịch còn {a.Patience} lần kiên nhẫn")</small></div>
+            <div class="r"><b>@CoachUi.Cash(a.Wage)</b>/vòng</div>
+        </button>
+    }
+}
+
+@if (rows.Count > 0)
+{
+    <div class="hlv-chips" style="margin:16px 0 4px">
+        @foreach (var l in rows.Select(x => x.League).Distinct())
+        {
+            var v = l;
+            <button class="hlv-chip @(league == v ? "on" : null)" @onclick="() => league = v">@v <small style="color:var(--emerald)">@rows.Count(x => x.League == v && x.Vacant && x.Lock is null && !x.Refused)</small></button>
+        }
+    </div>
+    @foreach (var g in rows.Where(x => x.League == league).GroupBy(x => x.Tier).OrderByDescending(g => g.Key))
+    {
+        var t = CoachRules.Tier(g.Key); var open = CoachRules.LockReason(g.Key, coach.Reputation, coach.License) is null;
+        <div class="hlv-tierhd @(open ? "open" : null)"><b>CLB @t.Name.ToLowerInvariant()</b><small>@(t.Reputation == 0 ? "Không yêu cầu" : $"Danh tiếng {t.Reputation} · bằng {CoachRules.Licenses[t.License]}")</small></div>
+        @foreach (var r in g.OrderBy(x => x.Expected))
+        {
+            var id = r.ClubId; var mine = r.ClubId == currentClub;
+            var can = !mine && r.Lock is null && !r.Refused && r.Vacant;
+            <button class="hlv-club @(can ? null : "lock")" disabled="@(!can || busy)" @onclick="() => Open(id)">
+                <Crest Name="@r.Name" Logo="@r.LogoPath" Large="true" />
+                <div>
+                    <b>@r.Name</b>
+                    @if (mine) { <small>Bạn đang dẫn dắt</small> }
+                    else if (r.Lock is { } why) { <small class="why">@why</small> }
+                    else if (r.Refused) { <small class="why">Đã từ chối bạn mùa này</small> }
+                    else if (!r.Vacant) { <small>Đã có HLV@(r.Confidence is { } cf ? $" · tin cậy BLĐ {cf}" : "")</small> }
+                    else { <small>Mục tiêu: @r.Objective · đội @r.Ovr.ToString("0.0")</small> }
+                </div>
+                <div class="r">
+                    @if (r.Lock is not null) { <i class="ms fill" aria-hidden="true">lock</i> }
+                    else { <b>@CoachUi.Cash(r.Wage)</b>@(can ? "/vòng" : "") }
+                </div>
+            </button>
+        }
+    }
+    <details class="hlv-rule"><summary><i class="ms" aria-hidden="true">expand_more</i>Luật xếp hạng CLB</summary>
+        <div><ul>
+            <li>Xếp CLB trong mỗi giải theo giá trị đội hình: 10% đầu là <b>Ông lớn</b>, 10–30% <b>Lớn</b>, 30–60% <b>Vừa</b>, còn lại <b>Nhỏ</b>.</li>
+            <li>Ông lớn: danh tiếng 75, bằng A. Lớn: 55, bằng B. Vừa: 30, bằng C. Nhỏ: không yêu cầu.</li>
+            <li>Lương khởi điểm mỗi vòng: Nhỏ 20 nghìn, Vừa 35 nghìn, Lớn 60 nghìn, Ông lớn 100 nghìn, nhân thêm (0,8 + danh tiếng × 0,006).</li>
+            <li>Đầu mùa mọi CLB chưa có người cầm đều tìm HLV; giữa mùa chỉ CLB có tin cậy BLĐ dưới @CoachRules.VacancyBelow.</li>
+        </ul></div>
+    </details>
+}
+
+@code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+
+    sealed record Deal(Guid AppId, string Club, string? Logo, string League, string? Objective);
+
+    bool loaded, busy, starting, signing;
+    Guid me;
+    Guid? currentClub;
+    Coach? coach;
+    Season? season;
+    IReadOnlyList<CoachClubRow> rows = [];
+    IReadOnlyList<CoachApplication> apps = [];
+    string? league, msg;
+    Deal? deal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync() ?? Guid.Empty;
+        await Load();
+        loaded = true;
+    }
+
+    async Task Load()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        coach = me == Guid.Empty ? null : await db.Coaches.AsNoTracking().SingleOrDefaultAsync(c => c.ManagerId == me);
+        if (coach is null || coach.Status == CoachStatus.Creating) return;
+        var jobs = new CoachJobService(db, Clock, Store);
+        season = await jobs.JobSeasonAsync();
+        currentClub = await db.CoachContracts.Where(k => k.CoachId == coach.Id && k.Status == CoachContractStatus.Active).Select(k => (Guid?)k.ClubId).FirstOrDefaultAsync();
+        rows = season is null ? [] : await jobs.ClubsAsync(coach, season.Id);
+        apps = await jobs.OpenApplicationsAsync(coach.Id);
+        var career = new Pes17CareerService(db, Store, Clock);
+        starting = await career.PendingSeasonAsync() is { } p && p.Id == season?.Id && !await career.HasCoachAsync();
+        league ??= rows.FirstOrDefault(r => r.ClubId == currentClub)?.League ?? rows.FirstOrDefault()?.League;
+    }
+
+    async Task Open(Guid clubId)
+    {
+        if (coach is null) return;
+        busy = true; msg = null;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (app, err) = await new CoachJobService(db, Clock, Store).OpenAsync(coach, clubId);
+            if (app is null) { msg = err; return; }
+            var r = rows.FirstOrDefault(x => x.ClubId == clubId);
+            deal = new(app.Id, r?.Name ?? "CLB", r?.LogoPath, r?.League ?? "", r?.Objective);
+            if (Shell is not null) await Shell.RefreshMailAsync();
+        }
+        finally { busy = false; }
+    }
+
+    async Task Close() { deal = null; signing = false; await Load(); }
+
+    void Signed() => Nav.NavigateTo("hlv?ra-mat=1", forceLoad: true);
+}

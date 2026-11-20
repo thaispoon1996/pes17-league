@@ -1,0 +1,207 @@
+@page "/thu-hlv"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject TimeProvider Clock
+
+<PageTitle>Thư HLV</PageTitle>
+
+@* Hòm thư riêng của HLV career (PO 19/11): mọi sự kiện, quyết định chính thức đi qua đây; thư quyết định có hạn (quá hạn = phương án mặc định).
+   HLV gửi yêu cầu cho BLĐ / cầu thủ; hồi âm tới vòng sau. Phương án chỉ hiện chiều tác động (lên/xuống), không hiện số. *@
+@if (!loaded) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
+@if (coach is null || coach.Status == CoachStatus.Creating)
+{
+    <div class="hlv-empty"><i class="ms" aria-hidden="true">mail</i>Hòm thư mở khi hoàn tất hồ sơ HLV.<div class="hlv-acts" style="justify-content:center"><a class="cx-btn gold" href="hlv">Tạo hồ sơ HLV</a></div></div>
+    return;
+}
+
+<h1 class="hlv-h" style="font-size:34px;margin-top:4px">Thư HLV</h1>
+<nav class="hlv-tabs" aria-label="Thư mục">
+    @foreach (var (f, label) in Folders)
+    {
+        var v = f;
+        <button class="@(folder == v && !compose ? "on" : null)" @onclick="() => Folder(v)">@label@if (v == CoachFolder.Inbox && unread > 0) { <em>@unread</em> }@if (v == CoachFolder.Decisions && pending > 0) { <em>@pending</em> }</button>
+    }
+    <button class="@(compose ? "on" : null)" @onclick="Compose"><i class="ms" aria-hidden="true" style="font-size:16px;vertical-align:-3px">edit</i> Viết thư</button>
+</nav>
+@if (msg is not null) { <p class="cx-msg @(ok ? null : "neg")" role="status">@msg</p> }
+
+@if (compose)
+{
+    var r = CoachEvents.Request(req);
+    <div class="hlv-compose">
+        @if (coach.Status != CoachStatus.Employed) { <p class="cx-msg">Chỉ gửi yêu cầu được khi đang dẫn dắt một CLB.</p> }
+        <h2 class="cx-h3">Gửi ban lãnh đạo</h2>
+        <div class="hlv-req">@foreach (var x in CoachEvents.Requests.Where(x => !x.ToPlayer)) { var k = x.Key; <button class="@(req == k ? "on" : null)" @onclick="() => req = k"><i class="ms" aria-hidden="true">@x.Icon</i><b>@x.Name</b><small>@x.Help</small></button> }</div>
+        <h2 class="cx-h3">Gửi cầu thủ</h2>
+        <div class="hlv-req">@foreach (var x in CoachEvents.Requests.Where(x => x.ToPlayer)) { var k = x.Key; <button class="@(req == k ? "on" : null)" @onclick="() => req = k"><i class="ms" aria-hidden="true">@x.Icon</i><b>@x.Name</b><small>@x.Help</small></button> }</div>
+        @if (r is not null)
+        {
+            <div class="hlv-panel">
+                @if (r.ToPlayer)
+                {
+                    <label class="hlv-field"><span>Cầu thủ</span>
+                        <select @bind="player"><option value="">Chọn cầu thủ</option>@foreach (var p in squad) { <option value="@p.Id">@p.Name</option> }</select>
+                    </label>
+                }
+                @if (r.Key == "nhan-su")
+                {
+                    <div class="hlv-field"><span>Vị trí</span>
+                        <div class="hlv-chips">@foreach (var role in Roles) { var v = role; <button class="hlv-chip @(staff == v ? "on" : null)" @onclick="() => staff = v">@Cap(CoachLetterService.StaffName(v))</button> }</div>
+                    </div>
+                }
+                <label class="hlv-field"><span>Lời nhắn (để trống = thư mẫu)</span><textarea @bind="note" maxlength="1500"></textarea></label>
+                <p class="hlv-note">Hồi âm tới sau vòng kế tiếp. Mỗi loại yêu cầu gửi 1 lần mỗi @CoachEvents.RequestCooldown vòng.</p>
+                <div class="hlv-acts"><button class="cx-btn gold" disabled="@(busy || coach.Status != CoachStatus.Employed)" data-confirm="@(r.Key == "tu-chuc" ? "Nộp đơn từ chức? Ban lãnh đạo trả lời vòng sau." : null)" @onclick="Send"><i class="ms" aria-hidden="true">send</i>Gửi: @r.Name</button></div>
+            </div>
+        }
+    </div>
+}
+else if (letters.Count == 0)
+{
+    <div class="hlv-empty"><i class="ms" aria-hidden="true">drafts</i>@(folder switch { CoachFolder.Decisions => "Không có việc chờ quyết định.", CoachFolder.Sent => "Chưa gửi thư nào. Bấm Viết thư để gửi yêu cầu.", CoachFolder.Archived => "Chưa lưu trữ thư nào.", _ => "Hòm thư trống." })</div>
+}
+else
+{
+    @foreach (var row in letters)
+    {
+        var l = row.Letter; var id = l.Id; var isOpen = open == id; var waiting = l.Kind == LetterKind.Decision && l.Chosen is null;
+        <button class="hlv-mail @(l.Read || l.Outgoing ? null : "unread") @(waiting ? "decide" : null) @(isOpen ? "open" : null)" aria-expanded="@isOpen" @onclick="() => Toggle(row)">
+            <span class="top"><i class="ms" aria-hidden="true">@CoachUi.Icon(l.From)</i><span>@(l.Outgoing ? "Tới: " : "")@l.Sender · @CoachUi.KindName(l.Kind)</span>@CoachUi.Tick(l.Tick)</span>
+            <b>@l.Subject</b>
+        </button>
+        @if (isOpen)
+        {
+            <div class="hlv-letter">
+                @if (row.PlayerName is not null && !l.Outgoing) { <div class="from">Liên quan: @row.PlayerName</div> }
+                <div class="body">@l.Body</div>
+                @if (row.Choices.Count > 0)
+                {
+                    <div class="hlv-opts">
+                        @for (var i = 0; i < row.Choices.Count; i++)
+                        {
+                            var k = i; var ch = row.Choices[k];
+                            <button class="@(l.Chosen == k ? "chosen" : null)" disabled="@(!waiting || busy)" @onclick="() => Choose(id, k)">
+                                @ch.Label@if (waiting && k == l.DefaultOption) { <em class="cx-chip" style="margin-left:6px">Mặc định</em> }
+                                @if (!string.IsNullOrEmpty(ch.Hint)) { <small>@ch.Hint</small> }
+                            </button>
+                        }
+                    </div>
+                }
+                <div class="meta">
+                    @if (waiting && l.DeadlineTick is { } dl) { <span class="cx-chip bad">Hạn: @CoachUi.Tick(dl)</span> }
+                    @if (l.Chosen is not null && l.AnsweredTick is { } at) { <span class="cx-chip ok">Đã quyết định · @CoachUi.Tick(at)</span> }
+                    @if (l.Link is { Length: > 0 } link) { <a class="cx-btn ghost sm" href="@link">Mở</a> }
+                    @if (!waiting)
+                    {
+                        <button class="cx-btn ghost sm" disabled="@busy" @onclick="() => Archive(id, !l.Archived)"><i class="ms" aria-hidden="true">@(l.Archived ? "unarchive" : "archive")</i>@(l.Archived ? "Bỏ lưu trữ" : "Lưu trữ")</button>
+                    }
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+
+    static readonly (CoachFolder, string)[] Folders = [(CoachFolder.Inbox, "Hộp thư"), (CoachFolder.Decisions, "Cần quyết định"), (CoachFolder.Sent, "Đã gửi"), (CoachFolder.Archived, "Lưu trữ")];
+    static readonly string[] Roles = ["Assistant", "Coach", "Physio", "Scout"];
+
+    sealed record SquadRow(Guid Id, string Name);
+    static string Cap(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    bool loaded, busy, ok, compose;
+    Guid me;
+    Coach? coach;
+    CoachFolder folder = CoachFolder.Inbox;
+    IReadOnlyList<CoachLetterRow> letters = [];
+    List<SquadRow> squad = [];
+    Guid? open;
+    int unread, pending;
+    string? msg, req, note, staff, player;
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync() ?? Guid.Empty;
+        await Load();
+        if (pending > 0 && unread == 0) { folder = CoachFolder.Decisions; await Load(); }
+        loaded = true;
+    }
+
+    async Task Load()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        coach = me == Guid.Empty ? null : await db.Coaches.AsNoTracking().SingleOrDefaultAsync(c => c.ManagerId == me);
+        if (coach is null || coach.Status == CoachStatus.Creating) return;
+        var svc = new CoachLetterService(db, Clock);
+        letters = await svc.ListAsync(coach.Id, folder);
+        unread = await svc.UnreadAsync(me);
+        pending = await db.CoachLetters.CountAsync(l => l.CoachId == coach.Id && l.Kind == LetterKind.Decision && l.Chosen == null && !l.Archived);
+    }
+
+    async Task Folder(CoachFolder f) { folder = f; compose = false; open = null; msg = null; await Load(); }
+
+    async Task Toggle(CoachLetterRow row)
+    {
+        open = open == row.Letter.Id ? null : row.Letter.Id;
+        if (open is null || row.Letter.Read || coach is null) return;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            await new CoachLetterService(db, Clock).MarkReadAsync(coach.Id, row.Letter.Id);
+        await Load();
+        if (Shell is not null) await Shell.RefreshMailAsync();
+    }
+
+    async Task Choose(Guid id, int option)
+    {
+        if (coach is null) return;
+        busy = true;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var (err, result) = await new CoachLetterService(db, Clock).ChooseAsync(coach.Id, id, option);
+            (msg, ok) = (err ?? result ?? "Đã quyết định.", err is null);
+            await Load();
+            if (Shell is not null) { await Shell.RefreshAsync(); await Shell.RefreshMailAsync(); }
+        }
+        finally { busy = false; }
+    }
+
+    async Task Archive(Guid id, bool archive)
+    {
+        if (coach is null) return;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            await new CoachLetterService(db, Clock).ArchiveAsync(coach.Id, id, archive);
+        open = null;
+        await Load();
+    }
+
+    async Task Compose()
+    {
+        compose = true; open = null; msg = null;
+        if (coach is null || squad.Count > 0) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var club = await db.CoachContracts.Where(k => k.CoachId == coach.Id && k.Status == CoachContractStatus.Active).Select(k => (Guid?)k.ClubId).FirstOrDefaultAsync();
+        if (club is null) return;
+        squad = await (from m in db.SquadMemberships join p in db.Players on m.PlayerId equals p.Id
+                       where m.ClubId == club && m.LeftAt == null orderby p.Name select new SquadRow(p.Id, p.Name)).ToListAsync();
+    }
+
+    async Task Send()
+    {
+        if (coach is null || CoachEvents.Request(req) is not { } r) return;
+        Guid? pid = Guid.TryParse(player, out var g) ? g : null;
+        if (r.ToPlayer && pid is null) { (msg, ok) = ("Chọn cầu thủ nhận thư.", false); return; }
+        if (r.Key == "nhan-su" && staff is null) { (msg, ok) = ("Chọn vị trí nhân viên.", false); return; }
+        busy = true;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var err = await new CoachLetterService(db, Clock).SendAsync(coach.Id, r.Key, pid, note, r.Key == "nhan-su" ? $"role={staff}" : null);
+            (msg, ok) = (err ?? $"Đã gửi \"{r.Name}\". Hồi âm tới sau vòng kế tiếp.", err is null);
+            if (err is null) { note = null; req = null; compose = false; folder = CoachFolder.Sent; await Load(); }
+        }
+        finally { busy = false; }
+    }
+}
