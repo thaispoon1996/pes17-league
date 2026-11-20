@@ -1,0 +1,24 @@
+@* Áo đấu CLB (PO 20/11): 4 bộ áo dựng từ texture game (KitStore, tools/pes17db/kits.py). Dùng ở bảng chi tiết CLB (/su-nghiep) và trang CLB (/clb).
+   CLB không có áo → không vẽ gì, kể cả tiêu đề (ChildContent). Giao diện: app.css (giải online) / career.css dưới .cx (career). *@
+@inject KitStore Kits
+@if (kits.Count > 0)
+{
+    @ChildContent
+    <div class="kits"><div class="kits-row n@(kits.Count)" style="--n:@kits.Count">
+        @for (var i = 0; i < kits.Count; i++)
+        {
+            var k = kits[i];
+            <figure class="kit @k.Css" style="--i:@i"><img src="@k.Url" width="160" height="160" alt="Áo @k.Label.ToLowerInvariant() @Name" loading="lazy" decoding="async" /><figcaption>@k.Label</figcaption></figure>
+        }
+    </div></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ClubId { get; set; }
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    /// <summary>Tiêu đề mục, chỉ hiện khi CLB có áo.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    IReadOnlyList<KitStore.Kit> kits = [];
+    protected override void OnParametersSet() => kits = Kits.For(ClubId);
+}

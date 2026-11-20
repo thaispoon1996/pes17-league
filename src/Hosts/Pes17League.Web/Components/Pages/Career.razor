@@ -8,7 +8,6 @@
 @inject NavigationManager Nav
 @inject MatchJobService Jobs
 @inject LeagueQueries Q
-@inject KitStore Kits
 @implements IDisposable
 
 <PageTitle>Sự nghiệp HLV</PageTitle>
@@ -445,17 +444,7 @@
                         <div class="cx-stat"><span>Lương/trận</span><b>@K(cd.WageBill)</b><small>cả đội</small></div>
                     </div>
 
-                    @if (clubKits.Count > 0)
-                    {
-                        <h3>Áo đấu</h3>
-                        <div class="kits" style="--n:@clubKits.Count">
-                            @for (var i = 0; i < clubKits.Count; i++)
-                            {
-                                var k = clubKits[i];
-                                <figure class="kit @k.Css" style="--i:@i"><img src="@k.Url" width="160" height="160" alt="Áo @k.Label.ToLowerInvariant() @cd.Name" decoding="async" /><figcaption>@k.Label</figcaption></figure>
-                            }
-                        </div>
-                    }
+                    <KitStrip ClubId="cd.Id" Name="@cd.Name"><h3>Áo đấu</h3></KitStrip>
 
                     <h3>Ban lãnh đạo</h3>
                     <ul class="rules">
@@ -704,8 +693,6 @@
 
     /// <summary>Bước 2: bảng chi tiết CLB đang mở (PO 19/11).</summary>
     CareerClubInfo? clubDetail;
-    /// <summary>Áo đấu của CLB đang mở (ảnh dựng từ game, PO 20/11); rỗng = game không có áo → ẩn mục.</summary>
-    IReadOnlyList<KitStore.Kit> clubKits = [];
     /// <summary>Tiền nhỏ (lương, thu chi mỗi trận): dưới 1 tr ghi theo nghìn ("3.5k") cho khỏi thành "0 tr".</summary>
     static string K(long v) => Math.Abs(v) >= 1_000_000 ? Fmt.Money(v) : (v / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "k";
     static string LineName(PositionGroup g) => g switch { PositionGroup.Goalkeeper => "Thủ môn", PositionGroup.Defender => "Hậu vệ", PositionGroup.Midfielder => "Tiền vệ", _ => "Tiền đạo" };
@@ -715,7 +702,7 @@
     async Task OpenClub(CareerClubChoice c)
     {
         if (seasonId is not { } sid) return;
-        try { clubDetail = await Q.CareerClubAsync(sid, c.ClubId, Store, Clock); clubKits = Kits.For(c.ClubId); }
+        try { clubDetail = await Q.CareerClubAsync(sid, c.ClubId, Store, Clock); }
         catch (Exception ex) { error = $"Không mở được chi tiết {c.Name}: {ex.Message}"; }
         if (clubDetail is null) await Apply(c);
     }

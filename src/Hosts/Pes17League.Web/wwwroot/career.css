@@ -857,24 +857,18 @@ html[data-cx-scroll] .cx *, html[data-cx-scroll] .cx *::before, html[data-cx-scr
 .cx-cdet .legend i { width: 14px; height: 10px; border-radius: 3px; border: 1px solid rgba(54,227,255,.6); background: rgba(54,227,255,.15); }
 .cx-cdet .squad li.st { border-color: rgba(54,227,255,.45); }
 
-/* Bước 2: áo đấu trong bảng chi tiết CLB (PO 20/11) — ảnh dựng từ texture game (tools/pes17db/kits.py), bóng đổ vẽ sẵn trong ảnh → không filter CSS */
-.cx-cdet .kits { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 8px; }
-.cx-cdet .kit { position: relative; margin: 0; display: grid; justify-items: center; gap: 4px; padding: 10px 4px; border-radius: 8px; overflow: hidden; contain: layout paint;
-  border: 1px solid var(--line); background: radial-gradient(90% 60% at 50% 0%, rgba(54,227,255,.16), transparent 70%), linear-gradient(180deg, #0e1a40, #0a1129);
+/* Áo đấu (KitStrip, PO 20/11): bảng chi tiết CLB bước 2 + trang CLB. Bố cục chung ở app.css (.kits/.kit), đây chỉ đổi skin Nocturnal Apex */
+.cx .kit { border-radius: 8px; border-color: var(--line); background: radial-gradient(90% 60% at 50% 0%, rgba(54,227,255,.16), transparent 70%), linear-gradient(180deg, #0e1a40, #0a1129);
   animation: cx-kit-in .55s cubic-bezier(.2,1.4,.4,1) both; animation-delay: calc(.22s + var(--i, 0) * .07s); }
-.cx-cdet .kit::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: 26px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(54,227,255,.22), transparent); }
-.cx-cdet .kit.home { border-color: rgba(255,201,74,.5); background: radial-gradient(90% 60% at 50% 0%, rgba(255,201,74,.24), transparent 70%), linear-gradient(180deg, #14204a, #0a1129); }
-.cx-cdet .kit.home::after { background: radial-gradient(closest-side, rgba(255,201,74,.28), transparent); }
-.cx-cdet .kit img { position: relative; z-index: 1; display: block; width: 100%; max-width: 140px; height: auto; aspect-ratio: 1; object-fit: contain; }
-.cx-cdet .kit figcaption { position: relative; z-index: 1; font: 800 italic 13px/1 var(--f-display); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
-.cx-cdet .kit.home figcaption { color: var(--gold); }
-.cx-cdet .kit.gk figcaption { color: var(--cyan); }
+.cx .kit::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: 26px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(54,227,255,.22), transparent); }
+.cx .kit.home { border-color: rgba(255,201,74,.5); background: radial-gradient(90% 60% at 50% 0%, rgba(255,201,74,.24), transparent 70%), linear-gradient(180deg, #14204a, #0a1129); }
+.cx .kit.home::after { background: radial-gradient(closest-side, rgba(255,201,74,.28), transparent); }
+.cx .kit figcaption { font: 800 italic 13px/1 var(--f-display); }
+.cx .kit.home figcaption { color: var(--gold); }
+.cx .kit.gk figcaption { color: var(--cyan); }
 @keyframes cx-kit-in { from { opacity: 0; transform: translateY(16px) scale(.88); } }
-@media (hover: hover) and (pointer: fine) {
-  .cx-cdet .kit img { transition: transform .25s cubic-bezier(.2,1.4,.4,1); }
-  .cx-cdet .kit:hover img { transform: translateY(-4px) scale(1.06); }
-}
-@media (max-width: 360px) { .cx-cdet .kit figcaption { font-size: 11px; letter-spacing: .02em; } }
+@media (hover: hover) and (pointer: fine) { .cx .kit img { transition-timing-function: cubic-bezier(.2,1.4,.4,1); } }
+@media (max-width: 360px) { .cx .kit figcaption { font-size: 11px; } }
 
 /* Cuộn mượt bảng chi tiết giải/CLB (PO 20/11): lớp phủ không blur (trước phải làm mờ lại cả màn mỗi khung vì đèn pha/bụi sáng chạy bên dưới);
    khi bảng mở, mọi thứ sau lớp phủ đứng yên (đã bị che tối), chỉ bảng chạy hiệu ứng; career.js dừng bụi sáng + bắt cả cuộn trong bảng */

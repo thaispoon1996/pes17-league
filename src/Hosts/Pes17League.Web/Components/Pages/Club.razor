@@ -183,6 +183,7 @@
                     <div class="fm-h"><h2>Đội hình chính</h2><button class="fm-link" @onclick='() => tab = mine ? "chien-thuat" : "doi-hinh"'>@(mine ? "Sửa →" : "Cả đội →")</button></div>
                     <PitchXI Season="season" Players="Xi()" />
                     <p class="fm-note">Xếp theo vị trí đăng ký · số trên áo = điểm TB mùa này</p>
+                    <KitStrip ClubId="clubId" Name="@name"><div class="fm-h"><h2>Áo đấu</h2><small>Bộ áo trong game</small></div></KitStrip>
                 </section>
                 <section class="fm-panel">
                     <div class="fm-h"><h2>Nhân sự nổi bật</h2></div>
