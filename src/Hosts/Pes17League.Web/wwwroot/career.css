@@ -1111,30 +1111,6 @@ body:has(.cx-ldet-ov) :is(.cx-top, .cx-dock) { backdrop-filter: none; -webkit-ba
 .cx .hlv-list li b.amt { font: 800 italic 18px var(--f-display); white-space: nowrap; }
 
 /* hòm thư HLV */
-.cx .hlv-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 6px; scrollbar-width: none; }
-.cx .hlv-tabs button { flex: none; position: relative; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); color: var(--muted);
-  font: 700 13px var(--f-display); text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
-.cx .hlv-tabs button.on { color: var(--n0); background: linear-gradient(90deg, var(--gold), var(--gold-2)); border-color: transparent; }
-.cx .hlv-tabs button em { margin-left: 6px; font-style: normal; color: var(--crimson); } .cx .hlv-tabs button.on em { color: var(--n0); }
-.cx .hlv-mail { display: block; width: 100%; text-align: left; color: var(--text); font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--glass-solid);
-  margin-bottom: 7px; cursor: pointer; }
-.cx .hlv-mail .top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-.cx .hlv-mail .top .ms { font-size: 18px; color: var(--cyan); } .cx .hlv-mail .top span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cx .hlv-mail > b { display: block; margin-top: 4px; font-size: 15px; font-weight: 600; }
-.cx .hlv-mail.unread { border-color: rgba(54,227,255,.5); } .cx .hlv-mail.unread > b { font-weight: 800; }
-.cx .hlv-mail.unread .top::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
-.cx .hlv-mail.decide { border-color: rgba(255,201,74,.55); } .cx .hlv-mail.decide .top .ms { color: var(--gold); }
-.cx .hlv-mail.open { border-color: var(--gold); }
-.cx .hlv-letter { margin: -4px 0 10px; padding: 14px; border: 1px solid var(--hrim); border-top: 0; border-radius: 0 0 8px 8px; background: rgba(16,28,68,.6); }
-.cx .hlv-letter .body { white-space: pre-line; font-size: 14.5px; line-height: 1.6; }
-.cx .hlv-letter .from { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
-.cx .hlv-opts { display: grid; gap: 8px; margin-top: 12px; }
-.cx .hlv-opts button { text-align: left; color: var(--text); font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,201,74,.45); background: rgba(255,201,74,.06); cursor: pointer; }
-.cx .hlv-opts button small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-.cx .hlv-opts button.chosen { border-color: var(--emerald); background: rgba(61,255,162,.08); }
-.cx .hlv-opts button:disabled { cursor: default; } .cx .hlv-opts button:disabled:not(.chosen) { opacity: .45; }
-.cx .hlv-letter .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
-.cx .hlv-letter .meta .cx-btn { margin-left: auto; }
 .cx .hlv-empty { text-align: center; padding: 40px 16px; color: var(--muted); }
 .cx .hlv-empty .ms { font-size: 44px; color: rgba(54,227,255,.5); display: block; margin-bottom: 8px; }
 .cx .hlv-compose .hlv-chips { margin-bottom: 12px; }
@@ -1489,3 +1465,125 @@ a.cx-zt:focus-visible, .cx-dme:focus-visible, .cx-dfoot button:focus-visible { o
 .cx .st-row b { color: var(--text); font-size: 14.5px; font-weight: 600; }
 .cx .st-row:hover b { color: var(--gold); }
 .cx .st form { margin: 12px 0 0; }
+
+/* ===== Thư HLV /thu-hlv (PO 20/11: làm lại hòm thư) — danh sách + khung đọc; máy tính 2 cột, điện thoại bấm thư → màn đọc riêng ===== */
+.cx-page:has(.ml) { max-width: 1120px; }
+.cx .ml { --av: 40px; }
+.cx .t-gold { --tc: var(--gold); } .cx .t-cyan { --tc: var(--cyan); } .cx .t-green { --tc: var(--emerald); } .cx .t-violet { --tc: var(--violet); } .cx .t-ink { --tc: #dee1f7; }
+.cx .ml-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 4px 0 12px; }
+.cx .ml-head h1 { margin: 0; font-size: 38px; font-weight: 800; line-height: .95; }
+.cx .ml-head p { margin: 5px 0 0; font-size: 13px; color: var(--muted); }
+.cx .ml-head .cx-btn .ms { font-size: 18px; }
+.cx .ml-folders { display: flex; gap: 4px; margin: 0 0 14px; padding: 4px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03);
+  overflow-x: auto; scrollbar-width: none; }
+.cx .ml-folders button { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border: 0; border-radius: 9px;
+  background: none; color: var(--muted); font: 700 13px var(--f-display); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; cursor: pointer; transition: color .15s, background .15s; }
+.cx .ml-folders .ms { font-size: 17px; }
+.cx .ml-folders button:hover { color: var(--text); }
+.cx .ml-folders button.on { color: var(--n0); background: linear-gradient(90deg, var(--gold), var(--gold-2)); box-shadow: 0 6px 18px -6px rgba(255, 201, 74, .6); }
+.cx .ml-folders em { min-width: 18px; padding: 0 5px; border-radius: 9px; background: rgba(54, 227, 255, .16); color: var(--cyan); font: 700 11px/18px "Be Vietnam Pro", sans-serif;
+  font-style: normal; letter-spacing: 0; text-align: center; }
+.cx .ml-folders .hot em { background: var(--crimson); color: #fff; }
+.cx .ml-folders .on em { background: rgba(7, 11, 26, .85); color: var(--gold); }
+.cx .ml-folders button:focus-visible, .cx .ml-row:focus-visible, .cx .ml-back:focus-visible, .cx .ml-opts button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.cx .ml-split { display: grid; gap: 16px; }
+.cx .ml-list { display: grid; gap: 6px; align-content: start; }
+.cx .ml-day { margin: 10px 2px 2px; font-size: 12px; font-weight: 800; line-height: 1; letter-spacing: .1em; color: var(--muted); }
+.cx .ml-list > .ml-day:first-child { margin-top: 0; }
+.cx .ml-row { --tc: var(--muted); position: relative; display: grid; grid-template-columns: var(--av) minmax(0, 1fr); gap: 12px; width: 100%; padding: 12px; text-align: left;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--glass); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+.cx .ml-row:hover { border-color: rgba(255, 255, 255, .2); background: var(--glass-2); }
+.cx .ml-row.due { border-color: rgba(255, 77, 106, .45); }
+.cx .ml-row.sel { border-color: rgba(255, 201, 74, .65); background: linear-gradient(90deg, rgba(255, 201, 74, .1), rgba(255, 201, 74, .02) 60%), var(--glass-2); }
+.cx .ml-row.sel::before { content: ""; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--gold); box-shadow: 0 0 12px rgba(255, 201, 74, .8); }
+.cx .ml-av { display: grid; place-items: center; width: var(--av); height: var(--av); border-radius: 50%; color: var(--tc);
+  background: color-mix(in srgb, var(--tc) 13%, transparent); border: 1px solid color-mix(in srgb, var(--tc) 45%, transparent); }
+.cx .ml-av .ms { font-size: 20px; }
+.cx .ml-av.lg { --av: 52px; box-shadow: 0 0 22px color-mix(in srgb, var(--tc) 30%, transparent); }
+.cx .ml-av.lg .ms { font-size: 26px; }
+.cx .ml-main { display: grid; gap: 2px; min-width: 0; }
+.cx .ml-from { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--muted); }
+.cx .ml-from b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx .ml-dot { flex: none; width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.cx .ml-subj { font-size: 14.5px; font-weight: 600; color: rgba(222, 225, 247, .8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx .ml-prev { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx .ml-row.new .ml-from b, .cx .ml-row.new .ml-subj { color: var(--text); font-weight: 700; }
+.cx .ml-st { display: inline-flex; align-items: center; gap: 4px; width: fit-content; margin-top: 5px; padding: 2px 9px 2px 6px; border-radius: 99px; font-size: 11.5px; font-weight: 600; }
+.cx .ml-st .ms { font-size: 15px; }
+.cx .ml-st.bad { color: var(--crimson); background: rgba(255, 77, 106, .1); }
+.cx .ml-st.ok { color: var(--emerald); background: rgba(61, 255, 162, .08); }
+.cx .ml-st.info { color: var(--cyan); background: rgba(54, 227, 255, .08); }
+.cx .ml-empty { display: grid; justify-items: center; gap: 8px; padding: 40px 16px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; }
+.cx .ml-empty .ms { font-size: 40px; color: rgba(54, 227, 255, .5); }
+
+.cx .ml-read { --tc: var(--muted); position: relative; padding: 20px 22px 18px; border: 1px solid rgba(255, 255, 255, .1); border-top-color: color-mix(in srgb, var(--tc) 55%, transparent);
+  border-radius: 16px; background: linear-gradient(180deg, rgba(16, 28, 68, .92), rgba(11, 20, 48, .94)); box-shadow: 0 24px 60px rgba(0, 0, 0, .4); }
+.cx .ml-read::before { content: ""; position: absolute; inset: 0 0 auto; height: 150px; border-radius: 16px 16px 0 0; pointer-events: none;
+  background: radial-gradient(340px 150px at 0% 0%, color-mix(in srgb, var(--tc) 16%, transparent), transparent 70%); }
+.cx .ml-read > * { position: relative; }
+.cx .ml-read:not(.none) > * { animation: cx-rise .4s cubic-bezier(.2, .8, .2, 1) both; }
+.cx .ml-read.none { display: grid; place-items: center; min-height: 320px; border-style: dashed; border-color: var(--line); background: none; box-shadow: none; }
+.cx .ml-pick { display: grid; justify-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.cx .ml-pick .ms { font-size: 42px; color: rgba(54, 227, 255, .45); }
+.cx .ml-bar { display: none; margin: -4px 0 14px; }
+.cx .ml-back { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px; border: 1px solid var(--line); border-radius: 99px; background: rgba(255, 255, 255, .04);
+  color: var(--text); font: 700 13px var(--f-display); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
+.cx .ml-back .ms { font-size: 18px; }
+.cx .ml-rh { display: flex; align-items: center; gap: 12px; }
+.cx .ml-rh b { display: block; font-size: 15px; }
+.cx .ml-rh small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.cx .ml-subject { margin: 16px 0 12px; font-size: 28px; font-weight: 800; line-height: 1.02; color: var(--text); }
+.cx .ml-about { display: flex; align-items: center; gap: 6px; margin: -4px 0 12px; font-size: 13px; color: var(--muted); }
+.cx .ml-about .ms { font-size: 17px; color: var(--emerald); }
+.cx .ml-due { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255, 77, 106, .4);
+  background: rgba(255, 77, 106, .08); font-size: 13px; }
+.cx .ml-due .ms { color: var(--crimson); }
+.cx .ml-due b { display: block; color: var(--crimson); }
+.cx .ml-body { max-width: 68ch; font-size: 15px; line-height: 1.65; color: rgba(222, 225, 247, .92); }
+.cx .ml-body p { margin: 0 0 12px; white-space: pre-line; }
+.cx .ml-facts { margin: 4px 0 14px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: rgba(7, 11, 26, .35); }
+.cx .ml-facts div { display: grid; grid-template-columns: minmax(96px, 38%) 1fr; gap: 12px; padding: 10px 14px; }
+.cx .ml-facts div + div { border-top: 1px solid var(--line); }
+.cx .ml-facts dt { font-size: 13px; color: var(--muted); }
+.cx .ml-facts dd { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.cx .ml-opts { display: grid; gap: 8px; margin: 6px 0 14px; }
+.cx .ml-opts button { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; padding: 12px 14px; text-align: left; border: 1px solid var(--line); border-radius: 12px;
+  background: rgba(255, 255, 255, .035); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+.cx .ml-opts button:not(:disabled):hover { border-color: rgba(255, 201, 74, .6); background: rgba(255, 201, 74, .07); }
+.cx .ml-opts .ms { font-size: 22px; color: var(--cyan); }
+.cx .ml-opts b { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14.5px; }
+.cx .ml-opts em { padding: 1px 7px; border-radius: 99px; border: 1px solid rgba(255, 201, 74, .5); color: var(--gold); font: 700 11px/16px "Be Vietnam Pro", sans-serif; font-style: normal; }
+.cx .ml-opts small { display: block; margin-top: 3px; font-size: 12.5px; color: var(--muted); }
+.cx .ml-opts button.chosen { border-color: rgba(61, 255, 162, .6); background: rgba(61, 255, 162, .07); }
+.cx .ml-opts button.chosen .ms { color: var(--emerald); }
+.cx .ml-opts button:disabled { cursor: default; }
+.cx .ml-opts button:disabled:not(.chosen) { opacity: .5; }
+.cx .ml-read > .ml-st { margin: 0 0 4px; }
+.cx .ml-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.cx .ml-acts:empty { display: none; }
+.cx .ml-acts .cx-btn .ms { font-size: 18px; }
+.cx .ml.composing .ml-folders { display: none; }
+.cx .ml-compose .ml-bar { display: block; }
+.cx .ml-compose .ml-subject { margin-top: 0; }
+.cx .ml-k { margin: 16px 0 8px; font-size: 15px; font-weight: 800; color: var(--muted); }
+@media (min-width: 900px) {
+  .cx .ml-split { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: start; }
+  .cx .ml-read { position: sticky; top: calc(124px + env(safe-area-inset-top)); max-height: calc(100dvh - 240px); overflow-y: auto; scrollbar-width: thin; }
+}
+@media (max-width: 899px) {
+  .cx .ml.reading :is(.ml-head, .ml-folders, .ml-list) { display: none; }
+  .cx .ml:not(.reading) .ml-read { display: none; }
+  .cx .ml-read .ml-bar { display: block; }
+  .cx .ml-read { padding: 16px; }
+  .cx .ml-subject { font-size: 25px; }
+  .cx .ml-head h1 { font-size: 32px; }
+  .cx .ml.composing .ml-head { display: none; }
+}
+@media (max-width: 560px) {
+  .cx .ml-folders { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cx .ml-folders button { position: relative; flex-direction: column; gap: 2px; padding: 7px 2px; font-size: 11px; letter-spacing: .03em; white-space: normal; line-height: 1.1; text-align: center; }
+  .cx .ml-folders .ms { font-size: 19px; }
+  .cx .ml-folders em { position: absolute; top: 3px; left: calc(50% + 8px); }
+}
+@media (prefers-reduced-motion: reduce) { .cx .ml-read:not(.none) > * { animation: none; } }

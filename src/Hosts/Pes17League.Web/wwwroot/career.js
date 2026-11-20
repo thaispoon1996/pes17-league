@@ -207,6 +207,12 @@
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
+  // Thư HLV trên điện thoại (PO 20/11): mở thư → lên đầu màn đọc; quay lại → về đúng chỗ trong danh sách. Máy tính 2 cột: không cuộn.
+  let mailY = 0;
+  window.cxMail = open => {
+    if (!matchMedia('(max-width: 899px)').matches) return;
+    if (open) { mailY = scrollY; scrollTo(0, 0); } else scrollTo(0, mailY);
+  };
   let queued = false;
   new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; scan(); }); })
     .observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-count', 'class'] });

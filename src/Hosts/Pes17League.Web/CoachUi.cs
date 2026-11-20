@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Pes17League.Clubs.Domain;
 
@@ -99,4 +100,65 @@ public static class CoachUi
 
     public static string HairName(string h) => h switch { "quiff" => "Vuốt cao", "buzz" => "Cắt sát", "bald" => "Hói", _ => "Ngắn" };
     public static string OutfitName(string o) => o switch { "track" => "Đồ tập", "polo" => "Áo polo", _ => "Com-lê" };
+
+    // ===== Thư HLV (PO 20/11: làm lại hòm thư) =====
+
+    /// <summary>Màu biểu tượng người gửi: BLĐ/CLB vàng, liên đoàn cyan, báo chí/CĐV/gia đình trắng, cầu thủ/nhân viên xanh ngọc, người đại diện/tài trợ tím.</summary>
+    public static string Tone(LetterFrom f) => f switch
+    {
+        LetterFrom.Board or LetterFrom.Club => "gold",
+        LetterFrom.Federation => "cyan",
+        LetterFrom.Player or LetterFrom.Staff => "green",
+        LetterFrom.Agent or LetterFrom.Sponsor => "violet",
+        _ => "ink",
+    };
+
+    /// <summary>Một khối nội dung thư: đoạn văn (Text) hoặc bảng "Mục: giá trị" (Facts).</summary>
+    public sealed record LetterBlock(string? Text, IReadOnlyList<(string Key, string Value)> Facts);
+
+    static readonly Regex FactLine = new(@"^(\p{L}[\p{L}\p{N} ()/&-]{1,28}):\s+(.+)$", RegexOptions.Compiled);
+    static readonly Regex OldMoney = new(@"(?<![\d.,€])\d{1,3}(?:,\d{3})+(?![\d,])", RegexOptions.Compiled);
+    static readonly Regex MoneyWord = new(@"lương|thưởng|bồi thường|giá|phí|tiền|quỹ|ngân sách", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>Thư cũ (trước 20/11) ghi tiền kiểu "36,320" → hiện "€36.3K" như quy ước mới. Chỉ đổi lúc hiển thị, chỉ dòng nói về tiền.</summary>
+    public static string FixMoney(string line) => MoneyWord.IsMatch(line)
+        ? OldMoney.Replace(line, m => long.TryParse(m.Value.Replace(",", ""), out var v) ? MoneyText.Format(v) : m.Value)
+        : line;
+
+    /// <summary>Tách nội dung thư: các dòng "Mục: giá trị" liền nhau thành bảng, còn lại là đoạn văn (dòng trống = sang đoạn).</summary>
+    public static IReadOnlyList<LetterBlock> Blocks(string body)
+    {
+        var list = new List<LetterBlock>(); var para = new List<string>(); var facts = new List<(string, string)>();
+        void Para() { if (para.Count > 0) { list.Add(new(string.Join("\n", para), [])); para.Clear(); } }
+        void Facts() { if (facts.Count > 0) { list.Add(new(null, [.. facts])); facts.Clear(); } }
+        foreach (var raw in body.Replace("\r", "").Split('\n'))
+        {
+            var line = FixMoney(raw.Trim());
+            if (line.Length == 0) { Para(); Facts(); continue; }
+            var m = FactLine.Match(line);
+            if (m.Success && m.Groups[2].Value.Length <= 90) { Para(); facts.Add((m.Groups[1].Value.Trim(), m.Groups[2].Value.Trim().TrimEnd('.'))); }
+            else { Facts(); para.Add(line); }
+        }
+        Para(); Facts();
+        return list;
+    }
+
+    /// <summary>Dòng xem trước trong danh sách thư.</summary>
+    public static string Preview(string body)
+    {
+        var t = Regex.Replace(FixMoney(body.Replace('\n', ' ')), @"\s+", " ").Trim();
+        return t.Length <= 140 ? t : t[..140].TrimEnd() + "…";
+    }
+
+    /// <summary>Nút đi kèm thư, ghi rõ trang đích (thay nút "Mở").</summary>
+    public static (string Href, string Label)? LetterLink(CoachLetter l) => l.Link switch
+    {
+        null or "" => null,
+        "hlv" when l.Subject.Contains("hợp đồng", StringComparison.OrdinalIgnoreCase) => ("hlv#hop-dong", "Xem hợp đồng"),
+        "hlv" => ("hlv", "Mở hồ sơ HLV"),
+        "hlv/viec-lam" => ("hlv/viec-lam", "Xem việc làm HLV"),
+        "de-nghi" => ("de-nghi", "Xem đề nghị"),
+        var x when x.StartsWith("tran/", StringComparison.Ordinal) => (x, "Xem trận"),
+        var x => (x, "Mở trang liên quan"),
+    };
 }
