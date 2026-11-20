@@ -1,0 +1,54 @@
+@page "/cai-dat"
+@inject CurrentUser Me
+
+<PageTitle>Cài đặt</PageTitle>
+
+@* Cài đặt career (PO 20/11, phương án B): âm thanh (chuyển từ menu ≡; career-audio.js đọc data-snd*, lưu trên trình duyệt), điều khiển game, tài khoản. *@
+<div class="st">
+    <h1>Cài đặt</h1>
+
+    <section class="hlv-panel st-sec" aria-labelledby="st-snd">
+        <h2 id="st-snd"><i class="ms" aria-hidden="true">volume_up</i>Âm thanh</h2>
+        <p class="hlv-note">Lưu trên trình duyệt này. Âm thanh tự sinh trong máy, không tải file.</p>
+        <div class="cx-snd st-snd">
+            @if (CareerLayout.MusicOn)
+            {
+                <span class="now" data-snd="now">Nhạc đang tắt</span>
+                <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
+            }
+            <label class="sw"><input type="checkbox" data-snd="sfx" /><span>Âm hiệu ứng</span><small>Tiếng bấm nút, mở khoá, kết quả trận</small></label>
+            <label>Âm lượng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
+        </div>
+    </section>
+
+    <section class="hlv-panel st-sec" aria-labelledby="st-game">
+        <h2 id="st-game"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</h2>
+        <a class="st-row" href="dieu-khien"><span><b>Bàn phím và tay cầm</b>Đổi phím dùng khi vào trận</span><i class="ms" aria-hidden="true">chevron_right</i></a>
+    </section>
+
+    <section class="hlv-panel st-sec" aria-labelledby="st-acc">
+        <h2 id="st-acc"><i class="ms" aria-hidden="true">account_circle</i>Tài khoản</h2>
+        @if (profile is not null) { <a class="st-row" href="@profile"><span><b>@who</b>Trang người chơi của bạn</span><i class="ms" aria-hidden="true">chevron_right</i></a> }
+        <a class="st-row" href="" data-enhance-nav="false"><span><b>Trang giải đấu đầy đủ</b>Giao diện giải online: lịch, BXH, tin tức</span><i class="ms" aria-hidden="true">chevron_right</i></a>
+        @if (admin) { <a class="st-row" href="admin"><span><b>Quản trị</b>Dành cho ban tổ chức</span><i class="ms" aria-hidden="true">chevron_right</i></a> }
+        @if (profile is not null)
+        {
+            <form method="post" action="/logout" data-enhance="false"><button class="cx-btn ghost sm st-out"><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
+        }
+    </section>
+</div>
+
+@code {
+    bool admin;
+    string? who, profile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        admin = await Me.IsAdminAsync();
+        if (await Me.ManagerIdAsync() is not null)
+        {
+            who = await Me.NameAsync();
+            profile = "nguoi-choi/" + await Me.UsernameAsync();
+        }
+    }
+}

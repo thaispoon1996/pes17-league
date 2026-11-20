@@ -8,7 +8,7 @@
 
 <PageTitle>Hồ sơ HLV</PageTitle>
 
-@* Hồ sơ HLV career (PO 19/11): thẻ, hợp đồng, danh tiếng, bằng + khoá học, năng lực (điểm tự do), căng thẳng, ví riêng, mức sống, tài sản, sổ ví, album.
+@* Hồ sơ HLV career (PO 19/11): thẻ, hợp đồng, danh tiếng, bằng + khoá học, năng lực (điểm tự do), căng thẳng. Ví, mức sống, tài sản, sổ ví, album → /cuoc-song (PO 20/11).
    Chưa có / đang tạo hồ sơ → các bước tạo HLV. *@
 @if (!loaded) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
 @if (me == Guid.Empty) { <p class="cx-msg neg">Cần đăng nhập bằng tài khoản người chơi.</p>; return; }
@@ -174,124 +174,36 @@
         </div>
     </section>
 
-    <section class="hx-sec">
-        <div class="hx-tabs" role="tablist">
-            @foreach (var (key, label) in Tabs)
-            {
-                <button class="hx-tab" role="tab" aria-selected="@(tab == key ? "true" : "false")" @onclick="() => tab = key">@label</button>
-            }
-        </div>
-        <div class="hx-pane" role="tabpanel">
-            @switch (tab)
-            {
-                case "hd":
-                    @if (k is not null)
-                    {
-                        <div class="hlv-panel">
-                            <div class="hlv-bar" style="margin:-4px -4px 12px">
-                                <Crest Name="@(pf.ClubName ?? "")" Logo="@pf.ClubLogo" Large="true" />
-                                <div><b>@pf.ClubName</b>HLV trưởng · hết hạn cuối mùa @k.EndSeasonNumber</div>
-                                <span class="cx-chip ok">Đang làm việc</span>
-                            </div>
-                            <dl class="hlv-dl">
-                                <dt>Lương mỗi vòng</dt><dd>@CoachUi.Cash(k.Wage)</dd>
-                                <dt>Thưởng đạt mục tiêu</dt><dd>@CoachUi.Cash(k.Bonus)</dd>
-                                <dt>Mục tiêu</dt><dd>@k.Objective</dd>
-                                <dt>Đã nhận lương</dt><dd>@k.RoundsPaid/@k.TotalRounds vòng</dd>
-                                <dt>Bồi thường nếu bị sa thải</dt><dd>@CoachUi.Cash(CoachRules.Severance(k)) (@k.SeverancePct%)</dd>
-                            </dl>
-                            <a class="cx-btn ghost sm" href="hlv/viec-lam"><i class="ms" aria-hidden="true">work</i>Việc làm</a>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="hx-empty"><i class="ms" aria-hidden="true">work_off</i><div><b>Đang thất nghiệp.</b> Ứng tuyển CLB đang tìm HLV, hoặc chờ lời mời trong thư.</div>
-                            <a class="cx-btn gold sm" href="hlv/viec-lam">Tìm việc</a></div>
-                    }
-                    break;
-                case "vi":
-                    <div class="hx-cards">
-                        <div class="hlv-panel">
-                            <h3 class="hx-k">Ví HLV</h3>
-                            <b class="hlv-big @(pf.Wallet >= 0 ? "cx-up" : "cx-down")">@CoachUi.Cash(pf.Wallet)</b>
-                            <p class="hlv-note">Tách riêng quỹ CLB. Lương vào ví sau mỗi vòng; chi tiêu sinh hoạt và bảo trì tài sản trừ mỗi vòng.</p>
-                        </div>
-                        <div class="hlv-panel">
-                            <h3 class="hx-k">Mức sống</h3>
-                            <div class="hlv-chips">
-                                @for (var i = 0; i < CoachRules.Living.Length; i++)
-                                {
-                                    var lv = i; var L = CoachRules.Living[lv];
-                                    <button class="hlv-chip @(c.Lifestyle == lv ? "on" : null)" disabled="@busy" @onclick="() => Living(lv)">@L.Name · @CoachUi.Cash(CoachRules.LivingCost(lv, c.Trait))/vòng</button>
-                                }
-                            </div>
-                            <p class="hlv-note">Mức sống cao hơn giảm căng thẳng nhiều hơn mỗi vòng.</p>
-                        </div>
-                    </div>
-                    <h3 class="hx-k" style="margin-top:16px">Tài sản</h3>
-                    <div class="hlv-panel">
-                        <ul class="hlv-list">
-                            @foreach (var a in pf.Assets)
-                            {
-                                var def = CoachRules.Assets.FirstOrDefault(x => x.Key == a.Key); var aid = a.Id;
-                                <li>
-                                    <i class="ms" aria-hidden="true">@(def?.Icon ?? "savings")</i>
-                                    @if (a.MaturesTick is { } m)
-                                    {
-                                        <span>Khoản đầu tư<small>Đáo hạn @CoachUi.Tick(m)</small></span><b class="amt">@CoachUi.Cash(a.Price)</b>
-                                    }
-                                    else
-                                    {
-                                        <span>@(def?.Name ?? a.Key)<small>Mua @CoachUi.Cash(a.Price) · bảo trì @CoachUi.Cash(def?.Upkeep ?? 0)/vòng</small></span>
-                                        <button class="cx-btn ghost sm" disabled="@busy" data-confirm="Bán @(def?.Name ?? a.Key) được @CoachUi.Cash((long)(a.Price * CoachRules.AssetResale))?" @onclick="() => Sell(aid)">Bán</button>
-                                    }
-                                </li>
-                            }
-                            @foreach (var def in CoachRules.Assets.Where(x => pf.Assets.All(a => a.Key != x.Key)))
-                            {
-                                var key = def.Key;
-                                <li>
-                                    <i class="ms" aria-hidden="true">@def.Icon</i>
-                                    <span>@def.Name<small>@CoachUi.Cash(def.Price) · bảo trì @CoachUi.Cash(def.Upkeep)/vòng · giảm căng thẳng</small></span>
-                                    <button class="cx-btn gold sm" disabled="@(busy || pf.Wallet < def.Price)" data-confirm="Mua @def.Name giá @CoachUi.Cash(def.Price)?" @onclick="() => Buy(key)">Mua</button>
-                                </li>
-                            }
-                        </ul>
-                        <p class="hlv-note">Bán lại được @((int)(CoachRules.AssetResale * 100))% giá mua.</p>
-                    </div>
-                    break;
-                case "so":
-                    @if (pf.Ledger.Count == 0)
-                    {
-                        <div class="hx-empty"><i class="ms" aria-hidden="true">receipt_long</i><div>Chưa có khoản thu chi nào. Lương vào ví sau vòng đầu tiên có hợp đồng.</div></div>
-                    }
-                    else
-                    {
-                        <div class="hlv-panel">
-                            <ul class="hlv-list">
-                                @foreach (var e in pf.Ledger)
-                                {
-                                    <li><span>@e.Note<small>@CoachUi.Money(e.Kind) · @CoachUi.Tick(e.Tick)</small></span><b class="amt @(e.Amount >= 0 ? "cx-up" : "cx-down")">@CoachUi.Signed(e.Amount)</b></li>
-                                }
-                            </ul>
-                            <p class="hlv-note">30 dòng gần nhất.</p>
-                        </div>
-                    }
-                    break;
-                default:
-                    @if (pf.Photos.Count == 0)
-                    {
-                        <div class="hx-empty"><i class="ms" aria-hidden="true">photo_library</i><div>Chưa có ảnh. Ảnh họp báo ra mắt và ảnh lưu niệm sẽ vào đây.</div></div>
-                    }
-                    else
-                    {
-                        <div class="hlv-album">
-                            @foreach (var p in pf.Photos) { <figure class="hlv-pol"><img src="hlv/anh/@p.Id" alt="@p.Caption" loading="lazy" />@p.Caption</figure> }
-                        </div>
-                    }
-                    break;
-            }
-        </div>
+    <section class="hx-sec" id="hop-dong">
+        <div class="hx-sh"><h2>Hợp đồng</h2></div>
+        @if (k is not null)
+        {
+            <div class="hlv-panel">
+                <div class="hlv-bar" style="margin:-4px -4px 12px">
+                    <Crest Name="@(pf.ClubName ?? "")" Logo="@pf.ClubLogo" Large="true" />
+                    <div><b>@pf.ClubName</b>HLV trưởng · hết hạn cuối mùa @k.EndSeasonNumber</div>
+                    <span class="cx-chip ok">Đang làm việc</span>
+                </div>
+                <dl class="hlv-dl">
+                    <dt>Lương mỗi vòng</dt><dd>@CoachUi.Cash(k.Wage)</dd>
+                    <dt>Thưởng đạt mục tiêu</dt><dd>@CoachUi.Cash(k.Bonus)</dd>
+                    <dt>Mục tiêu</dt><dd>@k.Objective</dd>
+                    <dt>Đã nhận lương</dt><dd>@k.RoundsPaid/@k.TotalRounds vòng</dd>
+                    <dt>Bồi thường nếu bị sa thải</dt><dd>@CoachUi.Cash(CoachRules.Severance(k)) (@k.SeverancePct%)</dd>
+                </dl>
+                <a class="cx-btn ghost sm" href="hlv/viec-lam"><i class="ms" aria-hidden="true">work</i>Việc làm</a>
+            </div>
+        }
+        else
+        {
+            <div class="hx-empty"><i class="ms" aria-hidden="true">work_off</i><div><b>Đang thất nghiệp.</b> Ứng tuyển CLB đang tìm HLV, hoặc chờ lời mời trong thư.</div>
+                <a class="cx-btn gold sm" href="hlv/viec-lam">Tìm việc</a></div>
+        }
+        <a class="hx-life" href="cuoc-song">
+            <i class="ms" aria-hidden="true">home</i>
+            <span><b>Cuộc sống cá nhân</b>Ví @CoachUi.Cash(pf.Wallet) · mức sống, tài sản, sổ ví, album</span>
+            <i class="ms" aria-hidden="true">chevron_right</i>
+        </a>
     </section>
 </div>
 
@@ -312,8 +224,6 @@
 
     bool loaded, busy, ok, press, bio;
     int skill;
-    string tab = "hd";
-    static readonly (string Key, string Label)[] Tabs = [("hd", "Hợp đồng"), ("vi", "Ví & tài sản"), ("so", "Sổ ví"), ("al", "Album")];
     Guid me;
     CoachProfile? pf;
     string? msg;
@@ -354,9 +264,6 @@
     }
 
     Task Spend(CoachSkill s) => Run(x => x.SpendPointAsync(me, s), $"Đã cộng 1 điểm {CoachRules.SkillDefs[(int)s].Name}.");
-    Task Living(int lv) => Run(x => x.SetLifestyleAsync(me, lv), $"Mức sống: {CoachRules.Living[lv].Name}.");
-    Task Buy(string key) => Run(x => x.BuyAssetAsync(me, key), "Đã mua.");
-    Task Sell(Guid id) => Run(x => x.SellAssetAsync(me, id), "Đã bán.");
     Task Course() => Run(x => x.StartCourseAsync(me), "Đã ghi danh khoá học.");
 
     async Task PressDone() { press = false; await Load(); Nav.NavigateTo("su-nghiep"); }

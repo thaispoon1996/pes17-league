@@ -149,11 +149,51 @@
     root.querySelectorAll('[data-count]').forEach(count);
     root.querySelectorAll('.cx-result-ov.win .cx-confetti, .cx-signed-ov .cx-confetti').forEach(confetti);
     root.querySelectorAll('.cx-board[data-logo]').forEach(tint);
-    // menu ⋯: đóng khi bấm ra ngoài / chọn mục
+    hashScroll();
+    const db = root.querySelector('[data-drawer="open"]'), dr = root.querySelector('#cx-drawer');
+    if (db) db.setAttribute('aria-expanded', dr?.hasAttribute('data-open') ? 'true' : 'false');
     enter();
   }
+  // Link có #mục (vd. hlv#hop-dong từ menu): trang nạp dữ liệu xong mới có mục → cuộn tới khi mục xuất hiện, mỗi địa chỉ 1 lần.
+  let hashDone = '';
+  function hashScroll() {
+    if (!location.hash) { hashDone = ''; return; }
+    const key = location.pathname + location.hash;
+    if (hashDone === key) return;
+    let el = null; try { el = document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch { }
+    if (!el) return;
+    hashDone = key;
+    const top = el.getBoundingClientRect().top + scrollY - (document.querySelector('.cx-top')?.offsetHeight || 0) - 10;
+    scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+  // Menu ≡ = ngăn kéo (PO 20/11): mở ngay ở trình duyệt, Blazor chỉ nạp số liệu khu. Đóng: nền tối, nút ×, Esc, chọn mục.
+  function drawer(open, refocus = true) {
+    const d = document.getElementById('cx-drawer'); if (!d) return;
+    const btn = document.querySelector('[data-drawer="open"]');
+    if (open) {
+      d.setAttribute('data-open', ''); btn?.setAttribute('aria-expanded', 'true');
+      d.querySelector('.cx-dbody')?.scrollTo(0, 0);
+      setTimeout(() => d.querySelector('.cx-dhead [data-drawer="close"]')?.focus({ preventScroll: true }), 60);
+    } else if (d.hasAttribute('data-open')) {
+      d.removeAttribute('data-open'); btn?.setAttribute('aria-expanded', 'false');
+      if (refocus) btn?.focus({ preventScroll: true });
+    }
+  }
   document.addEventListener('click', e => {
-    document.querySelectorAll('.cx-menu[open]').forEach(d => { if (!d.contains(e.target) || e.target.closest('a,button')) d.open = false; });
+    const t = e.target.closest?.('[data-drawer]');
+    if (t) { drawer(t.dataset.drawer === 'open'); return; }
+    if (e.target.closest?.('#cx-drawer a, #cx-drawer form button')) drawer(false, false);
+  });
+  document.addEventListener('keydown', e => {
+    const d = document.getElementById('cx-drawer');
+    if (!d?.hasAttribute('data-open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); drawer(false); return; }
+    if (e.key !== 'Tab') return;   // giữ Tab trong ngăn kéo
+    const f = [...d.querySelectorAll('a[href], button:not([disabled])')].filter(x => x.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
   let queued = false;
   new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; scan(); }); })

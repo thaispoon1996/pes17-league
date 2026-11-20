@@ -1,0 +1,199 @@
+@page "/cuoc-song"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject CurrentUser Me
+@inject TimeProvider Clock
+
+<PageTitle>Cuộc sống cá nhân</PageTitle>
+
+@* Cuộc sống cá nhân HLV (PO 20/11, phương án B): tách ví, mức sống, tài sản, sổ ví, album khỏi /hlv. Mục mở thẳng bằng ?muc=vi|tai-san|so-vi|album (menu career). *@
+@if (!loaded) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
+@if (pf is null || pf.Coach.Status == CoachStatus.Creating)
+{
+    <div class="hx-empty"><i class="ms" aria-hidden="true">person_add</i><div><b>Chưa có hồ sơ HLV.</b> Tạo hồ sơ để có ví riêng, mức sống, tài sản và album.</div>
+        <a class="cx-btn gold sm" href="hlv">Tạo hồ sơ HLV</a></div>
+    return;
+}
+@{
+    var c = pf.Coach; var k = pf.Contract;
+    var living = CoachRules.LivingCost(c.Lifestyle, c.Trait);
+    var owned = pf.Assets.Where(a => a.MaturesTick is null).Select(a => CoachRules.Assets.FirstOrDefault(x => x.Key == a.Key)).OfType<CoachAssetDef>().ToList();
+    var upkeep = owned.Sum(d => d.Upkeep);
+    var relief = CoachRules.Living[Math.Clamp(c.Lifestyle, 0, CoachRules.Living.Length - 1)].StressRelief + owned.Sum(d => d.StressRelief);
+    var net = (k?.Wage ?? 0) - living - upkeep;
+}
+
+<div class="hx lf" data-t="@CoachRules.RepCard(c.Reputation)">
+    @if (msg is not null) { <p class="cx-msg @(ok ? null : "neg")" role="status">@msg</p> }
+
+    <header class="lf-hero">
+        <h1>Cuộc sống cá nhân</h1>
+        <p>Tiền riêng của @c.Name, tách khỏi quỹ CLB. Mỗi vòng ví nhận lương rồi trừ chi tiêu sinh hoạt và bảo trì tài sản.</p>
+        <div class="hx-gauges">
+            <div class="hx-g wal">
+                <h2>Ví HLV</h2>
+                <b class="v @(pf.Wallet >= 0 ? null : "neg")" data-count="@pf.Wallet" data-fmt="money">@CoachUi.Cash(pf.Wallet)</b>
+                <p>Mỗi vòng <b class="@(net >= 0 ? "cx-up" : "cx-down")">@CoachUi.Signed(net)</b>@(k is null ? " · đang thất nghiệp, không có lương" : "")</p>
+            </div>
+            <div class="hx-g st @(c.Stress >= 70 ? "hot" : null)">
+                <h2>Căng thẳng</h2>
+                <b class="v"><span data-count="@c.Stress">@c.Stress</span><small>/100</small></b>
+                <div class="hx-track"><i style="--w:@Math.Clamp(c.Stress, 0, 100)%"></i><u style="left:70%"></u><u style="left:@(CoachRules.BurnoutAt)%"></u></div>
+                <p>Mức sống và tài sản giảm @relief mỗi vòng</p>
+            </div>
+            <div class="hx-g liv">
+                <h2>Mức sống</h2>
+                <b class="v sm">@CoachRules.Living[Math.Clamp(c.Lifestyle, 0, CoachRules.Living.Length - 1)].Name</b>
+                <p>@CoachUi.Cash(living)/vòng · @owned.Count tài sản</p>
+            </div>
+        </div>
+    </header>
+
+    <section class="hx-sec">
+        <div class="hx-tabs" role="tablist">
+            @foreach (var (key, label) in Tabs)
+            {
+                var v = key;
+                <button class="hx-tab" role="tab" aria-selected="@(tab == v ? "true" : "false")" @onclick="() => tab = v">@label</button>
+            }
+        </div>
+        <div class="hx-pane" role="tabpanel">
+            @switch (tab)
+            {
+                case "vi":
+                    <div class="hx-cards">
+                        <div class="hlv-panel">
+                            <h3 class="hx-k">Mỗi vòng</h3>
+                            <ul class="hlv-list">
+                                <li><i class="ms" aria-hidden="true">payments</i><span>Lương@(k is null ? "" : $" {pf.ClubName}")<small>@(k is null ? "Chưa có hợp đồng" : $"Đã nhận {k.RoundsPaid}/{k.TotalRounds} vòng")</small></span><b class="amt cx-up">@CoachUi.Signed(k?.Wage ?? 0)</b></li>
+                                <li><i class="ms" aria-hidden="true">restaurant</i><span>Chi tiêu sinh hoạt<small>Mức @CoachRules.Living[Math.Clamp(c.Lifestyle, 0, CoachRules.Living.Length - 1)].Name.ToLowerInvariant()</small></span><b class="amt cx-down">@CoachUi.Signed(-living)</b></li>
+                                <li><i class="ms" aria-hidden="true">build</i><span>Bảo trì tài sản<small>@owned.Count tài sản</small></span><b class="amt cx-down">@CoachUi.Signed(-upkeep)</b></li>
+                            </ul>
+                        </div>
+                        <div class="hlv-panel">
+                            <h3 class="hx-k">Mức sống</h3>
+                            <div class="hlv-chips">
+                                @for (var i = 0; i < CoachRules.Living.Length; i++)
+                                {
+                                    var lv = i; var L = CoachRules.Living[lv];
+                                    <button class="hlv-chip @(c.Lifestyle == lv ? "on" : null)" disabled="@busy" @onclick="() => Living(lv)">@L.Name · @CoachUi.Cash(CoachRules.LivingCost(lv, c.Trait))/vòng</button>
+                                }
+                            </div>
+                            <p class="hlv-note">Mức sống cao hơn giảm căng thẳng nhiều hơn mỗi vòng. Từ 70 căng thẳng bắt đầu giảm năng lực, từ @CoachRules.BurnoutAt dễ kiệt sức.</p>
+                        </div>
+                    </div>
+                    break;
+                case "tai-san":
+                    <div class="hlv-panel">
+                        <ul class="hlv-list">
+                            @foreach (var a in pf.Assets)
+                            {
+                                var def = CoachRules.Assets.FirstOrDefault(x => x.Key == a.Key); var aid = a.Id;
+                                <li>
+                                    <i class="ms" aria-hidden="true">@(def?.Icon ?? "savings")</i>
+                                    @if (a.MaturesTick is { } m)
+                                    {
+                                        <span>Khoản đầu tư<small>Đáo hạn @CoachUi.Tick(m)</small></span><b class="amt">@CoachUi.Cash(a.Price)</b>
+                                    }
+                                    else
+                                    {
+                                        <span>@(def?.Name ?? a.Key)<small>Mua @CoachUi.Cash(a.Price) · bảo trì @CoachUi.Cash(def?.Upkeep ?? 0)/vòng</small></span>
+                                        <button class="cx-btn ghost sm" disabled="@busy" data-confirm="Bán @(def?.Name ?? a.Key) được @CoachUi.Cash((long)(a.Price * CoachRules.AssetResale))?" @onclick="() => Sell(aid)">Bán</button>
+                                    }
+                                </li>
+                            }
+                            @foreach (var def in CoachRules.Assets.Where(x => pf.Assets.All(a => a.Key != x.Key)))
+                            {
+                                var key = def.Key;
+                                <li>
+                                    <i class="ms" aria-hidden="true">@def.Icon</i>
+                                    <span>@def.Name<small>@CoachUi.Cash(def.Price) · bảo trì @CoachUi.Cash(def.Upkeep)/vòng · giảm căng thẳng @def.StressRelief/vòng</small></span>
+                                    <button class="cx-btn gold sm" disabled="@(busy || pf.Wallet < def.Price)" data-confirm="Mua @def.Name giá @CoachUi.Cash(def.Price)?" @onclick="() => Buy(key)">Mua</button>
+                                </li>
+                            }
+                        </ul>
+                        <p class="hlv-note">Bán lại được @((int)(CoachRules.AssetResale * 100))% giá mua.</p>
+                    </div>
+                    break;
+                case "so-vi":
+                    @if (pf.Ledger.Count == 0)
+                    {
+                        <div class="hx-empty"><i class="ms" aria-hidden="true">receipt_long</i><div>Chưa có khoản thu chi nào. Lương vào ví sau vòng đầu tiên có hợp đồng.</div></div>
+                    }
+                    else
+                    {
+                        <div class="hlv-panel">
+                            <ul class="hlv-list">
+                                @foreach (var e in pf.Ledger)
+                                {
+                                    <li><span>@e.Note<small>@CoachUi.Money(e.Kind) · @CoachUi.Tick(e.Tick)</small></span><b class="amt @(e.Amount >= 0 ? "cx-up" : "cx-down")">@CoachUi.Signed(e.Amount)</b></li>
+                                }
+                            </ul>
+                            <p class="hlv-note">30 dòng gần nhất.</p>
+                        </div>
+                    }
+                    break;
+                default:
+                    @if (pf.Photos.Count == 0)
+                    {
+                        <div class="hx-empty"><i class="ms" aria-hidden="true">photo_library</i><div>Chưa có ảnh. Ảnh họp báo ra mắt và ảnh lưu niệm sẽ vào đây.</div></div>
+                    }
+                    else
+                    {
+                        <div class="hlv-album">
+                            @foreach (var p in pf.Photos) { <figure class="hlv-pol"><img src="hlv/anh/@p.Id" alt="@p.Caption" loading="lazy" />@p.Caption</figure> }
+                        </div>
+                    }
+                    break;
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "muc")] public string? Muc { get; set; }
+
+    static readonly (string Key, string Label)[] Tabs = [("vi", "Ví & mức sống"), ("tai-san", "Tài sản"), ("so-vi", "Sổ ví"), ("album", "Album")];
+    bool loaded, busy, ok;
+    string tab = "vi";
+    Guid me;
+    CoachProfile? pf;
+    string? msg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        me = await Me.ManagerIdAsync() ?? Guid.Empty;
+        if (me != Guid.Empty) await Load();
+        loaded = true;
+    }
+
+    // Menu career mở thẳng một mục (cùng trang, đổi ?muc=) → đổi tab.
+    protected override void OnParametersSet()
+    {
+        if (Tabs.Any(t => t.Key == Muc)) tab = Muc!;
+    }
+
+    async Task Load()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        pf = await new CoachService(db, Clock).ProfileAsync(me);
+    }
+
+    async Task Run(Func<CoachService, Task<string?>> f, string done)
+    {
+        busy = true;
+        try
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var err = await f(new CoachService(db, Clock));
+            (msg, ok) = (err ?? done, err is null);
+            await Load();
+        }
+        finally { busy = false; }
+    }
+
+    Task Living(int lv) => Run(x => x.SetLifestyleAsync(me, lv), $"Mức sống: {CoachRules.Living[lv].Name}.");
+    Task Buy(string key) => Run(x => x.BuyAssetAsync(me, key), "Đã mua.");
+    Task Sell(Guid id) => Run(x => x.SellAssetAsync(me, id), "Đã bán.");
+}

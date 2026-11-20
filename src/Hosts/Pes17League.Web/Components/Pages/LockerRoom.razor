@@ -1,0 +1,163 @@
+@page "/phong-thay-do"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+<PageTitle>Phòng thay đồ</PageTitle>
+
+@* Phòng thay đồ career (PO 20/11, phương án B): tinh thần / thể lực / chấn thương cả đội, nói chuyện riêng (khen, động viên, phê bình — luật MediaRules.Talk),
+   họp báo đang chờ, tâm trạng CĐV. Dữ liệu thật từ PlayerCondition, MatchRating, PlayerTalk; chỉ dùng trong khung career. *@
+@if (Shell?.P is not { } p)
+{
+    <div class="hx-empty lr-none"><i class="ms" aria-hidden="true">checkroom</i><div><b>Phòng thay đồ chỉ có trong chế độ sự nghiệp.</b> Nhận dẫn một CLB để quản lý tinh thần cầu thủ.</div>
+        <a class="cx-btn gold sm" href="su-nghiep">Sự nghiệp</a></div>
+    return;
+}
+@if (room is null) { <div class="cx-loading"><i></i><i></i><i></i></div>; return; }
+@{
+    var rows = room.Squad;
+    var avg = rows.Count == 0 ? 0 : (int)Math.Round(rows.Average(r => r.C.Morale));
+    var injured = rows.Count(Hurt); var tired = rows.Count(Tired); var low = rows.Count(Low); var waiting = rows.Count(r => !r.Talked && !Hurt(r));
+    var shown = rows.Where(r => filter switch { "hurt" => Hurt(r), "tired" => Tired(r), "low" => Low(r), "talk" => !r.Talked, _ => true })
+        .OrderBy(r => r.C.Morale).ThenBy(r => r.C.Name).ToList();
+}
+
+<div class="lr">
+    @if (msg is not null) { <p class="cx-msg @(ok ? null : "neg")" role="status">@msg</p> }
+
+    <header class="lr-hero">
+        <div class="lr-mood @Tone(avg)" style="--m:@avg" role="img" aria-label="Tinh thần đội @avg/100">
+            <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="bg" cx="60" cy="60" r="52" /><circle class="fg" cx="60" cy="60" r="52" pathLength="100" /></svg>
+            <b data-count="@avg" aria-hidden="true">@avg</b>
+            <small aria-hidden="true">Tinh thần</small>
+        </div>
+        <div class="lr-who">
+            <h1>Phòng thay đồ</h1>
+            <p>@p.ClubName · @rows.Count cầu thủ. Cả đội đang <b>@MoodWord(avg).ToLowerInvariant()</b>.</p>
+        </div>
+        <div class="lr-facts">
+            <div class="@(injured > 0 ? "bad" : null)"><b>@injured</b>Chấn thương</div>
+            <div class="@(tired > 0 ? "warn" : null)"><b>@tired</b>Quá mệt</div>
+            <div class="@(low > 0 ? "bad" : null)"><b>@low</b>Không vui</div>
+            <div class="fans"><b>@room.FanMood</b>CĐV@(room.FanGames > 0 ? $" · {room.FanPoints}/{room.FanGames * 3} điểm {room.FanGames} trận" : "")</div>
+        </div>
+    </header>
+
+    @if (room.Press is { } pr)
+    {
+        <a class="lr-press" href="hop-thu">
+            <i class="ms fill" aria-hidden="true">mic</i>
+            <span><b>Phóng viên đang chờ họp báo</b>Sau trận @pr.GoalsFor–@pr.GoalsAgainst với @pr.Opponent. Lời bạn nói ảnh hưởng tinh thần cả đội và CĐV.</span>
+            <i class="ms" aria-hidden="true">chevron_right</i>
+        </a>
+    }
+
+    <nav class="lr-filters" aria-label="Lọc cầu thủ">
+        @foreach (var (key, label, n) in new[] { ("all", "Tất cả", rows.Count), ("talk", "Chưa nói chuyện", waiting), ("low", "Không vui", low), ("tired", "Quá mệt", tired), ("hurt", "Chấn thương", injured) })
+        {
+            var k = key;
+            <button class="hlv-chip @(filter == k ? "on" : null)" aria-pressed="@(filter == k ? "true" : "false")" @onclick="() => Filter(k)">@label <small>@n</small></button>
+        }
+    </nav>
+
+    @if (shown.Count == 0)
+    {
+        <div class="hx-empty"><i class="ms" aria-hidden="true">sentiment_satisfied</i><div>Không có cầu thủ nào trong mục này.</div></div>
+    }
+    <ul class="lr-list">
+        @foreach (var r in shown)
+        {
+            var id = r.C.PlayerId; var isOpen = open == id; var fit = 100 - r.C.Fatigue; var best = Best(r);
+            <li class="lr-p @(isOpen ? "open" : null)">
+                <button class="lr-row" aria-expanded="@(isOpen ? "true" : "false")" @onclick="() => open = isOpen ? null : id">
+                    <Face Id="id" Name="@r.C.Name" Size="sm" />
+                    <span class="lr-n">
+                        <b>@r.C.Name @if (r.Captain) { <i class="lr-cap" title="Đội trưởng">C</i> }</b>
+                        <small><span class="ps">@r.C.Position</span>@(r.LastRating is { } lr ? $"Điểm gần nhất {lr:0.0}" : "Chưa có điểm mùa này")</small>
+                    </span>
+                    <span class="lr-m @Tone(r.C.Morale)" title="Tinh thần @r.C.Morale/100"><i style="--w:@r.C.Morale%"></i><b>@r.C.Morale</b></span>
+                    <span class="lr-tag">
+                        @if (Hurt(r)) { <em class="bad"><i class="ms" aria-hidden="true">healing</i>@r.C.Injury · @r.C.InjuredRounds vòng</em> }
+                        else if (Tired(r)) { <em class="warn"><i class="ms" aria-hidden="true">battery_1_bar</i>Thể lực @fit</em> }
+                        else { <em><i class="ms" aria-hidden="true">battery_full</i>Thể lực @fit</em> }
+                        @if (r.Talked) { <em class="done"><i class="ms" aria-hidden="true">check</i>Đã nói chuyện</em> }
+                    </span>
+                </button>
+                @if (isOpen)
+                {
+                    <div class="lr-talk">
+                        @if (r.Talked)
+                        {
+                            <p>Bạn đã nói chuyện với @r.C.Name trong vòng này. Vòng sau có thể nói tiếp.</p>
+                        }
+                        else
+                        {
+                            <div class="lr-opts">
+                                @foreach (var (kind, label, icon) in Talks)
+                                {
+                                    var kd = kind;
+                                    <button class="@(kd == best ? "best" : null)" disabled="@busy" @onclick="() => Talk(r, kd)">
+                                        <i class="ms" aria-hidden="true">@icon</i>@label@if (kd == best) { <small>Nên chọn</small> }
+                                    </button>
+                                }
+                            </div>
+                            <p>Khen khi vừa đá tốt (điểm từ 7), động viên khi tinh thần dưới 50, phê bình chỉ hiệu quả khi đá kém mà cầu thủ còn tự tin.</p>
+                        }
+                    </div>
+                }
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+
+    static readonly (TalkKind Kind, string Label, string Icon)[] Talks =
+        [(TalkKind.Praise, "Khen phong độ", "thumb_up"), (TalkKind.Encourage, "Động viên", "volunteer_activism"), (TalkKind.Criticise, "Phê bình", "campaign")];
+    const int LowMorale = 35;
+
+    LockerData? room;
+    string filter = "all";
+    Guid? open;
+    string? msg;
+    bool ok, busy;
+
+    static bool Hurt(LockerRow r) => r.C.InjuredRounds > 0;
+    static bool Tired(LockerRow r) => !Hurt(r) && r.C.Fatigue > ConditionRules.TiredAt;
+    static bool Low(LockerRow r) => r.C.Morale < LowMorale;
+    static string Tone(int m) => m < LowMorale ? "lo" : m < 60 ? "mid" : "hi";
+    static string MoodWord(int m) => m >= 80 ? "Hưng phấn" : m >= 60 ? "Vui vẻ" : m >= LowMorale ? "Bình thường" : "Chán nản";
+
+    /// <summary>Cách nói chuyện có lợi nhất theo luật thật (MediaRules.Talk), không cộng kỹ năng HLV.</summary>
+    static TalkKind Best(LockerRow r) => Talks.Select(t => t.Kind).MaxBy(k => MediaRules.Talk(k, r.LastRating, r.C.Morale));
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    async Task Load()
+    {
+        if (Shell?.P is not { } p) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        room = await new MediaService(db, Clock).LockerAsync(p.SeasonId, p.ClubId);
+    }
+
+    void Filter(string f) { filter = f; open = null; }
+
+    async Task Talk(LockerRow r, TalkKind kind)
+    {
+        if (Shell?.P is not { } p) return;
+        busy = true;
+        try
+        {
+            await using (var db = await Dbs.CreateDbContextAsync())
+            {
+                var (error, delta) = await new MediaService(db, Clock).TalkAsync(p.SeasonId, p.ClubId, r.C.PlayerId, kind);
+                (msg, ok) = error is not null ? (error, false)
+                    : ($"{r.C.Name}: tinh thần {delta:+0;-0;0}" + (delta < 0 ? ". Cầu thủ không vui với cuộc nói chuyện." : "."), delta >= 0);
+            }
+            await Load();
+        }
+        finally { busy = false; }
+    }
+}

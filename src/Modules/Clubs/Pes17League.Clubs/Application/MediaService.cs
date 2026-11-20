@@ -12,12 +12,46 @@ public sealed record PressPending(Guid FixtureId, string Opponent, int GoalsFor,
 public sealed record MediaDesk(IReadOnlyList<InboxItem> Inbox, PressPending? Press, string FanMood, int FanPoints, int FanGames,
     IReadOnlyList<ConditionRow> Squad, IReadOnlySet<Guid> TalkedThisRound);
 
+/// <summary>Một cầu thủ trong phòng thay đồ career: tình trạng + điểm trận gần nhất (để chọn cách nói chuyện) + đã nói chuyện vòng này chưa.</summary>
+public sealed record LockerRow(ConditionRow C, decimal? LastRating, bool Talked, bool Captain);
+
+/// <summary>Phòng thay đồ career (PO 20/11): tinh thần/thể lực/chấn thương cả đội, họp báo đang chờ, tâm trạng CĐV.</summary>
+public sealed record LockerData(IReadOnlyList<LockerRow> Squad, PressPending? Press, string FanMood, int FanPoints, int FanGames);
+
 /// <summary>Hộp thư + họp báo + nói chuyện cầu thủ + tâm trạng CĐV (FM đợt 9). Luật ở <see cref="MediaRules"/>.</summary>
 public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
 {
     public async Task<MediaDesk> DeskAsync(Guid seasonId, Guid clubId, CancellationToken ct = default)
     {
         var names = await db.Clubs.ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        var (press, points, games) = await RecentAsync(seasonId, clubId, names, ct);
+        var squad = await new ConditionService(db, clock).SquadAsync(clubId, ct);
+        var talked = await TalkedAsync(seasonId, clubId, ct);
+        return new(await InboxAsync(seasonId, clubId, names, squad, press, ct), press, MediaRules.FanMood(points, games), points, games, squad, talked);
+    }
+
+    /// <summary>Phòng thay đồ: cả đội kèm điểm trận gần nhất mùa này, đội trưởng (theo chiến thuật đã đặt), họp báo chờ, CĐV.</summary>
+    public async Task<LockerData> LockerAsync(Guid seasonId, Guid clubId, CancellationToken ct = default)
+    {
+        var names = await db.Clubs.ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        var (press, points, games) = await RecentAsync(seasonId, clubId, names, ct);
+        var squad = await new ConditionService(db, clock).SquadAsync(clubId, ct);
+        var talked = await TalkedAsync(seasonId, clubId, ct);
+        var ids = squad.Select(s => s.PlayerId).ToList();
+        var ratings = await (from r in db.MatchRatings join f in db.Fixtures on r.FixtureId equals f.Id
+                             join m in db.Matchdays on f.MatchdayId equals m.Id
+                             where m.SeasonId == seasonId && ids.Contains(r.PlayerId) && r.Rating != null
+                             select new { r.PlayerId, r.Rating, f.PlayedAt, m.Number }).AsNoTracking().ToListAsync(ct);
+        var last = ratings.GroupBy(r => r.PlayerId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.PlayedAt).ThenByDescending(r => r.Number).First().Rating);
+        var captain = await db.Tactics.Where(t => t.ClubId == clubId).Select(t => t.CaptainId).FirstOrDefaultAsync(ct);
+        var rows = squad.Select(s => new LockerRow(s, last.TryGetValue(s.PlayerId, out var r) ? r : null, talked.Contains(s.PlayerId), s.PlayerId == captain)).ToList();
+        return new(rows, press, MediaRules.FanMood(points, games), points, games);
+    }
+
+    /// <summary>5 trận gần nhất mùa: họp báo trận cuối còn chờ, điểm cho tâm trạng CĐV.</summary>
+    async Task<(PressPending? Press, int Points, int Games)> RecentAsync(Guid seasonId, Guid clubId, Dictionary<Guid, string> names, CancellationToken ct)
+    {
         var played = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
                             where m.SeasonId == seasonId && (f.HomeClubId == clubId || f.AwayClubId == clubId) && f.HomeGoals != null && f.AwayGoals != null
                             orderby f.PlayedAt descending, m.Number descending
@@ -29,11 +63,13 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
         PressPending? press = null;
         if (played.FirstOrDefault() is { } last && !await db.PressConferences.AnyAsync(p => p.FixtureId == last.Id && p.ClubId == clubId, ct))
             press = new(last.Id, names.GetValueOrDefault(last.HomeClubId == clubId ? last.AwayClubId : last.HomeClubId, "?"), For(last), Against(last));
+        return (press, points, played.Count);
+    }
 
-        var squad = await new ConditionService(db, clock).SquadAsync(clubId, ct);
+    async Task<HashSet<Guid>> TalkedAsync(Guid seasonId, Guid clubId, CancellationToken ct)
+    {
         var key = await RoundKeyAsync(seasonId, ct);
-        var talked = (await db.PlayerTalks.Where(t => t.ClubId == clubId && t.RoundKey == key).Select(t => t.PlayerId).ToListAsync(ct)).ToHashSet();
-        return new(await InboxAsync(seasonId, clubId, names, squad, press, ct), press, MediaRules.FanMood(points, played.Count), points, played.Count, squad, talked);
+        return (await db.PlayerTalks.Where(t => t.ClubId == clubId && t.RoundKey == key).Select(t => t.PlayerId).ToListAsync(ct)).ToHashSet();
     }
 
     async Task<List<InboxItem>> InboxAsync(Guid seasonId, Guid clubId, Dictionary<Guid, string> names, List<ConditionRow> squad, PressPending? press, CancellationToken ct)

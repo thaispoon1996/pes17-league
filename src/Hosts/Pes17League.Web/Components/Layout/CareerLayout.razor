@@ -49,38 +49,51 @@ else
                 <a class="cx-ibtn" href="thu" aria-label="Hòm thư"><i class="ms" aria-hidden="true">notifications</i>@if (unread > 0) { <em>@unread</em> }</a>
             }
             @if (MusicOn) { <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button> }
-            <details class="cx-menu">
-                <summary class="cx-ibtn" aria-label="Menu"><i class="ms" aria-hidden="true">menu</i></summary>
-                <div>
-                    @if (profile is not null) { <a href="@profile"><i class="ms" aria-hidden="true">person</i>@who</a> }
-                    @if (coach is CoachStatus.Employed or CoachStatus.Unemployed)
-                    {
-                        <a href="hlv"><i class="ms" aria-hidden="true">badge</i>Hồ sơ HLV</a>
-                        <a href="hlv/viec-lam"><i class="ms" aria-hidden="true">work</i>Việc làm HLV</a>
-                        <a href="thu-hlv"><i class="ms" aria-hidden="true">mail</i>Thư HLV @if (coachUnread > 0) { <em class="cx-chip bad" style="margin-left:auto">@coachUnread</em> }</a>
-                    }
-                    else { <a href="hlv"><i class="ms" aria-hidden="true">person_add</i>Tạo hồ sơ HLV</a> }
-                    <a href="" data-enhance-nav="false"><i class="ms" aria-hidden="true">public</i>Trang giải đấu đầy đủ</a>
-                    @if (P is not null)
-                    {
-                        <a href="thu"><i class="ms" aria-hidden="true">inbox</i>Thư ban tổ chức @if (unread > 0) { <em class="cx-chip bad" style="margin-left:auto">@unread</em> }</a>
-                        <a href="hop-thu"><i class="ms" aria-hidden="true">inbox</i>Hộp thư CLB</a>
-                    }
-                    <a href="dieu-khien"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</a>
-                    @if (admin) { <a href="admin"><i class="ms" aria-hidden="true">settings</i>Quản trị</a> }
-                    <div class="cx-snd">
-                        @if (MusicOn)
-                        {
-                            <span class="now" data-snd="now">Nhạc đang tắt</span>
-                            <label>Nhạc <input type="range" min="0" max="100" data-snd-vol="music" aria-label="Âm lượng nhạc" /></label>
-                        }
-                        <label>Hiệu ứng <input type="range" min="0" max="100" data-snd-vol="sfx" aria-label="Âm lượng hiệu ứng" /></label>
-                        <label><input type="checkbox" data-snd="sfx" /> Bật âm hiệu ứng</label>
-                    </div>
-                    <form method="post" action="/logout" data-enhance="false"><button><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
-                </div>
-            </details>
+            <button type="button" class="cx-ibtn" data-drawer="open" aria-controls="cx-drawer" aria-label="Menu" @onclick="OpenMenuAsync"><i class="ms" aria-hidden="true">menu</i></button>
         </header>
+        @* Menu ≡ = ngăn kéo theo khu vực (PO 20/11, phương án B). Mở/đóng ở career.js (data-drawer, data-open) để bấm là mở ngay; số liệu khu nạp khi mở. *@
+        <div class="cx-drawer" id="cx-drawer" role="dialog" aria-modal="true" aria-label="Menu sự nghiệp">
+            <div class="cx-dscrim" data-drawer="close"></div>
+            <div class="cx-dpanel">
+                <header class="cx-dhead">
+                    <a class="cx-dme" href="@(coach is null ? profile ?? "su-nghiep" : "hlv")">
+                        @if (menu?.Face is { } face) { <img src="@face" alt="" /> }
+                        else { <i class="ms fill" aria-hidden="true">person</i> }
+                        <span><b>@(menu?.CoachName ?? who ?? "Khách")</b><small>@(P is { } dp ? "HLV trưởng " + dp.ClubName : coach switch { null => "Chưa có hồ sơ HLV", CoachStatus.Creating => "Đang tạo hồ sơ", _ => "Đang tìm CLB" })</small></span>
+                    </a>
+                    <button type="button" class="cx-ibtn" data-drawer="close" aria-label="Đóng menu"><i class="ms" aria-hidden="true">close</i></button>
+                </header>
+                <nav class="cx-dbody" aria-label="Khu vực sự nghiệp">
+                    @foreach (var (z, zi) in Zones().Select((z, i) => (z, i)))
+                    {
+                        <section class="cx-zone z-@z.Id" style="--i:@zi" aria-labelledby="cxz-@z.Id">
+                            <h2 id="cxz-@z.Id"><i class="ms fill" aria-hidden="true">@z.Icon</i><span>@z.Title</span>@if (z.Stat is { } zs) { <b class="cx-zstat @z.Tone">@zs</b> }</h2>
+                            <div class="cx-ztiles">
+                                @foreach (var it in z.Items)
+                                {
+                                    @if (it.Lock is { } why)
+                                    {
+                                        <span class="cx-zt lock" aria-disabled="true"><i class="ms" aria-hidden="true">lock</i><span>@it.Label<small>@why</small></span></span>
+                                    }
+                                    else
+                                    {
+                                        <a class="cx-zt" href="@it.Href" data-enhance-nav="@(it.Hard ? "false" : null)">
+                                            <i class="ms" aria-hidden="true">@it.Icon</i><span>@it.Label@if (it.Note is { } nt) { <small>@nt</small> }</span>
+                                            @if (it.Badge > 0) { <em>@it.Badge</em> }
+                                            else if (it.Fresh) { <i class="cx-dot" aria-label="mới"></i> }
+                                        </a>
+                                    }
+                                }
+                            </div>
+                        </section>
+                    }
+                </nav>
+                @if (me is not null)
+                {
+                    <form method="post" action="/logout" data-enhance="false" class="cx-dfoot"><button><i class="ms" aria-hidden="true">logout</i>Đăng xuất</button></form>
+                }
+            </div>
+        </div>
         @if (P is { } p2)
         {
             @if (CurrentTab is { Subs.Count: > 1 } tab)
@@ -163,7 +176,7 @@ else
 
 @code {
     /// <summary>PO 20/11: TẠM tắt nhạc nền career (âm hiệu ứng vẫn kêu). Bật lại: đổi true — career-audio.js đọc data-music trên .cx.</summary>
-    const bool MusicOn = false;
+    public const bool MusicOn = false;
 
     public sealed record Sub(string Feature, string Label, string Href);
     public sealed record Tab(string Id, string Feature, string Label, string Icon, string Href, IReadOnlyList<Sub> Subs);
@@ -217,10 +230,12 @@ else
 
     string Path => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
     /// <summary>Trang dùng khung career cả khi chưa cầm CLB: trang chủ career + hồ sơ / việc làm / thư HLV (PO 19/11).</summary>
-    bool OnCareerHome => Path is "su-nghiep" or "hlv" or "hlv/viec-lam" or "thu-hlv";
+    bool OnCareerHome => Path is "su-nghiep" or "hlv" or "hlv/viec-lam" or "thu-hlv" or "cuoc-song" or "cai-dat" or "dieu-khien";
     IEnumerable<Tab> Tabs => AllTabs;
     IReadOnlyList<Tab> VisibleTabs(CareerProgress p) => [.. AllTabs.Where(t => p.Has(t.Feature)).Select(t => t with { Subs = [.. t.Subs.Where(s => p.Has(s.Feature))] })];
-    Tab? CurrentTab => P is { } p ? VisibleTabs(p).FirstOrDefault(t => t.Subs.Any(s => s.Href == Path) || t.Href == Path) : null;
+    Tab? CurrentTab => P is { } p ? VisibleTabs(p).FirstOrDefault(t => t.Subs.Any(s => s.Href == Path) || t.Href == Path || TabOf.GetValueOrDefault(Path) == t.Id) : null;
+    /// <summary>Trang ngoài thanh phụ nhưng thuộc một tab dưới (sáng tab đó).</summary>
+    static readonly Dictionary<string, string> TabOf = new() { ["phong-thay-do"] = "squad" };
 
     protected override async Task OnInitializedAsync()
     {
@@ -322,6 +337,125 @@ else
     }
 
     void OnMail() => InvokeAsync(async () => { await CountMailAsync(); StateHasChanged(); });
+
+
+    // ===== Menu ≡ theo khu vực (PO 20/11) =====
+    sealed record MItem(string Label, string Icon, string? Href, string? Lock = null, int Badge = 0, string? Note = null, bool Fresh = false, bool Hard = false);
+    sealed record Zone(string Id, string Title, string Icon, string? Stat, string Tone, IReadOnlyList<MItem> Items);
+    /// <summary>Số liệu thật cho từng khu, nạp khi mở menu.</summary>
+    sealed record MenuStats(string? CoachName, string? Face, long? Wallet, int? Stress, int Pending, int? Confidence, int? Rank, int Teams, int? Morale, int Injured);
+    MenuStats? menu;
+
+    async Task OpenMenuAsync()
+    {
+        try { await LoadMenuAsync(); }
+        catch { /* menu vẫn mở với số cũ */ }
+    }
+
+    async Task LoadMenuAsync()
+    {
+        if (me is not { } id) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var c = await db.Coaches.AsNoTracking().Where(x => x.ManagerId == id && x.Status != CoachStatus.Creating)
+            .Select(x => new { x.Id, x.Name, x.Stress, x.UpdatedAt, HasFace = x.Face != null }).FirstOrDefaultAsync();
+        long? wallet = null; var pending = 0;
+        if (c is not null)
+        {
+            wallet = await db.CoachLedger.Where(e => e.CoachId == c.Id).SumAsync(e => e.Amount);
+            pending = await db.CoachLetters.CountAsync(l => l.CoachId == c.Id && l.Kind == LetterKind.Decision && l.Chosen == null && !l.Archived);
+        }
+        int? conf = null, rank = null, morale = null; int teams = 0, injured = 0;
+        if (P is { } p)
+        {
+            if (await new BoardService(db, Clock).StatusAsync(p.SeasonId, p.ClubId) is { } b) (conf, rank, teams) = (b.Confidence, b.Position, b.Teams);
+            var squad = await new ConditionService(db, Clock).SquadAsync(p.ClubId);
+            if (squad.Count > 0) morale = (int)Math.Round(squad.Average(r => r.Morale));
+            injured = squad.Count(r => r.InjuredRounds > 0);
+        }
+        menu = new(c?.Name, c is { HasFace: true } ? $"hlv/anh/mat/{c.Id}?v={c.UpdatedAt.UtcTicks}" : null, wallet, c?.Stress, pending, conf, rank, teams, morale, injured);
+    }
+
+    static string LockHint(string f, CareerProgress p) => f switch
+    {
+        CareerUnlocks.Stats or CareerUnlocks.Club or CareerUnlocks.Finance or CareerUnlocks.Board => "Mở sau trận đầu",
+        CareerUnlocks.Transfer => p.NextMarketSlot is { } n ? $"Chợ mở khung {n}" : "Chợ đã đóng",
+        CareerUnlocks.Offers => "Khi có CLB hỏi mua",
+        CareerUnlocks.Training => $"Mở sau {CareerUnlocks.TrainingAfter} trận",
+        CareerUnlocks.Academy => $"Mở từ khung {Pes17TransferWindows.WinterStart(p.Slots)}",
+        _ => "Chưa mở",
+    };
+
+    IEnumerable<Zone> Zones()
+    {
+        var p = P; var m = menu;
+        var hasCoach = coach is CoachStatus.Employed or CoachStatus.Unemployed;
+        string? L(string f) => p is null || p.Has(f) ? null : LockHint(f, p);
+        bool N(string f) => p?.IsNew(f) == true;
+        static string Tone(int v, int bad, int warn) => v < bad ? "bad" : v < warn ? "warn" : "ok";
+
+        // Văn phòng HLV
+        var office = new List<MItem> { hasCoach ? new("Hồ sơ & năng lực", "badge", "hlv") : new("Tạo hồ sơ HLV", "person_add", "hlv") };
+        if (hasCoach) office.Add(new("Hợp đồng", "history_edu", "hlv#hop-dong"));
+        if (p is not null)
+        {
+            office.Add(new("Ban lãnh đạo & nhân sự", "domain", "ban-lanh-dao", L(CareerUnlocks.Board), Fresh: N(CareerUnlocks.Board)));
+            office.Add(new("Tài chính CLB", "account_balance", "tai-chinh", L(CareerUnlocks.Finance), Fresh: N(CareerUnlocks.Finance)));
+        }
+        if (hasCoach) office.Add(new("Việc làm HLV", "work", "hlv/viec-lam"));
+        var (os, ot) = p is not null && p.Has(CareerUnlocks.Board) && m?.Confidence is { } cf ? ($"BLĐ tin {cf}", Tone(cf, BoardRules.ReviewBelow, 45))
+            : coach == CoachStatus.Unemployed ? ("Thất nghiệp", "warn") : ((string?)null, "");
+        yield return new("office", "Văn phòng HLV", "business_center", os, ot, office);
+
+        // Phòng thay đồ
+        if (p is not null)
+            yield return new("locker", "Phòng thay đồ", "checkroom", m?.Morale is { } mo ? $"Tinh thần {mo}" : null, m?.Morale is { } mt ? Tone(mt, 35, 60) : "",
+            [
+                new("Đội hình", "groups", "clb"),
+                new("Tinh thần & trò chuyện", "forum", "phong-thay-do", Note: m is { Injured: > 0 } ? $"{m.Injured} chấn thương" : null),
+                new("Tập luyện", "fitness_center", "tap-luyen", L(CareerUnlocks.Training), Fresh: N(CareerUnlocks.Training)),
+                new("Học viện & trinh sát", "school", "hoc-vien", L(CareerUnlocks.Academy), Fresh: N(CareerUnlocks.Academy)),
+            ]);
+
+        // Hòm thư
+        var mail = new List<MItem>();
+        if (hasCoach) mail.Add(new("Thư HLV", "mail", "thu-hlv", Badge: coachUnread, Note: m is { Pending: > 0 } ? $"{m.Pending} quyết định chờ" : "Quyết định, yêu cầu"));
+        if (p is not null)
+        {
+            mail.Add(new("Việc cần làm & họp báo", "task_alt", "hop-thu"));
+            mail.Add(new("Thư ban tổ chức", "campaign", "thu", Badge: unread));
+        }
+        var unreadAll = (hasCoach ? coachUnread : 0) + (p is not null ? unread : 0);
+        if (mail.Count > 0) yield return new("mail", "Hòm thư", "inbox", unreadAll > 0 ? $"{unreadAll} chưa đọc" : null, "bad", mail);
+
+        // Cuộc sống cá nhân
+        string? NoCoach = hasCoach ? null : "Cần hồ sơ HLV";
+        yield return new("life", "Cuộc sống cá nhân", "home", m?.Wallet is { } w ? "Ví " + Fmt.Money(w) : null, m?.Wallet < 0 ? "bad" : "gold",
+        [
+            new("Ví & mức sống", "account_balance_wallet", "cuoc-song?muc=vi", NoCoach, Note: hasCoach && m?.Stress is { } st ? $"Căng thẳng {st}" : null),
+            new("Tài sản", "villa", "cuoc-song?muc=tai-san", NoCoach),
+            new("Sổ ví", "receipt_long", "cuoc-song?muc=so-vi", NoCoach),
+            new("Album ảnh", "photo_library", "cuoc-song?muc=album", NoCoach),
+        ]);
+
+        // Thị trường & giải đấu
+        if (p is not null)
+            yield return new("market", "Thị trường & giải đấu", "emoji_events", m?.Rank is { } rk ? $"Hạng {rk}/{m.Teams}" : null, "info",
+            [
+                new("Thị trường", "swap_horiz", "chuyen-nhuong", L(CareerUnlocks.Transfer), Fresh: N(CareerUnlocks.Transfer),
+                    Note: p.Has(CareerUnlocks.Transfer) && p.MarketSlotsLeft > 0 ? $"Còn {p.MarketSlotsLeft} khung" : null),
+                new("Đề nghị", "handshake", "de-nghi", L(CareerUnlocks.Offers), Fresh: N(CareerUnlocks.Offers)),
+                new("Bảng xếp hạng", "leaderboard", "bxh"),
+                new("Lịch thi đấu", "calendar_month", "lich"),
+                new("Thống kê", "query_stats", "thong-ke", L(CareerUnlocks.Stats), Fresh: N(CareerUnlocks.Stats)),
+            ]);
+
+        // Cài đặt
+        var set = new List<MItem> { new("Âm thanh", "tune", "cai-dat"), new("Điều khiển game", "sports_esports", "dieu-khien") };
+        if (profile is not null) set.Add(new("Trang người chơi", "person", profile));
+        set.Add(new("Trang giải đấu đầy đủ", "public", "", Hard: true));
+        if (admin) set.Add(new("Quản trị", "admin_panel_settings", "admin"));
+        yield return new("settings", "Cài đặt", "settings", null, "", set);
+    }
 
     public void Dispose()
     {
