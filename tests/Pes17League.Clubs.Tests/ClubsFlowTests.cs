@@ -149,6 +149,33 @@ public class ClubsFlowTests
     }
 
     [DbFact]
+    public async Task Legend_clubs_are_out_of_the_transfer_market()
+    {
+        // PO 20/11: đội huyền thoại "… Classics" — không mua/bán/thanh lý, không trinh sát; đội huyền thoại cũng không mua ai.
+        await using var t = await TestDb.CreateAsync();
+        var c = await SetupAsync(t);
+        await using var db = t.Context();
+        var (villa, havertz) = await IdsAsync(db, c.Import.PatchVersionId, AstonVilla, Havertz);
+        var (arsenal, raya) = await IdsAsync(db, c.Import.PatchVersionId, Arsenal, Raya);
+        (await db.Clubs.SingleAsync(x => x.Id == arsenal)).Name = "Pes Classics";
+        await db.SaveChangesAsync();
+        var price = await PriceAsync(db, havertz);
+        await FundAsync(db, villa, price * 10, t.Clock.GetUtcNow());
+        await FundAsync(db, arsenal, price * 10, t.Clock.GetUtcNow());
+        var villaPlayer = await db.SquadMemberships.Where(m => m.ClubId == villa && m.LeftAt == null).Select(m => m.PlayerId).FirstAsync();
+        var svc = new TransferService(db, t.Clock);
+
+        Assert.True(await LegendClubs.HasPlayerAsync(db, havertz));
+        Assert.False(await LegendClubs.HasPlayerAsync(db, villaPlayer));
+        Assert.Equal(TransferRejectReason.LegendClub, (await svc.BuyAsync(c.Window, havertz, villa, price, 30, 0)).Error);
+        Assert.Equal(TransferRejectReason.LegendClub, (await svc.ReleaseAsync(c.Window, raya)).Error);
+        Assert.Equal(TransferRejectReason.LegendClub, (await svc.BuyAsync(c.Window, villaPlayer, arsenal, await PriceAsync(db, villaPlayer), 30, 0)).Error);
+        Assert.Equal(LegendClubs.Message, await new YouthService(db, t.Clock).ScoutAsync(villa, havertz));
+        Assert.Equal(arsenal, (await db.SquadMemberships.SingleAsync(m => m.PlayerId == havertz && m.LeftAt == null)).ClubId);
+        Assert.Equal(0, await db.ScoutReports.CountAsync());
+    }
+
+    [DbFact]
     public async Task Release_then_sign_free_agent_and_shirt_number()
     {
         await using var t = await TestDb.CreateAsync();

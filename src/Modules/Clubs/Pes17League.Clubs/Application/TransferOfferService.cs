@@ -28,6 +28,7 @@ public static class OfferRules
         TransferRejectReason.BelowMinSquadSize => "đội bán sẽ dưới số người tối thiểu",
         TransferRejectReason.BelowMinGoalkeepers => "đội bán sẽ thiếu thủ môn",
         TransferRejectReason.PriceMissing => "cầu thủ chưa có giá mùa này",
+        TransferRejectReason.LegendClub => "cầu thủ huyền thoại không được chuyển nhượng",
         _ => r.ToString(),
     };
 }
@@ -61,6 +62,7 @@ public sealed class TransferOfferService(ClubsDbContext db, TimeProvider clock)
         var seller = await db.SquadMemberships.Where(m => m.PlayerId == d.PlayerId && m.LeftAt == null).Select(m => (Guid?)m.ClubId).SingleOrDefaultAsync(ct);
         if (seller is not { } sellerId) return new(null, "Cầu thủ tự do: mua thẳng ở thị trường.");
         if (sellerId == d.BuyerClubId) return new(null, "Cầu thủ đã ở CLB của bạn.");
+        if (await LegendClubs.Ids(db).AnyAsync(id => id == sellerId || id == d.BuyerClubId, ct)) return new(null, LegendClubs.Message);
         if (!await SquadStore.IsHumanAsync(db, sellerId, ct)) return new(null, "CLB bán là BOT: mua thẳng ở thị trường.");
         if (await db.TransferOffers.AnyAsync(o => o.BuyerClubId == d.BuyerClubId && o.PlayerId == d.PlayerId
                 && (o.Status == OfferStatus.Pending || o.Status == OfferStatus.Countered), ct))

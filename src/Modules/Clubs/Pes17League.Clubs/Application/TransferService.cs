@@ -21,6 +21,8 @@ public enum TransferRejectReason
     // Lỗi luật squad, cùng tên với SquadError
     PlayerNotInSquad, PlayerInOtherClub, AlreadyInSquad, SquadFull, BelowMinSquadSize, BelowMinGoalkeepers,
     InvalidShirtNumber, ShirtNumberTaken, NoFreeShirtNumber,
+    /// <summary>Dính đội huyền thoại "… Classics" (PO 20/11): không vào thị trường chuyển nhượng.</summary>
+    LegendClub,
 }
 
 /// <summary>Điều khoản thêm khi thực hiện đề nghị giữa 2 CLB người (FM đợt 3). Phí đã kiểm ở TransferOfferService.</summary>
@@ -87,6 +89,8 @@ public sealed class TransferService(ClubsDbContext db, TimeProvider clock, Squad
         if (toClubId is { } tid && (toClub = await db.Clubs.FindAsync([tid], ct)) is null)
             return await RejectAsync(transfer, TransferRejectReason.ClubNotFound, false, ct);
         if (fromClubId is { } fid) fromClub = await db.Clubs.FindAsync([fid], ct);
+        if (LegendClubs.IsName(fromClub?.Name) || LegendClubs.IsName(toClub?.Name))
+            return await RejectAsync(transfer, TransferRejectReason.LegendClub, true, ct);
 
         if (toClub is not null)
         {

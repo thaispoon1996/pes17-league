@@ -72,6 +72,7 @@ public sealed class YouthService(ClubsDbContext db, TimeProvider clock)
     public async Task<string?> ScoutAsync(Guid clubId, Guid playerId, CancellationToken ct = default)
     {
         if (await db.ScoutReports.AnyAsync(r => r.ClubId == clubId && r.PlayerId == playerId, ct)) return "Đã giao trinh sát cầu thủ này.";
+        if (await LegendClubs.HasPlayerAsync(db, playerId, ct)) return LegendClubs.Message;   // PO 20/11: không mua được → không trinh sát
         var level = (await db.ClubStaff.FindAsync([clubId, StaffRole.Scout], ct))?.Level ?? 1;
         if (await db.ScoutReports.CountAsync(r => r.ClubId == clubId && r.RoundsLeft > 0, ct) >= ScoutRules.MaxPending(level))
             return $"Trinh sát đang bận ({ScoutRules.MaxPending(level)} việc). Nâng cấp trinh sát để làm song song nhiều hơn.";

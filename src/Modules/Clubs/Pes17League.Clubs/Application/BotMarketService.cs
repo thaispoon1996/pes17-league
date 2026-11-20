@@ -66,7 +66,7 @@ public sealed class BotMarketService(ClubsDbContext db, TimeProvider clock)
         var entries = await (from x in db.EditionClubs
                              join e in db.Editions on x.EditionId equals e.Id
                              join k in db.Competitions on e.CompetitionId equals k.Id
-                             where e.SeasonId == seasonId
+                             where e.SeasonId == seasonId && !LegendClubs.Ids(db).Contains(x.ClubId)
                              select new { x.ClubId, League = k.Type == CompetitionType.DomesticLeague }).ToListAsync(ct);
         var inSeason = entries.Select(x => x.ClubId).ToHashSet();
         var botIds = (await db.TeamAssignments.AsNoTracking().Where(a => a.To == null && a.ControllerType == ControllerType.Bot)

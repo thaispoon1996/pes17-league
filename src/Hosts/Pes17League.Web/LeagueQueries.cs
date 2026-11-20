@@ -282,7 +282,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
             await db.Ledger.Where(e => e.ClubId == clubId).OrderByDescending(e => e.At).Take(100).ToListAsync());
     }
 
-    /// <summary>Thị trường: mọi cầu thủ có giá mùa này, trừ CLB của PO và người đang ẩn (MarketVisibility/luật dải ẩn); ClubId null = tự do.</summary>
+    /// <summary>Thị trường: mọi cầu thủ có giá mùa này, trừ CLB của PO, đội huyền thoại và người đang ẩn (MarketVisibility/luật dải ẩn); ClubId null = tự do.</summary>
     public async Task<List<MarketRow>> MarketAsync(Guid seasonId, Guid excludeClubId)
     {
         var rows = await VisibilityAsync(seasonId);
@@ -314,8 +314,9 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
                           where pr.SeasonId == seasonId
                           select new { p.Id, pm.PesPlayerId, p.Name, p.Position, p.BirthYear, ClubId = m == null ? (Guid?)null : m.ClubId, pr.Overall, pr.Price, p.MarketVisibility })
                           .ToListAsync();
+        var legends = (await LegendClubs.Ids(db).ToListAsync()).ToHashSet();   // PO 20/11: đội huyền thoại "… Classics" không vào chợ (admin cũng không ép hiện được)
         return [.. rows.Select(r => (r.Id, r.PesPlayerId, r.Name, r.Position, r.BirthYear, r.ClubId, r.Overall, r.Price, r.MarketVisibility,
-            MarketVisibilityService.IsVisible(r.MarketVisibility, r.PesPlayerId, r.ClubId is not null)))];
+            !(r.ClubId is { } c && legends.Contains(c)) && MarketVisibilityService.IsVisible(r.MarketVisibility, r.PesPlayerId, r.ClubId is not null)))];
     }
 
     /// <summary>Tin của mùa, mới nhất trước. <paramref name="round"/> = số vòng; <paramref name="competitionId"/> = giải.</summary>

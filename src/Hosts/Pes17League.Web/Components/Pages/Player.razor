@@ -27,7 +27,7 @@
                 </div>
                 <div class="cx-pcard-mid">
                     <div class="l">
-                        <b class="cx-ovr" data-count="@(known ? p.Overall : 0)">@(known ? p.Overall.ToString() : ScoutRules.Mask(p.Overall))</b><small>OVR</small>
+                        <b class="cx-ovr" data-count="@(known ? p.Overall : null)">@(known ? p.Overall.ToString() : ScoutRules.Mask(p.Overall))</b><small>OVR</small>
                         @if (rated.Count >= 3) { var avg = rated.TakeLast(3).Average(g => g.Line.Rating!.Value); <span class="cx-chip @(avg >= 7 ? "ok" : avg < 6 ? "bad" : "")">@(avg >= 7 ? "Phong độ cao" : avg < 6 ? "Phong độ thấp" : "Phong độ ổn")</span> }
                     </div>
                     <div class="cx-portrait"><Face Id="@Id" Name="@p.Name" Size="lg" /><i class="halo" aria-hidden="true"></i></div>
@@ -37,7 +37,7 @@
                 <div class="cx-six">
                     @foreach (var a in top)
                     {
-                        <div class="@(a.Value >= 85 ? "hot" : "")"><b data-count="@(known ? a.Value : 0)">@(known ? a.Value.ToString() : ScoutRules.Mask(a.Value))</b><span>@a.Label</span></div>
+                        <div class="@(a.Value >= 85 ? "hot" : "")"><b data-count="@(known ? a.Value : null)">@(known ? a.Value.ToString() : ScoutRules.Mask(a.Value))</b><span>@a.Label</span></div>
                     }
                 </div>
             </section>
@@ -218,6 +218,7 @@
                                 @* FM đợt 8: chỉ số cầu thủ CLB khác bị che đến khi trinh sát xong. *@
                                 <p class="fm-note scout-note">
                                     @if (scout is { } sr) { <span>Trinh sát đang theo dõi — còn @sr.RoundsLeft vòng.</span> }
+                                    else if (legend) { <span>Chỉ số ước lượng. Cầu thủ huyền thoại không chuyển nhượng nên không giao trinh sát.</span> }
                                     else { <span>Chỉ số ước lượng. </span><button disabled="@busy" @onclick="Scout">Giao trinh sát (@Fmt.Money(ScoutRules.Fee))</button> }
                                     @if (scoutMessage is not null) { <span> @scoutMessage</span> }
                                 </p>
@@ -282,6 +283,7 @@
     bool known = true, busy;
     ScoutReport? scout;
     string? scoutMessage;
+    bool legend;   // PO 20/11: cầu thủ đội huyền thoại "… Classics" — không chuyển nhượng, không trinh sát
 
     async Task LoadScout()
     {
@@ -289,6 +291,7 @@
         await using var db = await Dbs.CreateDbContextAsync();
         var svc = new YouthService(db, Clock);
         known = await svc.KnowsAsync(season.HumanClubId, Id);
+        legend = !known && await LegendClubs.HasPlayerAsync(db, Id);
         scout = known ? null : await svc.ReportAsync(season.HumanClubId, Id);
     }
 
