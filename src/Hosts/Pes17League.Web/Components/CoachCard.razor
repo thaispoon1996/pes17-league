@@ -8,7 +8,7 @@
                 <span class="tierl">@CoachRules.RepTier(C.Reputation)</span>
                 <span class="lic">@CoachUi.License(C.License)</span>
             </div>
-            <div class="face">
+            <div class="face @(CoachUi.FaceCut(C) ? "cut" : null)">
                 @if (face is not null) { <img class="flat" src="@face" alt="Ảnh mặt @C.Name" /> }
                 else { <span class="ms" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:96px;color:rgba(255,255,255,.18)">person</span> }
             </div>

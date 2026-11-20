@@ -10,7 +10,7 @@
 <div class="hlv-press" @ref="stage">
     <div class="wall" aria-hidden="true">@if (ClubLogo is not null) { for (var i = 0; i < 25; i++) { <img src="@ClubLogo" alt="" /> } }</div>
     <div class="shade" aria-hidden="true"></div>
-    <div class="host">@if (CoachUi.FaceUrl(C) is { } fu) { <img src="@fu" alt="@C.Name" /> } else { <i class="ms" aria-hidden="true">person</i> }</div>
+    <div class="host @(CoachUi.FaceCut(C) ? "cut" : null)">@if (CoachUi.FaceUrl(C) is { } fu) { <img src="@fu" alt="@C.Name" /> } else { <i class="ms" aria-hidden="true">person</i> }</div>
     <div class="podium"><Crest Name="@ClubName" Logo="@ClubLogo" Large="true" /></div>
     <i class="mic m1" aria-hidden="true"></i><i class="mic m2" aria-hidden="true"></i><i class="mic m3" aria-hidden="true"></i>
     <i class="fl" aria-hidden="true"></i><i class="fl" aria-hidden="true"></i><i class="fl" aria-hidden="true"></i><i class="fl" aria-hidden="true"></i>
@@ -115,7 +115,7 @@ else
         {
             var r = await JS.InvokeAsync<IJSStreamReference?>("CoachFace.photo", new
             {
-                face = CoachUi.FaceUrl(C), logo = ClubLogo, name = C.Name,
+                face = CoachUi.FaceUrl(C), cut = CoachUi.FaceCut(C), logo = ClubLogo, name = C.Name,
                 caption = $"HLV trưởng {ClubName}",
             });
             if (r is null) { msg = "Không chụp được ảnh trên thiết bị này."; return; }

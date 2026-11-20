@@ -73,7 +73,11 @@ var app = b.Build();
 await using (var db = await app.Services.GetRequiredService<IDbContextFactory<ClubsDbContext>>().CreateDbContextAsync())
     await db.Database.MigrateAsync();
 
-app.UseStaticFiles();
+// bộ tách nền MediaPipe tự phục vụ (lib/mediapipe): .tflite, .mjs không có sẵn trong bảng kiểu tệp
+var staticTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+staticTypes.Mappings[".tflite"] = "application/octet-stream";
+staticTypes.Mappings[".mjs"] = "text/javascript";
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = staticTypes });
 Directory.CreateDirectory(logos.Dir);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(logos.Dir), RequestPath = LogoStore.RequestPath });
 Directory.CreateDirectory(boards.Dir);
@@ -211,7 +215,7 @@ app.MapGet("/hlv/anh/mat/{id:guid}", async (Guid id, HttpContext ctx, IDbContext
     await using var db = await dbs.CreateDbContextAsync();
     var img = await new CoachService(db, TimeProvider.System).FaceAsync(CoachViewer(ctx), id);
     ctx.Response.Headers.CacheControl = "private, max-age=86400";
-    return img is null ? Results.NotFound() : Results.Bytes(img, "image/jpeg");
+    return img is null ? Results.NotFound() : Results.Bytes(img, CoachUi.ImageType(img));
 });
 app.MapGet("/hlv/anh/{id:guid}", async (Guid id, HttpContext ctx, IDbContextFactory<ClubsDbContext> dbs) =>
 {

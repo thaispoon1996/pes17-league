@@ -26,6 +26,7 @@
             <div @ref="cropHost">
                 <div class="cx-crop">
                     <canvas data-crop width="400" height="400"></canvas>
+                    <span class="hlv-cutting" aria-live="polite"><i class="ms" aria-hidden="true">auto_fix_high</i>Đang tách nền…</span>
                     <svg viewBox="0 0 400 400" aria-hidden="true">
                         <path d="M0 0H400V400H0Z M80 188a120 156 0 1 0 240 0a120 156 0 1 0-240 0Z" fill="rgba(7,11,26,.55)" fill-rule="evenodd" />
                         <ellipse cx="200" cy="188" rx="120" ry="156" fill="none" stroke="#36E3FF" stroke-width="2" stroke-dasharray="6 6" />
@@ -36,6 +37,7 @@
                     <label class="cx-btn ghost sm"><i class="ms" aria-hidden="true">add_photo_alternate</i>Tải ảnh<input type="file" accept="image/*" data-file hidden /></label>
                     <i class="ms" aria-hidden="true" style="color:var(--muted)">zoom_in</i>
                     <input type="range" min="1" max="3" step="0.01" value="1" data-zoom aria-label="Phóng to ảnh" />
+                    <button class="hlv-chip @(cutOn ? "on" : null)" aria-pressed="@cutOn" disabled="@cutBusy" @onclick="ToggleCut"><i class="ms" aria-hidden="true" style="font-size:16px;vertical-align:-3px">@(cutOn ? "auto_fix_high" : "auto_fix_off")</i> Tách nền</button>
                 </div>
                 <div class="hlv-acts" style="margin-top:10px">
                     <button class="cx-btn gold" disabled="@busy" @onclick="SaveFace"><i class="ms" aria-hidden="true">save</i>@(busy ? "Đang lưu…" : "Lưu ảnh")</button>
@@ -154,7 +156,7 @@
     Coach? c;
     Guid me;
     int step, reached;
-    bool busy, mounted;
+    bool busy, mounted, cutOn = true, cutBusy;
     string? msg, scanNote, scanErr;
     string name = "", nick = "", nation = "Việt Nam", formation = "4-3-3", style = "Cân bằng";
     int age = 38;
@@ -189,7 +191,9 @@
         mounted = true;
         try
         {
-            await JS.InvokeVoidAsync("CoachFace.crop", cropHost, CoachUi.FaceUrl(c));
+            cutOn = c.Face is null || CoachUi.FaceCut(c);
+            await JS.InvokeVoidAsync("CoachFace.crop", cropHost, CoachUi.FaceUrl(c), CoachUi.FaceCut(c));
+            StateHasChanged();
         }
         catch (JSDisconnectedException) { }
         catch (JSException) { }
@@ -215,6 +219,27 @@
         catch (JSException) { scanErr = "Không đọc được ảnh. Thử ảnh khác hoặc tải lại trang."; return false; }
         catch (JSDisconnectedException) { return false; }
         finally { busy = false; }
+    }
+
+    /// <summary>Bật / tắt tách nền (ảnh gốc giữ trong trình duyệt, đổi qua lại không mất).</summary>
+    async Task ToggleCut()
+    {
+        cutBusy = true; scanErr = null; scanNote = null;
+        StateHasChanged();
+        try
+        {
+            var r = await JS.InvokeAsync<string>("CoachFace.cut", !cutOn);
+            switch (r)
+            {
+                case "ok": cutOn = true; scanNote = "Đã tách nền. Bấm Lưu ảnh để dùng."; break;
+                case "off": cutOn = false; scanNote = "Giữ nền gốc. Bấm Lưu ảnh để dùng."; break;
+                case "noimg": cutOn = !cutOn; scanNote = cutOn ? "Ảnh tải lên sẽ được tách nền." : "Ảnh tải lên sẽ giữ nền gốc."; break;
+                case "fail": cutOn = true; scanErr = "Không tách được nền ảnh này (máy hoặc mạng không tải được bộ tách nền). Ảnh giữ nền gốc."; break;
+            }
+        }
+        catch (JSException) { scanErr = "Không tách được nền trên thiết bị này. Ảnh giữ nền gốc."; }
+        catch (JSDisconnectedException) { }
+        finally { cutBusy = false; }
     }
 
     async Task RemoveFace()

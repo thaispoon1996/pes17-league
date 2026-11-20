@@ -1,4 +1,5 @@
-// Hồ sơ HLV career: khung căn ảnh mặt 2D (kéo, phóng, lưu JPEG 400×400), ô ký hợp đồng, ảnh lưu niệm họp báo (ghép 2D),
+// Hồ sơ HLV career: khung căn ảnh mặt 2D (kéo, phóng, tách nền bằng MediaPipe Selfie Segmenter tự phục vụ ở lib/mediapipe;
+// lưu PNG trong suốt khi đã tách nền, JPEG khi giữ nền gốc; 400×400), ô ký hợp đồng, ảnh lưu niệm họp báo (ghép 2D),
 // đèn flash họp báo. PO 20/11: bỏ quét/tượng 3D, chỉ dùng ảnh 2D. Gọi từ Blazor qua window.CoachFace.
 (() => {
   'use strict';
@@ -34,22 +35,78 @@
     const v = { a, b, img }; clubs.set(logo, v); return v;
   }
 
+  // ---------- tách nền (tải lười, chỉ khi cần) ----------
+  const abs = p => new URL(p, document.baseURI).href;
+  let segP = null;
+  const loadSeg = () => segP ??= (async () => {
+    const v = await import(abs('lib/mediapipe/vision_bundle.mjs'));
+    const fs = await v.FilesetResolver.forVisionTasks(abs('lib/mediapipe/wasm'));
+    return v.ImageSegmenter.createFromOptions(fs, {
+      baseOptions: { modelAssetPath: abs('lib/mediapipe/selfie_segmenter.tflite') },
+      runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false,
+    });
+  })().catch(e => { console.warn('tách nền:', e); segP = null; return null; });
+  const timeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+
+  /** Trả canvas chỉ còn người (nền trong suốt, viền mờ nhẹ), null nếu không tách được. */
+  async function cutout(img) {
+    const seg = await timeout(loadSeg(), 30000); if (!seg) return null;
+    const k = Math.min(1, 900 / Math.max(img.width, img.height));
+    const src = document.createElement('canvas'); src.width = Math.round(img.width * k); src.height = Math.round(img.height * k);
+    src.getContext('2d').drawImage(img, 0, 0, src.width, src.height);
+    let res;
+    try { res = seg.segment(src); } catch (e) { console.warn('tách nền:', e); return null; }
+    const m = res.confidenceMasks?.[0]; if (!m) { res.close?.(); return null; }
+    const f = m.getAsFloat32Array(), mw = m.width, mh = m.height, mc = document.createElement('canvas'); mc.width = mw; mc.height = mh;
+    const id = new ImageData(mw, mh); let on = 0;
+    for (let i = 0; i < f.length; i++) {
+      const t = Math.min(1, Math.max(0, (f[i] - .25) / .5)), a = t * t * (3 - 2 * t);
+      id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = 255; id.data[i * 4 + 3] = a * 255; if (a > .5) on++;
+    }
+    res.close?.();
+    if (on < f.length * .03) return null;   // gần như không thấy người
+    mc.getContext('2d').putImageData(id, 0, 0);
+    const x = src.getContext('2d'); x.globalCompositeOperation = 'destination-in'; x.filter = 'blur(1px)';
+    x.drawImage(mc, 0, 0, src.width, src.height); x.filter = 'none'; x.globalCompositeOperation = 'source-over';
+    return src;
+  }
+
   // ---------- khung căn ảnh mặt ----------
-  const cur = { host: null, canvas: null, img: null, zoom: 1, ox: 0, oy: 0, dirty: false };
-  function draw() {
-    const x = cur.canvas.getContext('2d'); x.fillStyle = '#0d1630'; x.fillRect(0, 0, 400, 400); if (!cur.img) return;
+  // orig: ảnh gốc; cut: ảnh đã tách nền; want: người chơi muốn tách nền; alpha: ảnh đang hiện có nền trong suốt
+  const cur = { host: null, canvas: null, img: null, orig: null, cut: null, want: true, alpha: false, zoom: 1, ox: 0, oy: 0, dirty: false, job: 0 };
+  function draw(x = cur.canvas.getContext('2d'), bg = true) {
+    if (bg) { x.fillStyle = '#0d1630'; x.fillRect(0, 0, 400, 400); } else x.clearRect(0, 0, 400, 400);
+    if (!cur.img) return;
     const s = Math.max(400 / cur.img.width, 400 / cur.img.height) * cur.zoom, w = cur.img.width * s, h = cur.img.height * s;
     x.drawImage(cur.img, 200 - w / 2 + cur.ox, 200 - h / 2 + cur.oy, w, h);
   }
-  function setImg(img) {
-    cur.img = img; cur.zoom = 1; cur.ox = cur.oy = 0;
+  const state = st => { const h = cur.host; if (!h) return; h.dataset.cut = st; h.dispatchEvent(new CustomEvent('cutstate', { detail: st })); };
+  function show() {
+    cur.img = cur.want && cur.cut ? cur.cut : cur.orig; cur.alpha = cur.want && !!cur.cut || cur.origAlpha;
+    cur.host?.classList.toggle('has', !!cur.img); if (cur.canvas) draw();
+  }
+  function setImg(img, alpha = false) {
+    cur.orig = img; cur.cut = null; cur.origAlpha = alpha; cur.zoom = 1; cur.ox = cur.oy = 0;
     const z = cur.host?.querySelector('[data-zoom]'); if (z) z.value = 1;
-    cur.host?.classList.toggle('has', !!img);
-    draw();
+    show();
   }
   const changed = () => { if (!cur.img) return; cur.dirty = true; cur.host?.dispatchEvent(new CustomEvent('facechange')); };
-  /** Gắn khung căn ảnh (kéo, phóng, tải ảnh). existing: URL ảnh mặt đã lưu (nạp sẵn vào khung). */
-  async function crop(host, existing) {
+  /** Tách nền ảnh gốc hiện tại. Trả 'ok' | 'fail' | 'noimg' | 'off'. */
+  async function applyCut() {
+    if (!cur.orig) return 'noimg';
+    if (!cur.want) { show(); return 'off'; }
+    if (cur.cut || cur.origAlpha) { show(); return 'ok'; }
+    const job = ++cur.job; state('busy'); cur.host?.classList.add('cutting');
+    const c = await (cur.pending = cutout(cur.orig)); cur.pending = null;
+    cur.host?.classList.remove('cutting');
+    if (job !== cur.job) return 'busy';
+    if (!c) { state('fail'); show(); return 'fail'; }
+    cur.cut = c; show(); changed(); state('ok'); return 'ok';
+  }
+  /** Bật/tắt tách nền (nút ở Blazor). */
+  async function cut(on) { cur.want = !!on; const r = await applyCut(); if (r === 'off') { changed(); state('off'); } return r; }
+  /** Gắn khung căn ảnh (kéo, phóng, tải ảnh). existing: URL ảnh mặt đã lưu; alpha: ảnh đó đã tách nền (PNG trong suốt). */
+  async function crop(host, existing, alpha) {
     if (!host) return;
     cur.host = host; cur.canvas = host.querySelector('[data-crop]');
     if (!host.dataset.ready) {
@@ -63,17 +120,33 @@
         const f = e.target.files[0]; e.target.value = ''; if (!f) return;
         const img = await loadImg(URL.createObjectURL(f));
         if (!img) { window.pesUi?.toast('Không đọc được ảnh này. Thử ảnh JPG hoặc PNG khác.'); return; }
-        setImg(img); changed();
+        setImg(img); changed(); state('new');
+        if (cur.want && await applyCut() === 'fail') window.pesUi?.toast('Không tách được nền ảnh này, giữ nền gốc.');
       });
-      cur.img = null; cur.dirty = false;
-      if (existing) { const img = await loadImg(existing); if (img) setImg(img); else draw(); } else draw();
+      cur.img = cur.orig = cur.cut = null; cur.dirty = false; cur.origAlpha = false;
+      cur.want = existing ? !!alpha : true;   // ảnh cũ chưa tách nền: để người chơi tự bật
+      if (existing) { const img = await loadImg(existing); if (img) setImg(img, !!alpha); else draw(); } else draw();
+      state(existing ? (alpha ? 'ok' : 'off') : 'new');
     } else draw();
   }
-  const jpeg = (c, q) => new Promise(r => c.toBlob(b => b ? b.arrayBuffer().then(x => r(new Uint8Array(x))) : r(null), 'image/jpeg', q));
-  /** Ảnh mặt đã căn (JPEG 400×400) để lưu; null nếu chưa có ảnh. */
-  const faceBytes = () => cur.img && cur.canvas ? jpeg(cur.canvas, .86).then(b => { cur.dirty = false; return b; }) : Promise.resolve(null);
+  /** Ảnh mặt đã căn để lưu: PNG trong suốt nếu đã tách nền, JPEG nếu giữ nền; null nếu chưa có ảnh. */
+  async function faceBytes() {
+    if (cur.pending) await cur.pending.catch(() => null);   // đang tách nền → chờ xong rồi mới lưu
+    if (!cur.img || !cur.canvas) return null;
+    let out;
+    if (cur.alpha) {
+      const c = document.createElement('canvas'); c.width = c.height = 400; draw(c.getContext('2d'), false);
+      out = await png(c);
+      if (out && out.length > 390000) { const s = document.createElement('canvas'); s.width = s.height = 320; s.getContext('2d').drawImage(c, 0, 0, 320, 320); out = await png(s); }
+    } else out = await jpeg(cur.canvas, .86);
+    if (out) cur.dirty = false;
+    return out;
+  }
   const dirty = () => cur.dirty && !!cur.img;
-  function clearFace() { cur.img = null; cur.dirty = false; cur.host?.classList.remove('has'); if (cur.canvas) draw(); }
+  function clearFace() { cur.img = cur.orig = cur.cut = null; cur.alpha = cur.origAlpha = false; cur.dirty = false; cur.host?.classList.remove('has'); if (cur.canvas) draw(); state('new'); }
+
+  const blob = (c, t, q) => new Promise(r => c.toBlob(b => b ? b.arrayBuffer().then(x => r(new Uint8Array(x))) : r(null), t, q));
+  const jpeg = (c, q) => blob(c, 'image/jpeg', q), png = c => blob(c, 'image/png');
 
   // ---------- ký hợp đồng ----------
   function pad(c) {
@@ -91,7 +164,7 @@
   function clearPad(c) { if (!c) return; c.getContext('2d').clearRect(0, 0, c.width, c.height); c.dataset.ink = '0'; }
 
   // ---------- ảnh lưu niệm họp báo ----------
-  /** Ảnh 640×800: phông logo CLB, chân dung HLV khung vàng, dải khăn màu CLB, tên. Trả JPEG. */
+  /** Ảnh 640×800: phông logo CLB, HLV (đã tách nền: đứng thẳng; chưa: khung vàng), khăn màu CLB, tên. o.cut = ảnh mặt đã tách nền. Trả JPEG. */
   async function photo(o) {
     const cl = await clubLook(o.logo), face = o.face ? await loadImg(o.face) : null;
     const c = document.createElement('canvas'); c.width = 640; c.height = 800;
@@ -103,20 +176,31 @@
       else { x.fillStyle = 'rgba(255,201,74,.12)'; x.fillRect(px + 40, py + 20, 30, 30); }
     }
     const v = x.createRadialGradient(320, 330, 60, 320, 380, 460); v.addColorStop(0, 'rgba(5,8,22,0)'); v.addColorStop(1, 'rgba(5,8,22,.8)'); x.fillStyle = v; x.fillRect(0, 0, 640, 800);
-    // chân dung: khung bo tròn viền vàng
-    const fx = 150, fy = 90, fw = 340, fh = 400, r = 28;
-    const rr = () => { x.beginPath(); x.moveTo(fx + r, fy); x.arcTo(fx + fw, fy, fx + fw, fy + fh, r); x.arcTo(fx + fw, fy + fh, fx, fy + fh, r); x.arcTo(fx, fy + fh, fx, fy, r); x.arcTo(fx, fy, fx + fw, fy, r); x.closePath(); };
-    x.save(); x.shadowColor = 'rgba(255,201,74,.45)'; x.shadowBlur = 40; rr(); x.fillStyle = '#121c45'; x.fill(); x.restore();
-    x.save(); rr(); x.clip();
-    if (face) { const s = Math.max(fw / face.width, fh / face.height); x.drawImage(face, fx + fw / 2 - face.width * s / 2, fy + fh / 2 - face.height * s / 2, face.width * s, face.height * s); }
-    else { x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.arc(320, 230, 70, 0, 7); x.fill(); x.beginPath(); x.ellipse(320, 470, 150, 150, 0, Math.PI, 0); x.fill(); }
-    x.restore();
-    rr(); x.lineWidth = 6; x.strokeStyle = '#FFC94A'; x.stroke();
-    // khăn CLB
-    const sy = fy + fh - 34, cols = [cl?.a || '#22306e', cl?.b || '#ffc94a'];
-    x.save(); x.translate(320, sy); x.rotate(-.04);
-    for (let i = 0; i < 9; i++) { x.fillStyle = cols[i % 2]; x.fillRect(-200 + i * 400 / 9, -18, 400 / 9 + 1, 36); }
-    x.strokeStyle = 'rgba(0,0,0,.25)'; x.lineWidth = 2; x.strokeRect(-200, -18, 400, 36); x.restore();
+    const cols = [cl?.a || '#22306e', cl?.b || '#ffc94a'];
+    const scarf = (cx, cy, w) => {
+      x.save(); x.translate(cx, cy); x.rotate(-.04);
+      for (let i = 0; i < 9; i++) { x.fillStyle = cols[i % 2]; x.fillRect(-w / 2 + i * w / 9, -18, w / 9 + 1, 36); }
+      x.strokeStyle = 'rgba(0,0,0,.25)'; x.lineWidth = 2; x.strokeRect(-w / 2, -18, w, 36); x.restore();
+    };
+    if (face && o.cut) {
+      // đã tách nền: người đứng thẳng trên phông, có quầng sáng sau lưng
+      const halo = x.createRadialGradient(320, 330, 20, 320, 330, 300); halo.addColorStop(0, 'rgba(255,201,74,.32)'); halo.addColorStop(1, 'rgba(255,201,74,0)');
+      x.fillStyle = halo; x.fillRect(0, 0, 640, 700);
+      x.save(); x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 30; x.shadowOffsetY = 12;
+      x.drawImage(face, 60, 120, 520, 520); x.restore();
+      scarf(320, 600, 360);
+    } else {
+      // giữ nền gốc: chân dung trong khung bo tròn viền vàng
+      const fx = 150, fy = 90, fw = 340, fh = 400, r = 28;
+      const rr = () => { x.beginPath(); x.moveTo(fx + r, fy); x.arcTo(fx + fw, fy, fx + fw, fy + fh, r); x.arcTo(fx + fw, fy + fh, fx, fy + fh, r); x.arcTo(fx, fy + fh, fx, fy, r); x.arcTo(fx, fy, fx + fw, fy, r); x.closePath(); };
+      x.save(); x.shadowColor = 'rgba(255,201,74,.45)'; x.shadowBlur = 40; rr(); x.fillStyle = '#121c45'; x.fill(); x.restore();
+      x.save(); rr(); x.clip();
+      if (face) { const s = Math.max(fw / face.width, fh / face.height); x.drawImage(face, fx + fw / 2 - face.width * s / 2, fy + fh / 2 - face.height * s / 2, face.width * s, face.height * s); }
+      else { x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.arc(320, 230, 70, 0, 7); x.fill(); x.beginPath(); x.ellipse(320, 470, 150, 150, 0, Math.PI, 0); x.fill(); }
+      x.restore();
+      rr(); x.lineWidth = 6; x.strokeStyle = '#FFC94A'; x.stroke();
+      scarf(320, fy + fh - 34, 400);
+    }
     const gr = x.createLinearGradient(0, 600, 0, 800); gr.addColorStop(0, 'rgba(7,11,26,0)'); gr.addColorStop(.4, 'rgba(7,11,26,.92)'); x.fillStyle = gr; x.fillRect(0, 600, 640, 200);
     x.fillStyle = '#FFC94A'; x.fillRect(40, 690, 6, 74);
     x.fillStyle = '#ffffff'; x.font = 'italic 800 46px "Barlow Condensed", sans-serif'; x.fillText((o.name || '').toUpperCase(), 60, 728);
@@ -132,5 +216,5 @@
     el.querySelectorAll('.fl').forEach((f, i) => setTimeout(() => { f.style.left = (10 + Math.random() * 70) + '%'; f.style.top = (8 + Math.random() * 50) + '%'; f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }, i * 160));
   }
 
-  window.CoachFace = { crop, faceBytes, dirty, clearFace, pad, inked, clearPad, photo, flash };
+  window.CoachFace = { crop, cut, faceBytes, dirty, clearFace, pad, inked, clearPad, photo, flash };
 })();

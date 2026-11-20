@@ -20,6 +20,10 @@ public static class CoachUi
     public static string Tick(int tick) => tick <= 0 ? "" : tick % 100 == 0 ? $"Đầu mùa {tick / 100}" : $"Mùa {tick / 100} · vòng {tick % 100}";
 
     public static string? FaceUrl(Coach c) => c.Face is null ? null : $"hlv/anh/mat/{c.Id}?v={c.UpdatedAt.UtcTicks}";
+    /// <summary>Ảnh mặt đã tách nền (lưu PNG trong suốt, PO 20/11).</summary>
+    public static bool FaceCut(Coach c) => c.Face is { Length: > 4 } f && f[0] == 0x89 && f[1] == 0x50;
+    /// <summary>Kiểu ảnh theo byte đầu (PNG / JPEG).</summary>
+    public static string ImageType(byte[] b) => b is { Length: > 4 } && b[0] == 0x89 && b[1] == 0x50 ? "image/png" : "image/jpeg";
 
     public static string License(int l) => l <= 0 ? "Chưa có bằng" : "Bằng " + CoachRules.Licenses[Math.Min(l, CoachRules.Licenses.Length - 1)];
 
