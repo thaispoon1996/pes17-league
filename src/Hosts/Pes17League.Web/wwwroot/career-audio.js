@@ -8,20 +8,25 @@
 
   let ctx = null, master, musicBus, sfxBus, verb, delay, noiseBuf, duck = 1;
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  // Điện thoại (màn cảm ứng): bản nhẹ — ít giọng/lớp hơn để iPhone xử lý kịp (quá tải = rè, lẹt xẹt), cắt bass siêu trầm loa không phát nổi.
+  const lite = matchMedia('(pointer: coarse)').matches;
 
   function init() {
     if (ctx) return true;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
+    // iOS: đặt kiểu phát TRƯỚC khi tạo AudioContext — đổi sau có thể đổi tần số mẫu phần cứng → rè do lệch tần số mẫu
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { }
     try { ctx = new AC({ latencyHint: 'playback' }); } catch { ctx = new AC(); }   // bộ đệm lớn hơn → điện thoại ít bị vấp
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = .005; comp.release.value = .25;
-    master = ctx.createGain(); master.gain.value = .9; master.connect(comp); comp.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = lite ? .8 : .9; master.connect(comp);
+    if (lite) { const hp = filt('highpass', 70, .7); comp.connect(hp); hp.connect(ctx.destination); } else comp.connect(ctx.destination);
     musicBus = ctx.createGain(); musicBus.connect(master);
     sfxBus = ctx.createGain(); sfxBus.connect(master);
     // vang (impulse tự tạo) + delay chấm
     verb = ctx.createConvolver();
-    const lite = matchMedia('(pointer: coarse)').matches, len = ctx.sampleRate * (lite ? 1.6 : 2.6),   // điện thoại: vang ngắn hơn cho nhẹ
+    const len = ctx.sampleRate * (lite ? 1.6 : 2.6),   // điện thoại: vang ngắn hơn cho nhẹ
     ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4); }
     verb.buffer = ir;
@@ -62,9 +67,10 @@
   const I = {
     pad(out, t, notes, dur, v = .07) {
       const lp = filt('lowpass', 900, .5), g = ctx.createGain();
-      lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1500, t + dur * .5); lp.frequency.linearRampToValueAtTime(800, t + dur);
+      // điện thoại: không quét tần số lọc (Safari tính lại bộ lọc từng mẫu khi tần số đổi liên tục → nặng)
+      if (!lite) { lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1500, t + dur * .5); lp.frequency.linearRampToValueAtTime(800, t + dur); }
       env(g, t, Math.min(.7, dur * .3), v, .4, .8, .9, t + dur);
-      for (const m of notes) for (const d of [-8, 7]) osc('sawtooth', mtof(m), t, t + dur + 1, d).connect(lp);
+      for (const m of notes) for (const d of (lite ? [0] : [-8, 7])) osc('sawtooth', mtof(m), t, t + dur + 1, d).connect(lp);
       lp.connect(g); send(g, out, .5);
     },
     pluck(out, t, m, v = .09, tone = 2600) {
@@ -92,7 +98,7 @@
       const lp = filt('lowpass', 600, 3), g = ctx.createGain();
       lp.frequency.setValueAtTime(500, t); lp.frequency.exponentialRampToValueAtTime(3200, t + .08); lp.frequency.exponentialRampToValueAtTime(1500, t + dur);
       env(g, t, .03, v, .2, .75, .4, t + dur);
-      for (const d of [-10, 0, 10]) osc('sawtooth', mtof(m), t, t + dur + .6, d).connect(lp);
+      for (const d of (lite ? [-8, 8] : [-10, 0, 10])) osc('sawtooth', mtof(m), t, t + dur + .6, d).connect(lp);
       lp.connect(g); send(g, out, .55);
     },
     bell(out, t, m, v = .08) {
@@ -137,7 +143,7 @@
     },
     crowd(out, t, dur, v = .18, fall = false) {
       // khán đài: nhiễu dải giữa + rung biên độ chậm (nhiều giọng)
-      for (const f of [520, 900, 1500]) {
+      for (const f of (lite ? [650, 1300] : [520, 900, 1500])) {
         const n = noise(t, t + dur + 1.5), bp = filt('bandpass', f, .9), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
         if (fall) bp.frequency.exponentialRampToValueAtTime(f * .45, t + dur);
         lfo.frequency.value = 2 + Math.random() * 3; lg.gain.value = v * .25; lfo.connect(lg); lg.connect(g.gain); lfo.start(t); lfo.stop(t + dur + 1.5);
@@ -152,9 +158,9 @@
       o.connect(g); send(g, out, .25);
     },
     clap(out, t, v = .3) {   // nhiều người vỗ tay lệch nhau vài ms
-      for (let k = 0; k < 7; k++) {
+      for (let k = 0; k < (lite ? 3 : 7); k++) {
         const t0 = t + Math.random() * .028, n = noise(t0, t0 + .12), bp = filt('bandpass', 1000 + Math.random() * 900, 1.4), g = ctx.createGain();
-        g.gain.setValueAtTime(v * .45, t0); g.gain.exponentialRampToValueAtTime(.001, t0 + .07);
+        g.gain.setValueAtTime(v * (lite ? .7 : .45), t0); g.gain.exponentialRampToValueAtTime(.001, t0 + .07);
         n.connect(bp); bp.connect(g); send(g, out, .35);
       }
     },
@@ -168,7 +174,7 @@
     chant(out, t, m, dur, v = .03) {   // khán giả hát "ô": nhiều giọng lệch cao độ, lọc formant
       const g = ctx.createGain(), f1 = filt('bandpass', 480, 3), f2 = filt('bandpass', 820, 4);
       env(g, t, .06, v, .1, .85, .2, t + dur);
-      for (let k = 0; k < 6; k++) { const o = osc('sawtooth', mtof(m - (k % 3 === 0 ? 12 : 0)), t + Math.random() * .035, t + dur + .5, (Math.random() * 2 - 1) * 30); o.connect(f1); o.connect(f2); }
+      for (let k = 0; k < (lite ? 3 : 6); k++) { const o = osc('sawtooth', mtof(m - (k % 3 === 0 ? 12 : 0)), t + Math.random() * .035, t + dur + .5, (Math.random() * 2 - 1) * 30); o.connect(f1); o.connect(f2); }
       f1.connect(g); f2.connect(g); send(g, out, .6);
     },
     horn(out, t, dur, m = 70, v = .05) {   // kèn hơi trên khán đài
