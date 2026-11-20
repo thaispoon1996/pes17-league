@@ -42,6 +42,8 @@ var news = new NewsStore(Path.GetFullPath(Path.Combine(storeDir, "..", "news")))
 b.Services.AddSingleton(news);
 var faces = new FaceStore(Path.GetFullPath(Path.Combine(storeDir, "..", "faces")));
 b.Services.AddSingleton(faces);
+var kits = new KitStore(Path.GetFullPath(Path.Combine(storeDir, "..", "kits")));
+b.Services.AddSingleton(kits);
 b.Services.AddHttpClient("news", c => c.Timeout = TimeSpan.FromSeconds(45));
 b.Services.AddSingleton<IArticleWriter>(sp => new DeepSeekArticleWriter(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("news"),
@@ -86,6 +88,10 @@ Directory.CreateDirectory(news.Dir);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(news.Dir), RequestPath = NewsStore.RequestPath });
 Directory.CreateDirectory(faces.Dir);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(faces.Dir), RequestPath = FaceStore.RequestPath });
+Directory.CreateDirectory(kits.Dir);
+// áo đấu: URL có ?v= theo giờ sửa file → cho trình duyệt giữ 30 ngày, mở lại bảng chi tiết không phải hỏi lại máy chủ
+app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(kits.Dir), RequestPath = KitStore.RequestPath,
+    OnPrepareResponse = r => r.Context.Response.Headers.CacheControl = "public, max-age=2592000, immutable" });
 app.UseAuthentication();
 app.Use(async (ctx, next) =>
 {

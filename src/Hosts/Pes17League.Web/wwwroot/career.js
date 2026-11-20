@@ -22,12 +22,13 @@
   }
 
   // đang cuộn → <html data-cx-scroll> (career.css dừng hiệu ứng lặp), ngừng ~150ms thì bỏ. Không dùng class: MutationObserver dưới theo dõi class.
+  // capture: sự kiện cuộn của phần tử (bảng chi tiết giải/CLB…) không nổi bọt lên window → phải bắt ở pha capture mới thấy (PO 20/11).
   let scrolling = false, scrollT;
   addEventListener('scroll', () => {
     if (!scrolling && document.querySelector('.cx')) { scrolling = true; document.documentElement.dataset.cxScroll = ''; }
     clearTimeout(scrollT);
     scrollT = setTimeout(() => { scrolling = false; delete document.documentElement.dataset.cxScroll; }, 150);
-  }, { passive: true });
+  }, { passive: true, capture: true });
 
   // bụi sáng trên nền
   let dust = null;
@@ -51,7 +52,7 @@
     const tick = t => {
       if (!alive) return;
       requestAnimationFrame(tick);
-      if (scrolling || t - last < 32) return;   // ~30 khung/s, giữ nguyên khi đang cuộn
+      if (scrolling || t - last < 32 || document.querySelector('.cx-ldet-ov')) return;   // ~30 khung/s; đứng yên khi đang cuộn hoặc bảng chi tiết đang che nền
       const dt = last ? Math.min(t - last, 100) / 16.7 : 1; last = t;
       ctx.clearRect(0, 0, w, h);
       for (const p of ps) {
