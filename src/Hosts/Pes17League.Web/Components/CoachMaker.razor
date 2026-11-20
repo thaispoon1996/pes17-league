@@ -21,19 +21,16 @@
     @if (step == 0)
     {
         <h1>Khuôn mặt HLV</h1>
-        <p class="lead">Tải ảnh chân dung nhìn thẳng, kéo cho mặt nằm gọn trong khung, mắt ngang vạch vàng rồi bấm Quét. Ảnh đã căn được lưu vào hồ sơ, chỉ bạn xem được. Không có ảnh vẫn dùng được mặt mặc định.</p>
+        <p class="lead">Tải ảnh chân dung nhìn thẳng, kéo và phóng cho mặt nằm gọn trong khung, mắt ngang vạch vàng rồi bấm Lưu ảnh. Ảnh dùng trên thẻ HLV, họp báo và ảnh lưu niệm. Không có ảnh vẫn dùng hình mặc định.</p>
         <div class="hlv-facegrid">
             <div @ref="cropHost">
                 <div class="cx-crop">
                     <canvas data-crop width="400" height="400"></canvas>
-                    <canvas data-dots width="400" height="400"></canvas>
                     <svg viewBox="0 0 400 400" aria-hidden="true">
                         <path d="M0 0H400V400H0Z M80 188a120 156 0 1 0 240 0a120 156 0 1 0-240 0Z" fill="rgba(7,11,26,.55)" fill-rule="evenodd" />
                         <ellipse cx="200" cy="188" rx="120" ry="156" fill="none" stroke="#36E3FF" stroke-width="2" stroke-dasharray="6 6" />
                         <line x1="120" y1="153" x2="280" y2="153" stroke="#FFC94A" stroke-width="1.5" stroke-dasharray="4 4" />
                     </svg>
-                    <i class="scanl" aria-hidden="true"></i>
-                    <span class="cnt" data-count-label>Điểm mốc 0/478</span>
                 </div>
                 <div class="hlv-tools">
                     <label class="cx-btn ghost sm"><i class="ms" aria-hidden="true">add_photo_alternate</i>Tải ảnh<input type="file" accept="image/*" data-file hidden /></label>
@@ -41,25 +38,15 @@
                     <input type="range" min="1" max="3" step="0.01" value="1" data-zoom aria-label="Phóng to ảnh" />
                 </div>
                 <div class="hlv-acts" style="margin-top:10px">
-                    <button class="cx-btn gold" disabled="@busy" @onclick="Scan"><i class="ms" aria-hidden="true">face_retouching_natural</i>@(busy ? "Đang quét…" : "Quét khuôn mặt")</button>
+                    <button class="cx-btn gold" disabled="@busy" @onclick="SaveFace"><i class="ms" aria-hidden="true">save</i>@(busy ? "Đang lưu…" : "Lưu ảnh")</button>
+                    @if (c.Face is not null) { <button class="cx-btn ghost" disabled="@busy" data-confirm="Xoá ảnh mặt khỏi hồ sơ?" @onclick="RemoveFace"><i class="ms" aria-hidden="true">delete</i>Xoá ảnh</button> }
                 </div>
                 @if (scanErr is not null) { <p class="cx-msg neg" role="alert" style="margin:8px 0 0;white-space:normal;overflow-wrap:anywhere">@scanErr</p> }
                 @if (scanNote is not null) { <p class="hlv-note">@scanNote</p> }
             </div>
             <div>
-                <div class="hlv-stage" @ref="stageEl"><i class="ring" aria-hidden="true"></i><span class="hint">Kéo để xoay</span></div>
-                <div class="hlv-opt"><span>Kiểu tóc</span>
-                    <div class="hlv-chips">@foreach (var h in CoachRules.Hairs) { var v = h; <button class="hlv-chip @(c.Hair == v ? "on" : null)" @onclick="() => Look(hair: v)">@CoachUi.HairName(v)</button> }</div>
-                </div>
-                <div class="hlv-opt"><span>Màu tóc</span>
-                    <div class="hlv-chips">@foreach (var h in CoachUi.HairColors) { var v = h; <button class="hlv-sw @(c.HairColor == v ? "on" : null)" style="background:@v" aria-label="Màu tóc @v" @onclick="() => Look(hc: v)"></button> }</div>
-                </div>
-                <div class="hlv-opt"><span>Màu da</span>
-                    <div class="hlv-chips">@foreach (var h in SkinChoices) { var v = h; <button class="hlv-sw @(c.Skin == v ? "on" : null)" style="background:@v" aria-label="Màu da @v" @onclick="() => Look(skin: v)"></button> }</div>
-                </div>
-                <div class="hlv-opt"><span>Trang phục</span>
-                    <div class="hlv-chips">@foreach (var o in CoachRules.Outfits) { var v = o; <button class="hlv-chip @(c.Outfit == v ? "on" : null)" @onclick="() => Look(outfit: v)">@CoachUi.OutfitName(v)</button> }</div>
-                </div>
+                <div class="hlv-cardwrap"><CoachCard C="c" /></div>
+                <p class="hlv-note" style="text-align:center">Thẻ HLV dùng ảnh đã lưu.</p>
             </div>
         </div>
     }
@@ -147,11 +134,7 @@
         <h1>Thẻ HLV</h1>
         <p class="lead">Màu viền theo danh tiếng: đồng, bạc, vàng, huyền thoại. Đang dẫn CLB thì hồ sơ nhận hợp đồng mặc định với CLB đó; chưa có CLB thì đi ứng tuyển.</p>
         <div class="hlv-cardwrap">
-            <div class="hlv-seg" role="group" aria-label="Kiểu ảnh">
-                <button class="@(card3d ? "on" : null)" @onclick="() => card3d = true">Ảnh 3D</button>
-                <button class="@(!card3d ? "on" : null)" @onclick="() => card3d = false">Ảnh 2D</button>
-            </div>
-            <CoachCard C="c" Live="card3d" ShowBase="true" />
+<CoachCard C="c" ShowBase="true" />
         </div>
     }
 
@@ -171,18 +154,15 @@
     Coach? c;
     Guid me;
     int step, reached;
-    bool busy, card3d = true, mounted;
+    bool busy, mounted;
     string? msg, scanNote, scanErr;
     string name = "", nick = "", nation = "Việt Nam", formation = "4-3-3", style = "Cân bằng";
     int age = 38;
     int[] alloc = [];
-    ElementReference cropHost, stageEl;
+    ElementReference cropHost;
 
     int Pool => CoachRules.Origin(c!.Origin).FreePoints;
     IEnumerable<string> Nations => CoachUi.Nations.Contains(nation) ? CoachUi.Nations : CoachUi.Nations.Prepend(nation);
-    IEnumerable<string> SkinChoices => CoachUi.SkinTones.Contains(c!.Skin) ? CoachUi.SkinTones : CoachUi.SkinTones.Append(c!.Skin);
-
-    sealed record ScanResult(bool Ok, bool Real, int Points, string? Skin);
 
     protected override async Task OnInitializedAsync()
     {
@@ -209,46 +189,43 @@
         mounted = true;
         try
         {
-            await JS.InvokeVoidAsync("Coach3d.crop", cropHost, CoachUi.FaceUrl(c));
-            await Show();
+            await JS.InvokeVoidAsync("CoachFace.crop", cropHost, CoachUi.FaceUrl(c));
         }
         catch (JSDisconnectedException) { }
         catch (JSException) { }
     }
 
-    Task Show() => JS.InvokeVoidAsync("Coach3d.show", stageEl, new { face = CoachUi.FaceUrl(c!), skin = c!.Skin, hair = c.Hair, hc = c.HairColor, @out = c.Outfit }).AsTask();
-
-    async Task Look(string? hair = null, string? hc = null, string? skin = null, string? outfit = null)
+    /// <summary>Lưu ảnh đã căn trong khung (JPEG 400×400).</summary>
+    async Task<bool> SaveFace()
     {
-        if (c is null) return;
-        var look = new CoachLook(hair ?? c.Hair, hc ?? c.HairColor, outfit ?? c.Outfit, skin ?? c.Skin);
-        await using var db = await Dbs.CreateDbContextAsync();
-        var svc = new CoachService(db, Clock);
-        msg = await svc.SetLookAsync(me, look);
-        c = await svc.GetAsync(me) ?? c;
-        try { await Show(); } catch (JSException) { } catch (JSDisconnectedException) { }
-    }
-
-    async Task Scan()
-    {
+        if (c is null) return false;
         busy = true; msg = null; scanNote = null; scanErr = null;
         StateHasChanged();
         try
         {
-            var r = await JS.InvokeAsync<ScanResult>("Coach3d.scan");
-            if (r is not { Ok: true }) { scanErr = "Chưa có ảnh. Bấm Tải ảnh, căn mặt vào khung rồi quét. Không có ảnh vẫn dùng được mặt mặc định."; return; }
-            var bytes = await Bytes("Coach3d.faceBytes", CoachService.MaxFaceBytes);
-            var mesh = await JS.InvokeAsync<string?>("Coach3d.faceMesh");
+            var bytes = await Bytes("CoachFace.faceBytes", CoachService.MaxFaceBytes);
+            if (bytes is null) { scanErr = "Chưa có ảnh. Bấm Tải ảnh, căn mặt vào khung rồi Lưu ảnh. Không có ảnh vẫn dùng hình mặc định."; return false; }
             await using var db = await Dbs.CreateDbContextAsync();
             var svc = new CoachService(db, Clock);
-            msg = await svc.SetFaceAsync(me, bytes, mesh);
-            if (msg is null && r.Skin is { Length: 7 } sk) msg = await svc.SetLookAsync(me, new CoachLook(c!.Hair, c.HairColor, c.Outfit, sk));
+            scanErr = await svc.SetFaceAsync(me, bytes, null);
             c = await svc.GetAsync(me) ?? c;
-            scanNote = r.Real ? $"Đã quét {r.Points} điểm mốc và lưu mặt vào hồ sơ." : "Không tải được bộ quét điểm mốc, đã dán ảnh lên khuôn đầu mẫu và lưu vào hồ sơ.";
+            if (scanErr is null) scanNote = "Đã lưu ảnh vào hồ sơ.";
+            return scanErr is null;
         }
-        catch (JSException) { scanErr = "Quét không thành công. Thử ảnh khác hoặc tải lại trang."; }
-        catch (JSDisconnectedException) { }
+        catch (JSException) { scanErr = "Không đọc được ảnh. Thử ảnh khác hoặc tải lại trang."; return false; }
+        catch (JSDisconnectedException) { return false; }
         finally { busy = false; }
+    }
+
+    async Task RemoveFace()
+    {
+        if (c is null) return;
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new CoachService(db, Clock);
+        scanErr = await svc.SetFaceAsync(me, null, null);
+        c = await svc.GetAsync(me) ?? c;
+        scanNote = scanErr is null ? "Đã xoá ảnh, thẻ dùng hình mặc định." : null;
+        try { await JS.InvokeVoidAsync("CoachFace.clearFace"); } catch (JSException) { } catch (JSDisconnectedException) { }
     }
 
     async Task<byte[]?> Bytes(string fn, long max)
@@ -274,6 +251,12 @@
         {
             await using var db = await Dbs.CreateDbContextAsync();
             var svc = new CoachService(db, Clock);
+            if (step == 0)
+            {
+                var pending = false;
+                try { pending = await JS.InvokeAsync<bool>("CoachFace.dirty"); } catch (JSException) { }
+                if (pending) { busy = false; if (!await SaveFace()) return; busy = true; }
+            }
             if (step == 1) msg = await svc.SaveInfoAsync(me, new CoachInfo(name, nick, age, nation, formation, style));
             else if (step == 3) msg = await svc.SetSkillsAsync(me, alloc);
             if (msg is not null) return;

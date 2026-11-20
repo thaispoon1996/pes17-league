@@ -913,19 +913,8 @@ html[data-cx-scroll] .cx *, html[data-cx-scroll] .cx *::before, html[data-cx-scr
 @media (min-width: 600px) { .cx .hlv-facegrid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .cx .cx-crop { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--hrim); background: #0d1630; touch-action: none; cursor: grab; }
 .cx .cx-crop canvas, .cx .cx-crop svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.cx .cx-crop .scanl { position: absolute; left: 0; right: 0; height: 3px; top: 0; background: var(--cyan); box-shadow: 0 0 18px 4px rgba(54,227,255,.7); opacity: 0; }
-.cx .scanning .cx-crop .scanl { opacity: 1; animation: hlv-scan 1.1s ease-in-out infinite alternate; }
-@keyframes hlv-scan { from { top: 8%; } to { top: 90%; } }
-.cx .cx-crop .cnt { position: absolute; left: 10px; bottom: 10px; font-size: 12px; background: rgba(7,11,26,.8); border-radius: 6px; padding: 3px 8px; color: var(--cyan); opacity: 0; }
-.cx .scanning .cx-crop .cnt, .cx .done .cx-crop .cnt { opacity: 1; }
 .cx .hlv-tools { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .cx .hlv-tools input[type=range] { flex: 1; min-width: 120px; accent-color: var(--gold); }
-.cx .hlv-stage { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 1px solid var(--hrim); touch-action: pan-y;
-  background: radial-gradient(70% 60% at 50% 35%, rgba(54,227,255,.18), transparent 70%), radial-gradient(60% 40% at 50% 100%, rgba(255,201,74,.16), transparent 70%), #0a1230; }
-.cx .hlv-stage canvas { display: block; width: 100% !important; height: 100% !important; }
-.cx .hlv-stage .hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 12px; color: var(--muted); pointer-events: none; }
-.cx .hlv-stage .ring { position: absolute; left: 18%; right: 18%; bottom: 6%; height: 12%; border-radius: 50%; border: 1px solid rgba(54,227,255,.35); box-shadow: 0 0 30px rgba(54,227,255,.25) inset; pointer-events: none; }
-.cx img.fb { position: absolute; left: 50%; top: 50%; width: 70%; aspect-ratio: 1; object-fit: cover; border-radius: 50%; transform: translate(-50%, -55%); }
 
 /* xuất thân */
 .cx .hlv-origin { position: relative; border: 1px solid var(--gold); background: var(--glass-solid); border-radius: 10px; padding: 14px; display: grid; grid-template-columns: 52px 1fr; gap: 4px 12px;
@@ -1052,7 +1041,9 @@ html[data-cx-scroll] .cx *, html[data-cx-scroll] .cx *::before, html[data-cx-scr
 .cx .hlv-press .wall img { width: 44px; height: 44px; object-fit: contain; justify-self: center; }
 .cx .hlv-press .shade { position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 40%, transparent, rgba(5,8,22,.75)), linear-gradient(transparent 55%, rgba(5,8,22,.6)); }
 .cx .hlv-press .host { position: absolute; left: 0; right: 0; top: 4%; height: 82%; }
-.cx .hlv-press .host canvas { width: 100% !important; height: 100% !important; }
+.cx .hlv-press .host { display: flex; justify-content: center; align-items: flex-end; }
+.cx .hlv-press .host img { height: 74%; aspect-ratio: 1; object-fit: cover; margin-bottom: 18%; border-radius: 22px; border: 3px solid var(--gold); box-shadow: 0 0 40px -6px rgba(255,201,74,.6), 0 18px 40px rgba(0,0,0,.5); }
+.cx .hlv-press .host .ms { font-size: 160px; margin-bottom: 22%; color: rgba(255,255,255,.2); }
 .cx .hlv-press .podium { position: absolute; left: 14%; right: 14%; bottom: 0; height: 24%; border-radius: 8px 8px 0 0; background: linear-gradient(#18245e, #0b1238); border-top: 2px solid var(--gold); display: grid; place-items: center; }
 .cx .hlv-press .mic { position: absolute; bottom: 23%; width: 6px; height: 34px; background: #222b45; border-radius: 3px; }
 .cx .hlv-press .mic::before { content: ""; position: absolute; left: -5px; top: -14px; width: 16px; height: 20px; border-radius: 8px; background: #3a425c; box-shadow: inset 0 2px 0 rgba(255,255,255,.2); }

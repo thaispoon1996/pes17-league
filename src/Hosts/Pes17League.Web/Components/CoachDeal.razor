@@ -161,7 +161,7 @@ else
     {
         if (app?.Status != CoachApplicationStatus.Agreed || padReady || signing) return;
         padReady = true;
-        try { await JS.InvokeVoidAsync("Coach3d.pad", padEl); } catch (JSException) { } catch (JSDisconnectedException) { }
+        try { await JS.InvokeVoidAsync("CoachFace.pad", padEl); } catch (JSException) { } catch (JSDisconnectedException) { }
     }
 
     static string Pc(double v) => (Math.Clamp((v - .8) / .8, 0, 1) * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
@@ -205,13 +205,13 @@ else
         await OnClosed.InvokeAsync();
     }
 
-    async Task Clear() { try { await JS.InvokeVoidAsync("Coach3d.clearPad", padEl); } catch (JSException) { } }
+    async Task Clear() { try { await JS.InvokeVoidAsync("CoachFace.clearPad", padEl); } catch (JSException) { } }
 
     async Task Sign()
     {
         msg = null;
         int ink;
-        try { ink = await JS.InvokeAsync<int>("Coach3d.inked", padEl); } catch (JSException) { ink = 99; }
+        try { ink = await JS.InvokeAsync<int>("CoachFace.inked", padEl); } catch (JSException) { ink = 99; }
         if (ink < 4) { msg = "Ký tên vào ô bên phải trước đã."; return; }
         stamped = true;
         StateHasChanged();
