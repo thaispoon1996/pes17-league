@@ -213,6 +213,11 @@
     if (!matchMedia('(max-width: 899px)').matches) return;
     if (open) { mailY = scrollY; scrollTo(0, 0); } else scrollTo(0, mailY);
   };
+  // Chuyển nhượng (PO 20/11): bấm "Chỗ cần bổ sung" → cuộn tới ô tìm; Esc đóng bảng trượt hồ sơ/bộ lọc (khi không có hộp xác nhận).
+  window.cxScrollTo = sel => { const el = document.querySelector(sel); el && el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.querySelector('.ui-dialog.on')) document.querySelector('.mk-sheet .x')?.click();
+  });
   let queued = false;
   new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; scan(); }); })
     .observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-count', 'class'] });

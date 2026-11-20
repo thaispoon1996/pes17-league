@@ -4,29 +4,232 @@
 @inject LeagueQueries Q
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject TimeProvider Clock
+@inject IJSRuntime JS
 
-@* Trang Chuyển nhượng kiểu Football Manager (PO 11/11): tab Tìm cầu thủ (bộ lọc + bảng + hồ sơ trinh sát bên phải, mobile mở dưới dòng)
-   và Giao dịch (các vụ đã hoàn tất trong mùa). ?tab=giao-dich mở thẳng tab. Luật mua giữ nguyên TransferService. *@
+@* Trang Chuyển nhượng. Giải online: kiểu Football Manager (PO 11/11) — tab Tìm cầu thủ (bộ lọc + bảng + hồ sơ trinh sát bên phải, mobile mở dưới dòng)
+   và Giao dịch (các vụ đã hoàn tất trong mùa). Career: giao diện riêng (PO ok mockup 20/11). ?tab=giao-dich mở thẳng tab. Luật mua giữ nguyên TransferService. *@
 @if (season is null) { return; }
 @{ var me = season.HumanClubId; var myName = season.Clubs.GetValueOrDefault(me, "Chưa chọn CLB"); }
-<div class="fm @(Shell is null ? "" : "cx-skin")">
-    @if (Shell?.P is { } cp)
-    {
-        @* UI career đợt 2 (Stitch "Chuyển nhượng & Hợp đồng", PO 19/11): đầu trang kỳ chuyển nhượng; mua xong hiện màn ký hợp đồng. *@
-        <section class="cx-card cx-mkhero">
-            <div class="row">
-                <span class="cx-label"><i class="ms fill" aria-hidden="true">verified</i>Cửa sổ chuyển nhượng</span>
-                <span class="cx-chip @(window is null ? "bad" : "live ok")">@(window is null ? "Đang đóng" : $"Mở · còn {cp.MarketSlotsLeft} khung")</span>
+@if (Shell?.P is { } cp)
+{
+    @* Career (PO ok mockup 20/11): đầu trang kỳ CN (khung, ngân sách, quỹ lương, chỗ cần bổ sung) → tab dính → tìm + Lọc (bảng trượt) + chip vị trí →
+       dải gợi ý thẻ cầu thủ (khi chưa lọc) → danh sách thẻ dòng → hồ sơ bảng trượt (trinh sát, so với đội, chi phí, ký). Luật mua giữ nguyên TransferService. *@
+    var (winter, slotIdx, slotTotal) = Win(cp);
+    var weak = Weak().ToList();
+    var filtered = Filtered;
+    var rows = View().ToList();
+    <div class="mk-page">
+        <section class="mk-hero" aria-labelledby="mk-h">
+            <div class="mk-status">
+                @if (window is not null) { <span class="mk-pill live">Đang mở</span> } else { <span class="mk-pill shut">Đang đóng</span> }
+                <span class="mk-pill">@(winter ? "Kỳ đông" : "Kỳ hè")</span>
             </div>
-            <h1>@(window is null ? "Chợ đã đóng" : cp.Slot >= Pes17TransferWindows.WinterStart(cp.Slots) ? "Thị trường mùa đông" : "Thị trường mùa hè")</h1>
-            <p>@(window is null ? (cp.NextMarketSlot is { } nm ? $"Chợ mở lại ở khung {nm}. Vẫn xem và trinh sát được." : "Chợ không mở lại trong mùa này.") : "Mua người hợp tuyến yếu nhất, bán bớt người dư để có tiền.")</p>
-            <div class="cx-duo">
-                <div class="cx-stat"><span>Ngân sách CLB</span><b class="@(balance < 0 ? "cx-down" : "gold")" data-count="@balance" data-fmt="money">@Fmt.Money(balance)</b></div>
-                <div class="cx-stat"><span>Quỹ lương/vòng</span><b class="cyan">@Fmt.Money(payroll)</b>@if (season.Economy.SoftWageCap > 0) { <small>trần @Fmt.Money(season.Economy.SoftWageCap)</small> }</div>
+            <h1 id="mk-h">@if (window is null) { <text>Chợ đã<br />đóng cửa</text> } else { <text>Thị trường<br />@(winter ? "mùa đông" : "mùa hè")</text> }</h1>
+            @if (window is not null)
+            {
+                <div class="mk-slots" aria-hidden="true">@for (var i = 1; i <= slotTotal; i++) { <i class="@(i < slotIdx ? "past" : i == slotIdx ? "now" : null)"></i> }</div>
+                <div class="mk-slots-cap"><span>Khung <b>@slotIdx</b>/@slotTotal của @(winter ? "kỳ đông" : "kỳ hè")</span><span>Đóng sau khung @slotTotal</span></div>
+            }
+            else
+            {
+                <p class="mk-shut">@(cp.NextMarketSlot is { } nm ? $"Chợ mở lại ở khung {nm}. Vẫn xem và giao trinh sát được." : "Chợ không mở lại trong mùa này. Vẫn xem và giao trinh sát được.")</p>
+            }
+            <div class="mk-money">
+                <div class="mk-kpi">
+                    <small>Ngân sách CLB</small>
+                    <b class="@(balance < 0 ? "neg" : null)" data-count="@balance" data-fmt="money">@Fmt.Money(balance)</b>
+                    <small>Đủ tiền cho @market.Count(p => p.Price <= balance).ToString("N0", Vi) cầu thủ</small>
+                </div>
+                <div class="mk-kpi wage">
+                    <small>Quỹ lương</small>
+                    <b>@Fmt.Money(payroll)<em>/vòng</em></b>
+                    @if (season.Economy.SoftWageCap is > 0 and var cap)
+                    {
+                        var pct = (int)Math.Round(payroll * 100.0 / cap);
+                        <div class="mk-meter @(pct > 100 ? "over" : null)"><i style="width:@(Math.Min(pct, 100))%"></i></div>
+                        <div class="mk-meter-cap"><span>@pct%</span><span>trần @Fmt.Money(cap)</span></div>
+                    }
+                    else { <small>Không đặt trần lương</small> }
+                </div>
             </div>
-            <div class="cx-lines">@foreach (var g in Groups) { <span><i class="@Fmt.Group(g.Group)">@squad.Count(p => p.Position.Group() == g.Group)</i>@g.Name</span> }</div>
+            @if (weak.Count > 0)
+            {
+                <div class="mk-needs">
+                    <h2>Chỗ cần bổ sung <small>người giỏi nhất mỗi vị trí</small></h2>
+                    <div class="mk-need-list">
+                        @for (var i = 0; i < weak.Count; i++)
+                        {
+                            var w = weak[i];
+                            <button type="button" class="mk-need no-busy @(i == 0 ? "worst" : null)" title="Tìm @Fmt.PositionName(w.Position)" @onclick="() => FocusPos(w.Position)">
+                                <span class="mk-ps @Fmt.Group(w.Position)">@w.Position</span><b>@w.Overall</b><span>@w.Name</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
         </section>
+
+        <nav class="mk-tabs" role="tablist" aria-label="Chuyển nhượng">
+            <div class="in">
+                <button type="button" role="tab" class="no-busy @(tab == "tim" ? "on" : null)" aria-selected="@(tab == "tim" ? "true" : "false")" @onclick='() => tab = "tim"'><i class="ms" aria-hidden="true">person_search</i>Tìm cầu thủ</button>
+                <button type="button" role="tab" class="no-busy @(tab == "giao-dich" ? "on" : null)" aria-selected="@(tab == "giao-dich" ? "true" : "false")" @onclick='() => tab = "giao-dich"'>Giao dịch <span class="n">@transfers.Count</span></button>
+                @if (cp.Has(CareerUnlocks.Offers)) { <a href="de-nghi">Đề nghị @if (pendingOffers > 0) { <span class="n hot">@pendingOffers</span> }</a> }
+            </div>
+        </nav>
+
+        @if (tab == "giao-dich")
+        {
+            var buys = transfers.Where(t => t.To == me && t.Kind != TransferKind.Release).ToList();
+            var outs = transfers.Where(t => t.From == me).ToList();
+            var net = buys.Sum(t => t.Fee) - outs.Sum(t => t.Fee);
+            <div class="mk-sum">
+                <div><small>Mua vào</small><b>@buys.Count</b><span>@Fmt.Money(buys.Sum(t => t.Fee))</span></div>
+                <div><small>Rời CLB</small><b>@outs.Count</b><span>@Fmt.Money(outs.Sum(t => t.Fee))</span></div>
+                <div><small>@(net >= 0 ? "Chi ròng" : "Thu ròng")</small><b class="gold">@Fmt.Money(Math.Abs(net))</b><span>mùa này</span></div>
+            </div>
+            @if (transfers.Count == 0)
+            {
+                <div class="mk-empty">
+                    <i class="ms" aria-hidden="true">newspaper</i>
+                    <b>Chưa có vụ nào</b>
+                    <p>Mùa này chưa có vụ chuyển nhượng hoàn tất. Vụ đầu tiên sẽ lên bản tin ở đây.</p>
+                    <button type="button" class="mk-btn ghost sm no-busy" @onclick='() => tab = "tim"'>Tìm cầu thủ</button>
+                </div>
+            }
+            else
+            {
+                <ul class="mk-feed">
+                    @foreach (var day in transfers.GroupBy(t => t.At.ToLocalTime().Date))
+                    {
+                        <li class="day">@day.Key.ToString("dd/MM")</li>
+                        @foreach (var t in day)
+                        {
+                            <li class="mk-deal @(t.From == me || t.To == me ? "mine" : null)">
+                                <span class="mk-face"><Face Id="@t.PlayerId" Name="@t.Player" Size="md" /></span>
+                                <div class="who">
+                                    <a href="@season.Url($"cau-thu/{t.PlayerId}")"><b>@t.Player</b></a> <span class="mk-ps sm @Fmt.Group(t.Position)">@t.Position</span>
+                                    <span class="mv">@ClubTag(t.From, "Tự do")<i class="ms" aria-hidden="true">arrow_forward</i>@if (t.Kind == TransferKind.Release) { <span>Giải phóng</span> } else { @ClubTag(t.To, "?") }</span>
+                                </div>
+                                <span class="fee">@(t.Fee > 0 ? Fmt.Money(t.Fee) : "–")</span>
+                            </li>
+                        }
+                    }
+                </ul>
+                @if (transfers.Count == TransferTake) { <p class="mk-note">Hiện @TransferTake vụ gần nhất.</p> }
+            }
+        }
+        else
+        {
+            <div class="mk-search">
+                <label><i class="ms" aria-hidden="true">search</i><input type="search" placeholder="Tìm tên cầu thủ" autocomplete="off" @bind="name" @bind:event="oninput" /></label>
+                <button type="button" class="mk-fbtn no-busy" @onclick="() => filterOpen = true"><i class="ms" aria-hidden="true">tune</i><span>Lọc</span>@if (FilterCount > 0) { <span class="dot">@FilterCount</span> }</button>
+            </div>
+            <div class="mk-chips" role="group" aria-label="Vị trí">
+                <button type="button" class="mk-chip no-busy @(pos is null ? "on" : null)" @onclick="() => { pos = null; group = null; }">Mọi vị trí</button>
+                @foreach (var ps in positions)
+                {
+                    <button type="button" class="mk-chip no-busy @(pos == ps ? "on" : null)" title="@Fmt.PositionName(ps)" @onclick="() => { pos = ps; group = null; }">
+                        <i class="@Fmt.Group(ps)" aria-hidden="true"></i>@ps@if (weak.Count > 0 && weak[0].Position == ps) { <span class="need" title="Vị trí yếu nhất"></span> }
+                    </button>
+                }
+            </div>
+            @if (filtered && FilterCount > 0)
+            {
+                <div class="mk-af">
+                    @if (source != "all") { <button type="button" class="no-busy" @onclick='() => source = "all"'>@(source == "free" ? "Tự do" : "Đang ở CLB")<i class="ms">close</i></button> }
+                    @if (maxAge > 0) { <button type="button" class="no-busy" @onclick="() => maxAge = 0">≤ @maxAge tuổi<i class="ms">close</i></button> }
+                    @if (minOvr > 0) { <button type="button" class="no-busy" @onclick="() => minOvr = 0">OVR ≥ @minOvr<i class="ms">close</i></button> }
+                    @if (affordable) { <button type="button" class="no-busy" @onclick="() => affordable = false">Đủ tiền<i class="ms">close</i></button> }
+                </div>
+            }
+            @if (message is not null) { <p class="cx-msg @(message.StartsWith("Đã") ? null : "neg")">@message</p> }
+
+            @if (!filtered)
+            {
+                @if (weak.Count > 0 && market.Where(p => p.Position == weak[0].Position && p.Price <= balance).OrderByDescending(Seen).ThenBy(p => p.Price).Take(RailSize).ToList() is { Count: > 0 } r1)
+                {
+                    var wk = weak[0];
+                    @(Rail($"{Fmt.PositionName(wk.Position)} vừa túi tiền", $"{wk.Position} giỏi nhất của bạn: {wk.Name} · {wk.Overall}", r1, () => { pos = wk.Position; affordable = true; }))
+                }
+                @(Rail("Sao trẻ ≤ 21 tuổi", "Còn nhiều mùa để lên giá", market.Where(p => p.Age <= 21).OrderByDescending(Seen).ThenBy(p => p.Price).Take(RailSize).ToList(), () => maxAge = 21))
+                @(Rail("Cầu thủ tự do", "Chỉ số thật, không cần trinh sát", market.Where(p => p.ClubId is null && p.Position != Position.GK).OrderByDescending(p => p.Overall).ThenBy(p => p.Price).Take(RailSize).ToList(), () => source = "free"))
+            }
+
+            <div class="mk-list-h" id="mk-list">
+                <div><h3>@ListTitle</h3><p>@rows.Count.ToString("N0", Vi) cầu thủ@(rows.Count > Shown ? $" · hiện {Shown} đầu" : "")</p></div>
+                <button type="button" class="mk-sort no-busy" @onclick="NextSort">Sắp xếp<b>@Sorts.First(s => s.Key == sort).Label</b><i class="ms" aria-hidden="true">swap_vert</i></button>
+            </div>
+            <ul class="mk-rows">
+                @foreach (var p in rows.Take(Shown))
+                {
+                    var can = p.Price <= balance;
+                    <li>
+                        <button type="button" class="mk-row no-busy @(sel == p.PlayerId ? "sel" : null)" @onclick="() => Pick(p)">
+                            <span class="mk-tile @Tc(p)"><b>@Ovr(p)</b><span class="mk-ps sm @Fmt.Group(p.Position)">@p.Position</span></span>
+                            <span class="mk-face"><Face Id="@p.PlayerId" Name="@p.Name" Size="md" /></span>
+                            <span class="who">
+                                <b>@p.Name@if (scouting.ContainsKey(p.PlayerId)) { <i class="ms scout" title="Đang trinh sát">travel_explore</i> }</b>
+                                <span>@ClubTag(p.ClubId, "Tự do")<span class="age">· @(p.Age?.ToString() ?? "–") tuổi</span></span>
+                            </span>
+                            <span class="wage"><b>@Fmt.Money(Wage(p))</b>lương/vòng</span>
+                            <span class="cost @(can ? null : "no")"><b>@Fmt.Money(p.Price)</b><small>@(can ? "Đủ tiền" : $"Thiếu {Fmt.Money(p.Price - balance)}")</small></span>
+                        </button>
+                    </li>
+                }
+            </ul>
+            @if (rows.Count == 0)
+            {
+                <div class="mk-empty"><i class="ms" aria-hidden="true">search_off</i><b>Không ai khớp</b><p>Bỏ bớt điều kiện lọc hoặc đổi vị trí.</p></div>
+            }
+            @if (rows.Count > Shown) { <button type="button" class="mk-more no-busy" @onclick="() => Shown += 30">Xem thêm 30 cầu thủ (còn @((rows.Count - Shown).ToString("N0", Vi)))</button> }
+        }
+    </div>
+
+    @if (filterOpen)
+    {
+        <div class="mk-scrim" @onclick="() => filterOpen = false"></div>
+        <aside class="mk-sheet" role="dialog" aria-modal="true" aria-label="Bộ lọc">
+            <button type="button" class="x no-busy" aria-label="Đóng" @onclick="() => filterOpen = false"><i class="ms">close</i></button>
+            <div class="body">
+                <h2>Bộ lọc</h2>
+                <div class="mk-fg"><h4>Nguồn</h4><div>@foreach (var (k, l) in new[] { ("all", "Tất cả"), ("free", "Tự do"), ("clubs", "Đang ở CLB") }) { <button type="button" class="mk-chip no-busy @(source == k ? "on" : null)" @onclick="() => source = k">@l</button> }</div></div>
+                <div class="mk-fg"><h4>Tuổi tối đa</h4><div>@foreach (var a in new[] { 0, 21, 23, 25, 28, 30 }) { <button type="button" class="mk-chip no-busy @(maxAge == a ? "on" : null)" @onclick="() => maxAge = a">@(a == 0 ? "Bất kỳ" : $"≤ {a}")</button> }</div></div>
+                <div class="mk-fg"><h4>OVR tối thiểu</h4><div>@foreach (var o in new[] { 0, 70, 75, 80, 85 }) { <button type="button" class="mk-chip no-busy @(minOvr == o ? "on" : null)" @onclick="() => minOvr = o">@(o == 0 ? "Bất kỳ" : $"≥ {o}")</button> }</div></div>
+                <div class="mk-fg"><h4>Sắp xếp</h4><div>@foreach (var (k, l) in Sorts) { <button type="button" class="mk-chip no-busy @(sort == k ? "on" : null)" @onclick="() => sort = k">@l</button> }</div></div>
+                <div class="mk-toggle">
+                    <div><b>Chỉ người đủ tiền</b><small>Giá ≤ ngân sách @Fmt.Money(balance)</small></div>
+                    <button type="button" class="sw no-busy" role="switch" aria-checked="@(affordable ? "true" : "false")" aria-label="Chỉ người đủ tiền" @onclick="() => affordable = !affordable"></button>
+                </div>
+            </div>
+            <div class="foot">
+                <button type="button" class="mk-btn ghost no-busy" @onclick="ClearFilters">Xoá lọc</button>
+                <button type="button" class="mk-btn gold no-busy" @onclick="() => filterOpen = false">Xem @rows.Count.ToString("N0", Vi) cầu thủ</button>
+            </div>
+        </aside>
     }
+
+    @if (market.FirstOrDefault(x => x.PlayerId == sel) is { } pk)
+    {
+        <div class="mk-scrim" @onclick="ClosePlayer"></div>
+        <aside class="mk-sheet" role="dialog" aria-modal="true" aria-label="@pk.Name">
+            <button type="button" class="x no-busy" aria-label="Đóng" @onclick="ClosePlayer"><i class="ms">close</i></button>
+            <div class="body">@Sheet(pk)</div>
+            <div class="foot">
+                <a class="mk-btn ghost" href="@season.Url($"cau-thu/{pk.PlayerId}")"><i class="ms" aria-hidden="true">badge</i>Hồ sơ</a>
+                @if (window is null) { <button type="button" class="mk-btn gold" disabled>Chợ đang đóng</button> }
+                else if (me == Guid.Empty) { <button type="button" class="mk-btn gold" disabled>Chưa có CLB</button> }
+                else if (pk.ClubId is { } owner && season.IsHuman(owner)) { <a class="mk-btn gold" href="@($"de-nghi?cau-thu={pk.PlayerId}")"><i class="ms" aria-hidden="true">handshake</i>Gửi đề nghị</a> }
+                else if (pk.Price > balance) { <button type="button" class="mk-btn gold" disabled>Thiếu @Fmt.Money(pk.Price - balance)</button> }
+                else
+                {
+                    <button type="button" class="mk-btn gold" data-confirm="@($"Ký {pk.Name} với giá {Fmt.Money(pk.Price)}, hợp đồng {matches} trận?")" data-confirm-ok="Ký" @onclick="() => Buy(pk)">
+                        <i class="ms fill" aria-hidden="true">draw</i>Ký · @Fmt.Money(pk.Price)
+                    </button>
+                }
+            </div>
+        </aside>
+    }
+
     @if (signed is { } sg)
     {
         <div class="cx-ov cx-signed-ov" role="dialog" aria-modal="true" aria-label="Đã ký hợp đồng">
@@ -39,6 +242,7 @@
                     <span class="stamp"><i class="ms fill" aria-hidden="true">verified</i>Đã ký hợp đồng</span>
                 </div>
                 <h2>@sg.Name</h2>
+                @if (signedWasHidden) { <p class="cx-reveal">Lật thẻ: OVR thật @sg.Overall (trước chỉ biết @ScoutRules.Mask(sg.Overall))</p> }
                 <p>@(sg.ClubId is { } fc ? season.Clubs.GetValueOrDefault(fc, "CLB ngoài giải") : "Tự do") → @season.Clubs.GetValueOrDefault(season.HumanClubId, "")</p>
                 <div class="cx-facts">
                     <div><b>@Fmt.Money(sg.Price)</b><span>Phí chuyển nhượng</span></div>
@@ -52,6 +256,10 @@
             </div>
         </div>
     }
+}
+else
+{
+<div class="fm">
     <header class="fm-head">
         @if (me != Guid.Empty) { <Crest Name="@myName" Logo="@season.Logo(me)" Large="true" /> }
         <div class="fm-title">
@@ -207,6 +415,7 @@
     }
     </div>
 </div>
+}
 
 @code {
     [CascadingParameter] public CareerLayout? Shell { get; set; }
@@ -255,7 +464,13 @@
         transfers = await Q.TransfersAsync(season.Id, TransferTake);
         matches = season.Economy.DefaultContractMatches;
         await using var db = await Dbs.CreateDbContextAsync();
-        hidden = await new YouthService(db, Clock).HiddenAsync(season.HumanClubId);
+        var youth = new YouthService(db, Clock);
+        hidden = await youth.HiddenAsync(season.HumanClubId);
+        if (Shell is null) return;
+        var me = season.HumanClubId;
+        scouting = me == Guid.Empty ? [] : (await youth.ScoutListAsync(me)).Where(r => r.RoundsLeft > 0).ToDictionary(r => r.PlayerId, r => r.RoundsLeft);
+        pendingOffers = me == Guid.Empty ? 0 : await db.TransferOffers.CountAsync(o => (o.SellerClubId == me && o.Status == OfferStatus.Pending) || (o.BuyerClubId == me && o.Status == OfferStatus.Countered));
+        positions = [.. market.Select(p => p.Position).Distinct().Order()];
     }
 
     // FM đợt 8: cầu thủ CLB khác chưa trinh sát → OVR dạng khoảng; lọc/sắp theo cận dưới để không lộ thứ tự thật.
@@ -293,12 +508,195 @@
     {
         await using var db = await Dbs.CreateDbContextAsync();
         var r = await new TransferService(db, Clock).BuyAsync(window!.Id, p.PlayerId, season!.HumanClubId, p.Price, matches, Wage(p));
-        if (r.Ok && Shell is not null) { signed = p; signedWage = Wage(p); signedMatches = matches; }
+        if (r.Ok && Shell is not null) { signed = p; signedWage = Wage(p); signedMatches = matches; signedWasHidden = hidden.Contains(p.PlayerId); }
         message = r.Ok ? $"Đã mua {p.Name} ({Fmt.Money(p.Price)})." + (r.NeedsLineupReview ? " Kiểm tra lại đội hình." : "") : $"Không mua được {p.Name}: {OfferRules.Text(r.Error!.Value)}";
         sel = null; prof = null;
         await LoadAsync();
         if (r.Ok && Shell is not null) await Shell.RefreshAsync();   // số dư đầu trang
     }
+
+    // ---------- career (PO ok mockup 20/11) ----------
+    const int RailSize = 10;
+    static readonly System.Globalization.CultureInfo Vi = new("vi-VN");
+    static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+    Dictionary<Guid, int> scouting = [];   // đang trinh sát: cầu thủ → số vòng còn lại
+    List<Position> positions = [];
+    int pendingOffers;
+    bool filterOpen, signedWasHidden, scoutBusy;
+    string? scoutMessage;
+
+    /// <summary>Kỳ đông/hè, khung thứ mấy trong kỳ, tổng số khung của kỳ (Pes17TransferWindows).</summary>
+    static (bool Winter, int Idx, int Total) Win(CareerProgress cp)
+    {
+        var w = Pes17TransferWindows.WinterStart(cp.Slots);
+        return cp.Slot >= w
+            ? (true, Math.Clamp(cp.Slot - w + 1, 1, Pes17TransferWindows.WinterSlots), Pes17TransferWindows.WinterSlots)
+            : (false, Math.Clamp(cp.Slot, 1, Pes17TransferWindows.SummerSlots), Pes17TransferWindows.SummerSlots);
+    }
+
+    /// <summary>"Chỗ cần bổ sung": 3 vị trí có người giỏi nhất OVR thấp nhất trong đội.</summary>
+    IEnumerable<SquadRow> Weak() => squad.GroupBy(s => s.Position).Select(g => g.MaxBy(s => s.Overall)!).OrderBy(s => s.Overall).Take(3);
+
+    int FilterCount => (source != "all" ? 1 : 0) + (maxAge > 0 ? 1 : 0) + (minOvr > 0 ? 1 : 0) + (affordable ? 1 : 0);
+    bool Filtered => FilterCount > 0 || name.Length > 0 || pos is not null || group is not null;
+    string ListTitle => pos is { } p ? Fmt.PositionName(p) : source == "free" ? "Cầu thủ tự do" : Filtered ? "Kết quả lọc" : "Tất cả cầu thủ";
+    static string CxTier(int ovr) => ovr >= 88 ? "t3" : ovr >= 82 ? "t2" : ovr >= 75 ? "t1" : "t0";
+    string Tc(MarketRow p) => hidden.Contains(p.PlayerId) ? "fog" : CxTier(p.Overall);
+
+    void NextSort() => sort = Sorts[(Array.FindIndex(Sorts, s => s.Key == sort) + 1) % Sorts.Length].Key;
+    void ClearFilters() { source = "all"; maxAge = 0; minOvr = 0; affordable = false; }
+    void ClosePlayer() { sel = null; prof = null; scoutMessage = null; }
+
+    async Task FocusPos(Position p)
+    {
+        pos = p; group = null;
+        await Task.Yield();
+        try { await JS.InvokeVoidAsync("cxScrollTo", ".mk-search"); } catch (JSException) { } catch (JSDisconnectedException) { }
+    }
+
+    async Task ScoutPlayer(MarketRow p)
+    {
+        scoutBusy = true;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            scoutMessage = await new YouthService(db, Clock).ScoutAsync(season!.HumanClubId, p.PlayerId);
+        await LoadAsync();   // trừ phí, cập nhật đang trinh sát / đã lộ chỉ số (HLV giỏi trinh sát có thể xong ngay)
+        scoutBusy = false;
+        if (scoutMessage is null && Shell is not null) await Shell.RefreshAsync();
+    }
+
+    RenderFragment ClubTag(Guid? club, string none) => __builder =>
+    {
+        if (club is { } c)
+        {
+            var cn = season!.Clubs.GetValueOrDefault(c, "CLB ngoài giải");
+            <span class="mk-club"><Crest Name="@cn" Logo="@season.Logo(c)" /><span>@cn</span></span>
+        }
+        else { <span class="mk-free">@none</span> }
+    };
+
+    RenderFragment Rail(string title, string sub, List<MarketRow> items, Action seeAll) => __builder =>
+    {
+        if (items.Count == 0) return;
+        <section class="mk-rail">
+            <div class="mk-rail-h">
+                <div><h3>@title</h3><p>@sub</p></div>
+                <button type="button" class="no-busy" @onclick="seeAll">Xem hết</button>
+            </div>
+            <div class="mk-cards">
+                @foreach (var p in items)
+                {
+                    var can = p.Price <= balance;
+                    <button type="button" class="mk-card no-busy @Tc(p)" @onclick="() => Pick(p)">
+                        <span class="o">@Ovr(p)</span><span class="mk-ps sm @Fmt.Group(p.Position)">@p.Position</span>
+                        <span class="mk-face"><Face Id="@p.PlayerId" Name="@p.Name" Size="md" /></span>
+                        <span class="nm">@p.Name</span>
+                        <span class="meta">@ClubTag(p.ClubId, "Tự do")<span class="age">· @(p.Age?.ToString() ?? "–")t</span></span>
+                        <span class="pr"><b class="@(can ? null : "no")">@Fmt.Money(p.Price)</b>@if (!can) { <small>thiếu @Fmt.Money(p.Price - balance)</small> }</span>
+                    </button>
+                }
+            </div>
+        </section>
+    };
+
+    RenderFragment Sheet(MarketRow p) => __builder =>
+    {
+        var s = season!; var h = hidden.Contains(p.PlayerId); var w = Wage(p);
+        var lo = Seen(p); var hi = h ? (p.Overall >= 90 ? 99 : lo + 9) : p.Overall;
+        var my = squad.Where(x => x.Position == p.Position).MaxBy(x => x.Overall);
+        var after = balance - p.Price; var payAfter = payroll + w; var cap = s.Economy.SoftWageCap;
+        var tc = Tc(p);
+        <div class="mk-phero @tc">
+            <div class="mk-bigcard @tc">
+                <span class="o">@Ovr(p)</span><span class="mk-ps @Fmt.Group(p.Position)">@p.Position</span>
+                <span class="mk-face"><Face Id="@p.PlayerId" Name="@p.Name" Size="lg" /></span>
+            </div>
+            <div class="mk-pid">
+                <h2>@p.Name</h2>
+                <div class="club">@ClubTag(p.ClubId, "Cầu thủ tự do")</div>
+                <div class="facts">
+                    <div><b>@(p.Age?.ToString() ?? "–")</b><small>tuổi</small></div>
+                    @if (prof?.Info.TryGetValue("HEIGHT", out var ht) == true) { <div><b>@ht</b><small>cm</small></div> }
+                    <div><b class="gold">@Fmt.Money(p.Price)</b><small>giá @Trend(p)</small></div>
+                </div>
+            </div>
+        </div>
+        @if (h)
+        {
+            <div class="mk-box mk-fog">
+                <i class="ms" aria-hidden="true">visibility_off</i>
+                <p><b>Chỉ số đang bị che</b></p>
+                @if (scouting.TryGetValue(p.PlayerId, out var left))
+                {
+                    <p>Mới biết khoảng @ScoutRules.Mask(p.Overall). Trinh sát đang theo dõi — còn @left vòng.</p>
+                }
+                else
+                {
+                    <p>Mới biết khoảng @ScoutRules.Mask(p.Overall). Giao trinh sát để thấy số thật.</p>
+                    <button type="button" class="mk-btn ghost sm" disabled="@scoutBusy" @onclick="() => ScoutPlayer(p)"><i class="ms" aria-hidden="true">travel_explore</i>Giao trinh sát · @Fmt.Money(ScoutRules.Fee)</button>
+                }
+                @if (scoutMessage is not null) { <p class="neg">@scoutMessage</p> }
+            </div>
+        }
+        <div class="mk-box">
+            <h4>So với đội bạn <small>@Fmt.PositionName(p.Position) giỏi nhất</small></h4>
+            @if (my is null) { <p class="mk-p">Đội chưa có ai đá vị trí này — cầu thủ này lấp chỗ trống.</p> }
+            else
+            {
+                var dLo = lo - my.Overall; var dHi = hi - my.Overall;
+                var (txt, cls) = dLo > 0 ? ((h ? "≥ +" : "+") + dLo, "up") : dHi < 0 ? ((h ? "≤ " : "") + dHi, "down") : h ? ("≈", "eq") : ("0", "eq");
+                <div class="mk-vs">
+                    <div><small>@my.Name</small><b>@my.Overall</b></div>
+                    <span class="d @cls">@txt</span>
+                    <div class="r"><small>@p.Name</small><b class="cyan">@Ovr(p)</b></div>
+                </div>
+                <div class="mk-vsbar"><i class="me" style="width:@(my.Overall)%"></i><i class="him" style="width:@(lo)%"></i></div>
+                @if (h) { <p class="mk-note">Tính theo khoảng ước lượng.</p> }
+            }
+        </div>
+        <div class="mk-box">
+            <h4>Chỉ số chính <small>@Fmt.PositionName(p.Position)</small></h4>
+            @if (prof is null) { <p class="mk-note">Đang tải…</p> }
+            else
+            {
+                <div class="mk-attrs">
+                    @foreach (var a in prof.Attributes.Where(a => Fmt.IsKey(p.Position, a.Field)))
+                    {
+                        var pctv = a.Value * 100 / Math.Max(a.Max, 1);
+                        var v = h ? Math.Min(a.Value / 10 * 10, 90) : a.Value;
+                        <div class="mk-attr @(h ? "fog" : null)">
+                            <span>@a.Label</span>
+                            <b class="@(h ? null : pctv >= 85 ? "hot" : pctv >= 75 ? "mid" : null)">@(h ? ScoutRules.Mask(a.Value) : a.Value.ToString())</b>
+                            <i style="--w:@(v * 100 / Math.Max(a.Max, 1))%"></i>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        @if (window is not null && !(p.ClubId is { } ow && s.IsHuman(ow)))
+        {
+            var leftPct = (balance > 0 ? Math.Clamp(after * 100.0 / balance, 0, 100) : 0).ToString("0.#", Inv);
+            <div class="mk-box">
+                <h4>Chi phí <small>trừ ngay khi ký</small></h4>
+                <div class="mk-ln"><span>Phí chuyển nhượng</span><b>@Fmt.Money(p.Price)</b></div>
+                <div class="mk-budget"><i class="left" style="width:@(leftPct)%"></i><i class="spend" style="left:@(leftPct)%"></i></div>
+                <div class="mk-budget-cap"><span>Còn <b class="@(after < 0 ? "neg" : "gold")">@Fmt.Money(after)</b> sau khi ký</span><span>Ngân sách @Fmt.Money(balance)</span></div>
+                <div class="mk-ln"><span>Lương</span><b class="cyan">@Fmt.Money(w)/vòng</b></div>
+                <div class="mk-ln"><span>Quỹ lương sau khi ký</span><b class="@(OverCap(payAfter) ? "neg" : null)">@Fmt.Money(payAfter)@(cap > 0 ? $" / {Fmt.Money(cap)}" : "")</b></div>
+                <div class="mk-step">
+                    <span>Hợp đồng<small>Tổng lương @Fmt.Money(w * matches)</small></span>
+                    <div class="ctl">
+                        <button type="button" class="no-busy" aria-label="Bớt 5 trận" disabled="@(matches <= ContractRules.MinMatches)" @onclick="() => matches = Math.Max(ContractRules.MinMatches, matches - 5)"><i class="ms">remove</i></button>
+                        <output>@matches<small>trận</small></output>
+                        <button type="button" class="no-busy" aria-label="Thêm 5 trận" disabled="@(matches >= ContractRules.MaxMatches)" @onclick="() => matches = Math.Min(ContractRules.MaxMatches, matches + 5)"><i class="ms">add</i></button>
+                    </div>
+                </div>
+                @if (p.Price > balance) { <p class="mk-warn"><i class="ms" aria-hidden="true">error</i>Thiếu @Fmt.Money(p.Price - balance) — bán bớt người để có tiền.</p> }
+                else if (OverCap(payAfter)) { <p class="mk-warn"><i class="ms" aria-hidden="true">warning</i>Quỹ lương sẽ vượt trần mềm.</p> }
+            </div>
+        }
+        else if (window is not null) { <p class="mk-note">CLB có HLV — gửi đề nghị (trả giá, mượn, trao đổi, trả góp).</p> }
+        else { <p class="mk-note">Kỳ chuyển nhượng đang đóng — chỉ xem và giao trinh sát.</p> }
+    };
 
     long Wage(MarketRow p) => ContractRules.Wage(p.Price, season!.Economy.WagePermille);
     bool OverCap(long wages) => season!.Economy.SoftWageCap > 0 && wages > season.Economy.SoftWageCap;
