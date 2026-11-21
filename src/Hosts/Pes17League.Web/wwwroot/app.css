@@ -1252,6 +1252,26 @@ table.offers tr.open { background: rgba(255, 200, 60, .07); }
 .inbox-tag { flex: 0 0 72px; font-size: 12px; font-weight: 800; text-transform: uppercase; opacity: .8; padding-top: 2px; }
 .press-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 @media (max-width: 700px) { .fm .table { display: block; overflow-x: auto; } }
+/* bảng không bấm được hàng: bỏ con trỏ tay */
+.table.staff tbody tr, .table.train tbody tr { cursor: default; }
+.table.staff td:first-child { text-align: left; white-space: nowrap; }
+.table.staff td:nth-child(4) { text-align: left; }
+.table.staff td:nth-child(5) { text-align: right; white-space: nowrap; }
+.table.staff button { white-space: nowrap; }
+/* điện thoại: nhân sự (Ban lãnh đạo) mỗi người 1 khối — vị trí · cấp · lương 1 dòng, tác dụng + nút bên dưới (thay cột mô tả vỡ từng chữ) */
+@media (max-width: 700px) {
+  .fm .table.staff, .table.staff tbody { display: block; overflow: visible; }
+  .table.staff thead { display: none; }
+  .table.staff tr { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; align-items: center; padding: 12px 2px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .table.staff td { padding: 0; border: 0; text-align: left; }
+  .table.staff td:first-child { font-weight: 700; }
+  .table.staff td.num::after { content: "/vòng"; margin-left: 2px; font-size: 12px; color: var(--muted); }
+  .table.staff td:nth-child(4) { grid-column: 1 / -1; color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+  .table.staff td:nth-child(5) { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+  .table.staff td:nth-child(5):empty { display: none; }
+  /* tập luyện: tên cầu thủ không xuống dòng (bảng cuộn ngang) */
+  .table.train td:first-child { white-space: nowrap; text-align: left; }
+}
 
 /* FM đợt 10: tìm kiếm, so sánh, thanh Tiếp tục */
 .search-box { width: 100%; max-width: 560px; padding: 10px 12px; font-size: 16px; border: 1px solid var(--line, var(--line)); border-radius: 8px; margin: 8px 0 12px; }

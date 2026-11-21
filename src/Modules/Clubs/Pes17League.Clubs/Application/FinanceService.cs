@@ -54,10 +54,13 @@ public sealed class FinanceService(ClubsDbContext db, TimeProvider clock)
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Tạo ClubFinance còn thiếu cho CLB Active: sức chứa + tài trợ theo hạng giá trị squad.</summary>
+    /// <summary>Tạo ClubFinance còn thiếu cho CLB Active: sức chứa + tài trợ theo hạng giá trị squad.
+    /// Đủ hết (thường gặp) → không xếp hạng giá trị (~0,1 s mỗi lần, trang career gọi nhiều lần).</summary>
     public async Task<Dictionary<Guid, ClubFinance>> EnsureAsync(Guid seasonId, CancellationToken ct = default)
     {
         var existing = await db.ClubFinances.ToDictionaryAsync(f => f.ClubId, ct);
+        var activeIds = await db.Clubs.Where(c => c.Status == ClubStatus.Active).Select(c => c.Id).ToListAsync(ct);
+        if (activeIds.All(existing.ContainsKey)) return activeIds.ToDictionary(id => id, id => existing[id]);
         var clubs = await db.Clubs.Where(c => c.Status == ClubStatus.Active).Select(c => new
         {
             c.Id,
