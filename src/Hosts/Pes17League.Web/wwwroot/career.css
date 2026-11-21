@@ -477,7 +477,8 @@ a.cx-card:active { transform: scale(.985); }
 .cx button.danger { background: rgba(255,77,106,.15); border: 1px solid var(--crimson); color: #ffc2cd; }
 .cx .msg { border-radius: 6px; background: rgba(54,227,255,.08); border: 1px solid rgba(54,227,255,.35); color: var(--text); }
 .cx .panel-head h2 { font-style: italic; }
-.cx .rating.hi { color: var(--emerald); } .cx .rating.lo { color: var(--crimson); }
+/* nền app.css (vàng/đỏ) + chữ career (xanh/đỏ) → chữ đỏ trên nền đỏ mất chữ (PO 21/11): dùng nền nhạt cùng tông */
+.cx .rating.hi { background: rgba(61,255,162,.16); color: var(--emerald); } .cx .rating.lo { background: rgba(255,77,106,.18); color: #ff8fa3; }
 .cx .res.W { background: var(--emerald); color: var(--n0); } .cx .res.L { background: var(--crimson); color: #fff; } .cx .res.D { background: var(--gold); color: var(--n0); }
 .cx .offer-form, .cx .offer-card, .cx .offers > li { border-radius: 8px; background: var(--glass-solid); border: 1px solid var(--line); }
 
