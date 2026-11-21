@@ -609,6 +609,12 @@ a.cx-card:active { transform: scale(.985); }
 .cx-compare .h2h { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
 .cx .cx-compare ~ .hero { display: none; }
 .cx .grid { gap: 12px; }
+/* Khung career chỉ rộng 760px: lưới 2 cột của app.css (≥1000px, cột phải 380px) bóp đội hình còn ~335px, sân bị cắt (PO 21/11).
+   Career luôn 1 cột; máy tính đưa ô Vào trận lên đầu (điện thoại giữ ở cuối + nút nổi nhảy tới). */
+@media (min-width: 1000px) {
+  .cx .grid:not(.ctl) { grid-template-columns: minmax(0, 1fr); }
+  .cx .grid > #vao-tran { order: -1; }
+}
 .cx #vao-tran { border-color: rgba(255,201,74,.35); box-shadow: 0 0 40px -16px rgba(255,201,74,.6); }
 .cx #vao-tran button.primary.wide, .cx #vao-tran a.btn.primary.wide { min-height: 64px; font-size: 22px; animation: cx-glow 2.6s ease-in-out infinite; }
 .cx .jump-cta { background: linear-gradient(90deg, var(--gold), var(--gold-2)) !important; color: var(--n0) !important; font-family: var(--f-display); font-style: italic; text-transform: uppercase; bottom: calc(96px + env(safe-area-inset-bottom)) !important; }
