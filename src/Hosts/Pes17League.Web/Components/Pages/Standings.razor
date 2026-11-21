@@ -2,9 +2,202 @@
 @inject LeagueQueries Q
 @inject IOptionFileStore Store
 @inject TimeProvider Clock
+@inject IJSRuntime JS
 
+@* Bảng xếp hạng. Giải online: bảng + vua phá lưới (giữ nguyên). Career (PO ok mockup 21/11): mở giải của mình, đầu trang kiểu bảng điện tử + thẻ "vị trí của bạn"
+   (hạng, ▲▼ so với vòng trước, khoảng cách tới vùng), chọn giải bằng bảng trượt, xem Tổng/Sân nhà/Sân khách, cột phải vua phá lưới, điểm TB, vòng tới. *@
 @if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
-@if (season is not null)
+@if (season is not null && Shell is not null && Edition is { } ed)
+{
+    var me = season.HumanClubId;
+    var lr = LastRound;
+    var mine = rows.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Club == me);
+    var view = View;
+    <div class="bx">
+        <section class="bx-hero">
+            <button type="button" class="bx-comp no-busy" @onclick="OpenPicker" aria-haspopup="dialog">
+                <span class="ring">@if (ed.Logo is { } lg) { <img src="@lg" alt="" /> } else { <Crest Name="@ed.Name" /> }</span>
+                <span class="t"><span class="ttl">@ed.Name</span><span class="meta">@Kind(ed) · @rows.Count đội</span></span>
+                <span class="sw"><i class="ms" aria-hidden="true">swap_vert</i>Đổi giải</span>
+            </button>
+            <div class="bx-round">
+                <span class="n">@if (lr > 0) { <text>Vòng @lr</text><small>/@rounds.Count</small> } else { <text>Vòng 1</text><small>/@rounds.Count · sắp đá</small> }</span>
+                <span class="bar"><i style="--w:@(Math.Max(1, rounds.Count == 0 ? 0 : lr * 100 / rounds.Count))%"></i></span>
+                <span class="left">@(lr == 0 ? "Khai mạc" : lr >= rounds.Count ? "Đã đá xong" : $"Còn {rounds.Count - lr} vòng")</span>
+            </div>
+            @if (mine.r is { } m)
+            {
+                var pos = mine.i + 1;
+                int? dv = prevPos.TryGetValue(me, out var pp) ? pp - pos : null;
+                <div class="bx-me">
+                    <div class="rk">
+                        @if (lr > 0) { <b data-count="@pos">@pos</b><small>Hạng</small> } else { <b class="na">–</b><small>Chưa xếp</small> }
+                        @if (dv is { } d) { <span class="d @(d > 0 ? "up" : d < 0 ? "down" : "eq")" title="So với vòng trước">@(d > 0 ? $"▲{d}" : d < 0 ? $"▼{-d}" : "–")</span> }
+                    </div>
+                    <div class="who">
+                        <div class="club"><Crest Name="@season.Clubs[me]" Logo="@season.Logo(me)" /><span>@season.Clubs[me]</span></div>
+                        <div class="nums"><span><b data-count="@m.Points">@m.Points</b>điểm</span><span><b>@m.Played</b>trận</span><span><b>@m.Won-@m.Drawn-@m.Lost</b>T-H-B</span><span><b>@m.GoalDifference.ToString("+0;-0;0")</b>hiệu số</span></div>
+                        @if (m.Played > 0) { <FormDots Form="@Form(me)" /> }
+                    </div>
+                    <div class="gaps">
+                        @foreach (var (css, html) in Gaps(m, pos))
+                        {
+                            <div class="gap @css"><i></i><span>@html</span></div>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+
+        @if (myEditions.Count > 0)
+        {
+            <nav class="bx-quick" aria-label="Giải của bạn">
+                @foreach (var e in myEditions)
+                {
+                    <button type="button" class="chip no-busy @(e.Id == editionId ? "on" : null)" aria-pressed="@(e.Id == editionId ? "true" : "false")" @onclick="() => GoAsync(e.Id)">
+                        @if (e.Logo is { } l) { <img src="@l" alt="" /> } else { <Crest Name="@e.Name" /> }<span>@e.Name</span>
+                    </button>
+                }
+                <button type="button" class="chip all no-busy" @onclick="OpenPicker"><i class="ms" aria-hidden="true">format_list_bulleted</i><span>Tất cả giải</span></button>
+            </nav>
+        }
+
+        <div class="bx-seg" role="group" aria-label="Kiểu bảng">
+            @foreach (var (v, label) in Modes)
+            {
+                <button type="button" class="no-busy @(mode == v ? "on" : null)" aria-pressed="@(mode == v ? "true" : "false")" @onclick="() => SetMode(v)">@label</button>
+            }
+        </div>
+
+        <div class="bx-grid">
+            <section class="bx-tbl" aria-label="Bảng xếp hạng @ed.Name">
+                @if (lr == 0) { <p class="note"><i class="ms" aria-hidden="true">info</i>Chưa đá trận nào, bảng đang xếp theo tên CLB.</p> }
+                else if (mode != "all") { <p class="note"><i class="ms" aria-hidden="true">info</i>Chỉ tính các trận @(mode == "home" ? "đá trên sân nhà" : "làm khách"); vùng dự cúp, lên/xuống hạng xem ở bảng Tổng.</p> }
+                <div class="hd" aria-hidden="true"><span></span><span>#</span><span></span><span class="c">CLB</span><span>Tr</span><span class="w">T</span><span class="w">H</span><span class="w">B</span><span class="w">BT</span><span class="w">BB</span><span>HS</span><span>Đ</span><span class="w f">5 trận gần nhất</span></div>
+                @{ var zs = mode == "all" ? zones : []; Zone? last = null; }
+                @foreach (var (r, i) in view.Select((r, i) => (r, i)))
+                {
+                    var p = i + 1;
+                    var z = zs.FirstOrDefault(x => p >= x.From && p <= x.To);
+                    if (zs.Count > 0 && z != last)
+                    {
+                        if (z is not null) { <div class="div b@(z.Css) @(i == 0 ? "first" : null)">@z.Label</div> }
+                        else { <div class="div plain"></div> }
+                        last = z;
+                    }
+                    var club = r.Club;
+                    int? d = mode == "all" && prevPos.TryGetValue(club, out var was) ? was - p : null;
+                    <button type="button" class="rw no-busy @(z is null ? null : "b" + z.Css) @(club == me ? "my" : null)" style="--i:@i" aria-expanded="@(open == club ? "true" : "false")" @onclick="() => Toggle(club)">
+                        <span class="z"></span><span class="p">@p</span>
+                        <span class="dl @(d is null ? null : d > 0 ? "up" : d < 0 ? "down" : "eq")" title="@(d > 0 ? $"Lên {d} bậc so với vòng trước" : d < 0 ? $"Xuống {-d} bậc so với vòng trước" : null)">@(d is null ? "" : d > 0 ? $"▲{d}" : d < 0 ? $"▼{-d}" : "–")</span>
+                        <span class="c"><Crest Name="@season.Clubs[club]" Logo="@season.Logo(club)" /><span>@season.Clubs[club]</span></span>
+                        <span>@r.Played</span><span class="w">@r.Won</span><span class="w">@r.Drawn</span><span class="w">@r.Lost</span><span class="w">@r.GoalsFor</span><span class="w">@r.GoalsAgainst</span>
+                        <span class="gd">@r.GoalDifference.ToString("+0;-0;0")</span><span class="pts">@r.Points</span>
+                        <span class="w f">@if (r.Played > 0) { <FormDots Form="@Form(club)" /> } else { <span class="none">–</span> }</span>
+                    </button>
+                    @if (open == club)
+                    {
+                        var nx = NextOf(club);
+                        <div class="detail">
+                            <div><b>@r.Won-@r.Drawn-@r.Lost</b>T-H-B</div>
+                            <div><b>@r.GoalsFor:@r.GoalsAgainst</b>bàn thắng:thua</div>
+                            <div><b>@(r.Played == 0 ? "–" : ((double)r.Points / r.Played).ToString("0.00"))</b>điểm/trận</div>
+                            @if (r.Played > 0) { <div class="frm">5 trận gần nhất <FormDots Form="@Form(club)" /></div> }
+                            @if (nx is not null)
+                            {
+                                var opp = nx.Home == club ? nx.Away : nx.Home;
+                                <a class="nx" href="@season.Url($"tran/{nx.Id}")"><i class="ms" aria-hidden="true">event</i><span>Vòng @Round(nx): @(nx.Home == club ? "tiếp" : "làm khách trên sân")</span><Crest Name="@season.Clubs[opp]" Logo="@season.Logo(opp)" /><span>@season.Clubs[opp]</span></a>
+                            }
+                            <a class="go" href="@season.Url($"clb/{club}")">Trang CLB<i class="ms" aria-hidden="true">chevron_right</i></a>
+                        </div>
+                    }
+                }
+                @if (zs.Count > 0) { <div class="lgd">@foreach (var z in zs) { <span class="b@(z.Css)">@z.Label</span> }</div> }
+            </section>
+
+            <aside class="bx-side">
+                <section class="box">
+                    <h2>Vua phá lưới @if (scorers.Count > 0) { <small>Top @scorers.Count</small> }</h2>
+                    @if (scorers.Count == 0) { <p class="empty"><i class="ms" aria-hidden="true">sports_soccer</i>Bàn thắng đầu tiên của giải sẽ hiện ở đây.</p> }
+                    else
+                    {
+                        var max = Math.Max(1, scorers.Max(s => int.Parse(s.Value)));
+                        @foreach (var (s, i) in scorers.Select((s, i) => (s, i)))
+                        {
+                            <a class="pl @(i == 0 ? "first" : null) @(s.ClubId == me ? "my" : null)" href="@season.Url($"cau-thu/{s.Id}")">
+                                <span class="r">@(i + 1)</span><Face Id="@s.Id" Name="@s.Name" Size="md" />
+                                <span class="nm"><b>@s.Name</b><span><Crest Name="@season.Clubs.GetValueOrDefault(s.ClubId, "?")" Logo="@season.Logo(s.ClubId)" />@season.Clubs.GetValueOrDefault(s.ClubId, "?")</span></span>
+                                <span class="v"><b>@s.Value</b><small>bàn</small></span>
+                                <span class="bar"><i style="--w:@(int.Parse(s.Value) * 100 / max)%"></i></span>
+                            </a>
+                        }
+                    }
+                </section>
+                @if (Shell.CanOpen("thong-ke"))
+                {
+                    <section class="box">
+                        <h2>Điểm trung bình @if (rated.Count > 0) { <small>Tối thiểu @minApps trận</small> }</h2>
+                        @if (rated.Count == 0) { <p class="empty"><i class="ms" aria-hidden="true">star</i>Có điểm sau khi đá xong vài vòng.</p> }
+                        else
+                        {
+                            @foreach (var (s, i) in rated.Select((s, i) => (s, i)))
+                            {
+                                <a class="pl cy @(s.ClubId == me ? "my" : null)" href="@season.Url($"cau-thu/{s.Id}")">
+                                    <span class="r">@(i + 1)</span><Face Id="@s.Id" Name="@s.Name" Size="md" />
+                                    <span class="nm"><b>@s.Name</b><span><Crest Name="@season.Clubs.GetValueOrDefault(s.ClubId, "?")" Logo="@season.Logo(s.ClubId)" />@season.Clubs.GetValueOrDefault(s.ClubId, "?")</span></span>
+                                    <span class="v"><b>@s.Value</b><small>@s.Note</small></span>
+                                </a>
+                            }
+                        }
+                        <a class="more" href="@season.Url($"thong-ke?giai={ed.Id}")">Xem thống kê giải<i class="ms" aria-hidden="true">chevron_right</i></a>
+                    </section>
+                }
+                <section class="box">
+                    @if (upcoming.Count == 0) { <h2>Vòng tới</h2><p class="empty"><i class="ms" aria-hidden="true">flag</i>Giải đã đá hết các vòng.</p> }
+                    else
+                    {
+                        <h2>Vòng @Round(upcoming[0]) <small>@upcoming.Count trận</small></h2>
+                        <div class="fx">
+                            @foreach (var f in upcoming)
+                            {
+                                <a class="@(f.Home == me || f.Away == me ? "my" : null)" href="@season.Url($"tran/{f.Id}")">
+                                    <span>@season.Clubs[f.Home]</span><Crest Name="@season.Clubs[f.Home]" Logo="@season.Logo(f.Home)" /><em>vs</em><Crest Name="@season.Clubs[f.Away]" Logo="@season.Logo(f.Away)" /><span>@season.Clubs[f.Away]</span>
+                                </a>
+                            }
+                        </div>
+                    }
+                </section>
+            </aside>
+        </div>
+
+        @if (picker)
+        {
+            <div class="bx-scrim" @onclick="ClosePicker"></div>
+            <div class="bx-sheet" role="dialog" aria-modal="true" aria-labelledby="bx-pick-t">
+                <button type="button" class="x no-busy" aria-label="Đóng" @onclick="ClosePicker"><i class="ms" aria-hidden="true">close</i></button>
+                <div class="body">
+                    <h2 id="bx-pick-t">Chọn giải</h2>
+                    <p class="hint">Cúp quốc gia đá loại trực tiếp nên không có bảng xếp hạng, xem nhánh đấu ở trang Giải đấu.</p>
+                    @if (summaries is null) { <p class="hint">Đang tải…</p> }
+                    @foreach (var (title, list) in PickerGroups())
+                    {
+                        <h3>@title</h3>
+                        @foreach (var s in list)
+                        {
+                            var e = s.Edition;
+                            <button type="button" class="ci no-busy @(e.Id == editionId ? "on" : null)" @onclick="() => GoAsync(e.Id)">
+                                <span class="lg">@if (e.Logo is { } l) { <img src="@l" alt="" /> } else { <Crest Name="@e.Name" /> }</span>
+                                <span class="t"><b>@e.Name</b><small>@(s.Played == 0 || s.Leader is null ? $"Chưa đá · {s.Total} vòng" : $"Vòng {s.Played}/{s.Total} · đầu bảng {season.Clubs.GetValueOrDefault(s.Leader.Club, "?")} {s.Leader.Points}đ")</small></span>
+                                <span class="tag">@(e.Type == CompetitionType.ContinentalCup ? $"C{e.Tier}" : e.Tier > 1 ? $"{e.Country} · {e.Tier}" : e.Country)</span>
+                            </button>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (season is not null)
 {
     <section class="hero"><a class="pill" href="mua" title="Các mùa">@season.Label</a><h1>Bảng xếp hạng</h1></section>
     @if (editions.Count > 0)
@@ -42,6 +235,8 @@
 @code {
     /// <summary>?mua=N: xem lại mùa cũ (mặc định mùa đang chạy, chưa có thì mùa đã xong gần nhất).</summary>
     [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
+    /// <summary>Khung career; null = giải online (giữ giao diện cũ).</summary>
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
 
     bool loaded;
     int? loadedFor;
@@ -55,6 +250,19 @@
     IReadOnlyList<Zone> zones = [];
     List<FixtureView> all = [], own = [];
 
+    // ---- chỉ career ----
+    static readonly (string, string)[] Modes = [("all", "Tổng"), ("home", "Sân nhà"), ("away", "Sân khách")];
+    List<EditionView> myEditions = [];
+    List<int> rounds = [];                        // khung (Matchday) của từng vòng, tăng dần → vòng = vị trí + 1
+    Dictionary<Guid, int> prevPos = [];           // hạng sau vòng trước (▲▼)
+    List<FixtureView> upcoming = [];              // trận chưa đá của vòng sớm nhất còn trận
+    List<Leader> scorers = [], rated = [];
+    int minApps;
+    string mode = "all";
+    Guid? open;
+    bool picker;
+    List<CompetitionSummary>? summaries;
+
     protected override async Task OnParametersSetAsync()
     {
         if (loaded && loadedFor == Mua) return;
@@ -64,9 +272,17 @@
         if (season is null) return;
         editions = await Q.EditionsAsync(season.Id);
         all = await Q.FixturesAsync(season.Id);
+        if (Shell is not null)
+        {
+            // Career: chỉ giải có bảng (cúp quốc gia đá loại trực tiếp); mở giải VĐQG của mình trước.
+            editions = [.. editions.Where(e => e.Type != CompetitionType.DomesticCup)];
+            var me = season.HumanClubId;
+            var mineIds = all.Where(f => f.EditionId is not null && (f.Home == me || f.Away == me)).Select(f => f.EditionId!.Value).ToHashSet();
+            myEditions = [.. editions.Where(e => mineIds.Contains(e.Id)).OrderBy(e => e.Type == CompetitionType.DomesticLeague ? 0 : 1)];
+        }
         if (editions.Count > 0)
         {
-            editionId = editions[0].Id;
+            editionId = (myEditions.FirstOrDefault() ?? editions[0]).Id;
             await LoadEditionAsync();
             return;
         }
@@ -80,5 +296,130 @@
         own = [.. all.Where(f => f.EditionId == editionId)];
         fixtures = [.. own.Where(f => f.Stage is FixtureStage.League or FixtureStage.LeaguePhase)];     // phong độ theo trận tính BXH
         zones = Fmt.Zones(Edition!, editions, rows.Count);
+        if (Shell is null || season is null) return;
+
+        rounds = [.. fixtures.Select(f => f.Matchday).Distinct().Order()];
+        var lr = LastRound;
+        prevPos = [];
+        if (lr >= 2)
+        {
+            // BXH sau vòng trước, cùng cách xếp + cùng điểm bị trừ như BXH hiện tại.
+            var before = rounds[lr - 1];
+            var names = season.Clubs;
+            var prev = Pes17League.Clubs.Domain.Standings.Compute(rows.Select(r => r.Club).ToList(),
+                [.. Played.Where(f => f.Matchday < before).Select(f => new PlayedFixture<Guid>(f.Home, f.Away, f.HomeGoals!.Value, f.AwayGoals!.Value))],
+                id => names.GetValueOrDefault(id, ""), rows.Where(r => r.Deducted > 0).ToDictionary(r => r.Club, r => r.Deducted));
+            prevPos = prev.Select((r, i) => (r.Club, i)).ToDictionary(x => x.Club, x => x.i + 1);
+        }
+        var next = fixtures.Where(f => f.Status != FixtureStatus.Played).Select(f => (int?)f.Matchday).Min();
+        upcoming = [.. fixtures.Where(f => f.Matchday == next && f.Status != FixtureStatus.Played)
+            .OrderBy(f => f.Home == season.HumanClubId || f.Away == season.HumanClubId ? 0 : 1)];
+        var stats = await Q.StatsAsync(season, editionId);
+        scorers = [.. (stats.Players.FirstOrDefault(b => b.Title == "Vua phá lưới")?.Rows ?? []).Take(5)];
+        rated = [.. (stats.Players.FirstOrDefault(b => b.Title == "Điểm trung bình")?.Rows ?? []).Take(5)];
+        minApps = stats.MinApps;
+    }
+
+    IEnumerable<FixtureView> Played => fixtures.Where(f => f.Status == FixtureStatus.Played && f.HomeGoals is not null && f.AwayGoals is not null);
+    /// <summary>Vòng mới nhất đã có trận đá xong (0 = chưa đá).</summary>
+    int LastRound => Played.Select(f => rounds.IndexOf(f.Matchday) + 1).DefaultIfEmpty().Max();
+    int Round(FixtureView f) => rounds.IndexOf(f.Matchday) + 1;
+    FixtureView? NextOf(Guid club) => fixtures.Where(f => f.Status != FixtureStatus.Played && (f.Home == club || f.Away == club)).MinBy(f => f.Matchday);
+
+    /// <summary>Bảng đang xem: Tổng = BXH của giải; Sân nhà/Sân khách = chỉ tính một phía (3/1/0 → hiệu số → bàn thắng → tên).</summary>
+    IReadOnlyList<StandingRow<Guid>> View
+    {
+        get
+        {
+            if (mode == "all") return rows;
+            var home = mode == "home";
+            var names = season!.Clubs;
+            var played = Played.ToList();
+            return [.. rows.Select(r =>
+            {
+                var ms = played.Where(f => (home ? f.Home : f.Away) == r.Club)
+                    .Select(f => home ? (F: f.HomeGoals!.Value, A: f.AwayGoals!.Value) : (F: f.AwayGoals!.Value, A: f.HomeGoals!.Value)).ToList();
+                return new StandingRow<Guid>(r.Club, ms.Count, ms.Count(x => x.F > x.A), ms.Count(x => x.F == x.A), ms.Count(x => x.F < x.A), ms.Sum(x => x.F), ms.Sum(x => x.A));
+            })
+            .OrderByDescending(r => r.Points).ThenByDescending(r => r.GoalDifference).ThenByDescending(r => r.GoalsFor)
+            .ThenBy(r => names.GetValueOrDefault(r.Club, ""), StringComparer.Ordinal)];
+        }
+    }
+
+    /// <summary>5 trận gần nhất (cũ → mới), W/D/L cho <see cref="FormDots"/>.</summary>
+    string Form(Guid club) => string.Concat(Played.Where(f => f.Home == club || f.Away == club).OrderByDescending(f => f.Matchday).Take(5).Reverse()
+        .Select(f =>
+        {
+            var (s, c) = f.Home == club ? (f.HomeGoals!.Value, f.AwayGoals!.Value) : (f.AwayGoals!.Value, f.HomeGoals!.Value);
+            return s > c ? 'W' : s == c ? 'D' : 'L';
+        }));
+
+    static string Kind(EditionView e) => e.Type == CompetitionType.ContinentalCup ? "Cúp châu Âu · vòng bảng chung" : $"{e.Country} · Hạng {e.Tier}";
+    static string Lower(string s) => s.Length == 0 ? s : char.ToLowerInvariant(s[0]) + s[1..];
+    static string Pts(int n) => n == 0 ? "bằng điểm" : $"{n} điểm";
+    /// <summary>"suất dự Champions League" / "nhóm lên hạng" / "nhóm vào thẳng vòng 1/8"…</summary>
+    static string Phrase(Zone z) => (z.Css is "z-c1" or "z-c2" ? "suất " : "nhóm ") + Lower(z.Label);
+    static bool Danger(Zone z) => z.Css is "z-down" or "z-out";
+
+    /// <summary>Thẻ "vị trí của bạn": khoảng cách điểm tới vùng gần nhất phía trên và tới vùng nguy hiểm; chưa đá → trận vòng 1.</summary>
+    IEnumerable<(string Css, MarkupString Html)> Gaps(StandingRow<Guid> m, int pos)
+    {
+        static MarkupString H(string text, string strong) => new($"{System.Net.WebUtility.HtmlEncode(text)} <b>{System.Net.WebUtility.HtmlEncode(strong)}</b>");
+        if (LastRound == 0)
+        {
+            var nx = NextOf(m.Club);
+            if (nx is null) yield break;
+            var opp = nx.Home == m.Club ? nx.Away : nx.Home;
+            yield return ("bz-info", H($"Chưa đá trận nào · Vòng {Round(nx)}: {(nx.Home == m.Club ? "tiếp" : "làm khách trên sân")}", season!.Clubs.GetValueOrDefault(opp, "?")));
+            yield break;
+        }
+        var inZ = zones.FirstOrDefault(z => pos >= z.From && pos <= z.To);
+        var danger = zones.FirstOrDefault(Danger);
+        if (pos == 1)
+        {
+            if (rows.Count > 1) yield return ("bz-lead", H("Đầu bảng · hơn hạng 2", Pts(m.Points - rows[1].Points)));
+        }
+        else if (inZ is { Css: "z-c1" or "z-ko" or "z-up" }) yield return ("b" + inZ.Css, H($"Trong {Phrase(inZ)} · kém đầu bảng", Pts(rows[0].Points - m.Points)));
+        else if (danger is not null && pos >= danger.From && danger.From >= 2)
+            yield return ("b" + danger.Css, H($"Đang trong nhóm {Lower(danger.Label)} · kém hạng {danger.From - 1}", Pts(rows[danger.From - 2].Points - m.Points)));
+        else
+        {
+            var above = zones.Where(z => !Danger(z) && z.To < pos).MaxBy(z => z.To);
+            if (above is not null) yield return ("b" + above.Css, H($"Cách {Phrase(above)}", Pts(rows[above.To - 1].Points - m.Points)));
+            if (danger is not null) yield return ("b" + danger.Css, H($"Hơn nhóm {Lower(danger.Label)}", Pts(m.Points - rows[danger.From - 1].Points)));
+        }
+    }
+
+    IEnumerable<(string, List<CompetitionSummary>)> PickerGroups()
+    {
+        if (summaries is null) return [];
+        var mine = myEditions.Select(e => e.Id).ToHashSet();
+        (string, List<CompetitionSummary>)[] groups =
+        [
+            ("Giải của bạn", [.. myEditions.Select(e => summaries.FirstOrDefault(x => x.Edition.Id == e.Id)).OfType<CompetitionSummary>()]),
+            ("Cúp châu Âu", [.. summaries.Where(x => x.Edition.Type == CompetitionType.ContinentalCup && !mine.Contains(x.Edition.Id))]),
+            ("Giải quốc nội", [.. summaries.Where(x => x.Edition.Type == CompetitionType.DomesticLeague && !mine.Contains(x.Edition.Id))]),
+        ];
+        return groups.Where(g => g.Item2.Count > 0);
+    }
+
+    async Task OpenPicker()
+    {
+        picker = true;
+        summaries ??= await Q.SummariesAsync(season!.Id, editions, Store, Clock);
+    }
+
+    void ClosePicker() => picker = false;
+    void SetMode(string v) { mode = v; open = null; }
+    void Toggle(Guid club) => open = open == club ? null : club;
+
+    async Task GoAsync(Guid id)
+    {
+        picker = false;
+        if (id == editionId) return;
+        editionId = id;
+        open = null;
+        await LoadEditionAsync();
+        try { await JS.InvokeVoidAsync("scrollTo", new { top = 0, behavior = "smooth" }); } catch (JSException) { } catch (JSDisconnectedException) { }
     }
 }
