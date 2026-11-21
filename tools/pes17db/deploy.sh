@@ -2,7 +2,7 @@
 # Đội hình DB → game PES 2017 (không Sider, PO duyệt 18/11/2026):
 #   1. Pes17League.Cli export-pes17-squads → squads.json   (hoặc --squads FILE: dùng file có sẵn, vd ảnh chụp vòng từ bộ chạy trận)
 #   2. đội hình giống bản đã cài (deployed.squads.sha) → thôi, không đóng gói/khởi động lại (trừ --force)
-#   3. pesdb.py apply (pesdb gốc HANO) → PlayerAssignment.bin (+ TacticsFormation.bin khi squads.json có _formations)
+#   3. pesdb.py apply (pesdb gốc HANO) → PlayerAssignment.bin (+ TacticsFormation.bin khi có _formations, Tactics.bin khi có _plan)
 #   4. cpk.py build → pes17league.cpk (khuôn gói HANO 23, đọc từ game)
 #   5. ghi vào download/ của game qua docker exec + DpFileList.bin = danh sách gốc HANO (order +1) + pes17league.cpk CUỐI, order 1
 #      (đã thử 18/11: gói cuối, order nhỏ nhất thắng; đặt đầu với order 33 thì KHÔNG ăn)
@@ -44,6 +44,7 @@ docker exec -u abc "$BENCH" cat "$DL/23-eFootballHANOV6.cpk" > "$OUT/template.cp
 FILES=("common/etc/pesdb/PlayerAssignment.bin=$OUT/PlayerAssignment.bin")
 # sơ đồ web (khoá _formations trong squads.json, PO 21/11) → pesdb.py apply ghi TacticsFormation.bin cạnh PlayerAssignment.bin
 [ -f "$OUT/TacticsFormation.bin" ] && FILES+=("common/etc/pesdb/TacticsFormation.bin=$OUT/TacticsFormation.bin")
+[ -f "$OUT/Tactics.bin" ] && FILES+=("common/etc/pesdb/Tactics.bin=$OUT/Tactics.bin")   # thông số chiến thuật (khoá _plan, PO 21/11)
 python3 "$H/cpk.py" build "$OUT/template.cpk" "$OUT/pes17league.cpk" "${FILES[@]}"
 python3 - "$ORIG" "$OUT/DpFileList.bin" <<'E'
 import struct, sys

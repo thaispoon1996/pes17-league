@@ -263,6 +263,11 @@ public class ClubTactics
     public int[]? Roles { get; set; }
     /// <summary>4 chiến thuật phím L2 (○ ✕ Select □), mỗi giá trị 0..11 như menu game; null = theo patch.</summary>
     public int[]? Strategies { get; set; }
+    /// <summary>
+    /// Thông số chiến thuật PES17 (PO chọn 21/11, thay 4 thiết lập A/B/C ở mùa PES17): 7 số theo <c>Pes17Plan.Items</c> —
+    /// 4 lựa chọn 0/1 (kiểu tấn công, vị trí, kiểu phòng ngự, vùng khoá) + 3 thanh 1..10 (hỗ trợ, hàng thủ, co cụm); -1 = theo game. null = cả 7 theo game.
+    /// </summary>
+    public int[]? Pes17Plan { get; set; }
     // Đội trưởng + người đá phạt (PO duyệt 05/11): null hoặc cầu thủ không đá chính → tự chọn người tốt nhất trong 11 người (TeamJobPicker).
     public Guid? CaptainId { get; set; }
     public Guid? PenaltyTakerId { get; set; }

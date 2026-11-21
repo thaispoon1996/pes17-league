@@ -4,7 +4,7 @@ using Pes17League.OptionFile;
 
 namespace Pes17League.Clubs.Application;
 
-public enum TacticsError { UnknownFormation, SettingOutOfRange, PositionOutOfRange, StrategyOutOfRange, NotStarter }
+public enum TacticsError { UnknownFormation, SettingOutOfRange, PositionOutOfRange, StrategyOutOfRange, NotStarter, PlanOutOfRange }
 
 /// <summary>
 /// Sơ đồ/thiết lập đội trên web (PO duyệt 03/11): chọn 1 trong 21 sơ đồ mẫu + 4 thiết lập A/B/C. Null = giữ như patch.
@@ -51,6 +51,17 @@ public sealed class TacticsService(ClubsDbContext db, TimeProvider clock)
         var cur = row.Strategies ?? [-1, -1, -1, -1];      // -1 = theo patch (cột int[] không chứa null)
         cur[button] = value ?? -1;
         row.Strategies = cur.All(v => v < 0) ? null : [.. cur];
+        return await SaveAsync(row, ct);
+    }
+
+    /// <summary>Thông số chiến thuật PES17 mục <paramref name="item"/> (<see cref="Pes17Plan.Items"/>); null = theo game.</summary>
+    public async Task<TacticsError?> SetPes17PlanAsync(Guid clubId, int item, int? value, CancellationToken ct = default)
+    {
+        if (item < 0 || item >= Pes17Plan.Items.Count || value is { } v && !Pes17Plan.Items[item].Valid(v)) return TacticsError.PlanOutOfRange;
+        var row = await RowAsync(clubId, ct);
+        var cur = row.Pes17Plan is { Length: var n } p && n == Pes17Plan.Items.Count ? [.. p] : Enumerable.Repeat(Pes17Plan.Unset, Pes17Plan.Items.Count).ToArray();
+        cur[item] = value ?? Pes17Plan.Unset;
+        row.Pes17Plan = cur.All(x => x == Pes17Plan.Unset) ? null : cur;
         return await SaveAsync(row, ct);
     }
 

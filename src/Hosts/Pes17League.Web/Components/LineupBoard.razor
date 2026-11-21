@@ -1,5 +1,5 @@
 @* Sân đội hình kiểu game quản lý bóng đá (PO 05/11): 11 cầu thủ đứng theo sơ đồ, dự bị dưới sân; kéo thả (chuột/cảm ứng, lineup.js)
-   hoặc chạm 2 cầu thủ để đổi chỗ; kéo cầu thủ sân vào chỗ trống = vị trí tự do; sơ đồ, 4 thiết lập đội, 4 chiến thuật phím L2,
+   hoặc chạm 2 cầu thủ để đổi chỗ; kéo cầu thủ sân vào chỗ trống = vị trí tự do; sơ đồ, 4 thiết lập đội (mùa PES17: thông số Game Plan PES 17), 4 chiến thuật phím L2,
    đội trưởng + người đá phạt lưu ngay khi đổi. Locked: chỉ xem (đội hình đã chốt cho trận đang vào). *@
 @using Microsoft.EntityFrameworkCore
 @using Pes17League.Clubs.Infrastructure
@@ -32,14 +32,17 @@
         {
             <button class="ghost-btn" disabled="@Locked" @onclick="ResetPositions">↺ Vị trí theo sơ đồ</button>
         }
-        @foreach (var (label, i) in Settings)
+        @if (!pes17)
         {
-            <div class="seg"><span>@label</span>
-                @foreach (var (text, v) in Choices)
-                {
-                    <button class="@(settings[i] == v ? "on" : "")" disabled="@Locked" title="@(v is null ? "Theo patch" : "")" @onclick="() => SetSetting(i, v)">@text</button>
-                }
-            </div>
+            @foreach (var (label, i) in Settings)
+            {
+                <div class="seg"><span>@label</span>
+                    @foreach (var (text, v) in Choices)
+                    {
+                        <button class="@(settings[i] == v ? "on" : "")" disabled="@Locked" title="@(v is null ? "Theo patch" : "")" @onclick="() => SetSetting(i, v)">@text</button>
+                    }
+                </div>
+            }
         }
     </div>
     @if (message is not null) { <p class="msg">@message</p> }
@@ -83,6 +86,53 @@
         </div>
     </div>
     <p class="muted legend"><i class="fit"></i>đúng vị trí <i class="near"></i>cùng tuyến <i class="off"></i>trái tuyến · Kéo thả hoặc chạm 2 cầu thủ để đổi chỗ (ô thủ môn chỉ dành cho GK); kéo cầu thủ vào chỗ trống trên sân để đặt vị trí tự do@(Shell is null ? "" : " (vai trò tự đổi theo vùng); chạm 1 cầu thủ trên sân để chọn vai trò").</p>
+    @if (pes17)
+    {
+        @* PO chọn 21/11: mùa PES17 dùng đúng thông số Game Plan của PES 17 (Pes17Plan); "–" = giữ như game. *@
+        <section class="plan17" aria-label="Chiến thuật đội">
+            <h3>Chiến thuật đội</h3>
+            <p class="muted">Vào game đúng như chọn ở đây. Chọn – để giữ như game; Build Up, Attacking Zone, Pressure luôn theo game.</p>
+            @foreach (var attack in new[] { true, false })
+            {
+                <div class="plan17-group">
+                    <h4>@(attack ? "Tấn công" : "Phòng ngự")</h4>
+                    @for (var n = 0; n < Pes17Plan.Items.Count; n++)
+                    {
+                        var i = n;
+                        var it = Pes17Plan.Items[i];
+                        if (it.Attack != attack) continue;
+                        var v = plan[i];
+                        <div class="plan17-row">
+                            <span class="plan17-label">@it.Label<small>@it.Game</small></span>
+                            @if (it.Options is { } opts)
+                            {
+                                <div class="seg" role="group" aria-label="@it.Label">
+                                    <button type="button" class="@(v is null ? "on" : "")" disabled="@Locked" title="Theo game" aria-pressed="@(v is null ? "true" : "false")" @onclick="() => SetPlan(i, null)">–</button>
+                                    @for (var o = 0; o < opts.Length; o++)
+                                    {
+                                        var val = o;
+                                        <button type="button" class="@(v == val ? "on" : "")" disabled="@Locked" aria-pressed="@(v == val ? "true" : "false")" @onclick="() => SetPlan(i, val)">@opts[val]</button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="plan17-bar" role="group" aria-label="@it.Label (1–10)">
+                                    <button type="button" class="unset @(v is null ? "on" : "")" disabled="@Locked" title="Theo game" aria-pressed="@(v is null ? "true" : "false")" @onclick="() => SetPlan(i, null)">–</button>
+                                    @for (var k = 1; k <= 10; k++)
+                                    {
+                                        var lv = k;
+                                        <button type="button" class="tick @(v >= lv ? "fill" : "")" disabled="@Locked" aria-label="Mức @lv" aria-pressed="@(v == lv ? "true" : "false")" @onclick="() => SetPlan(i, lv)"><i></i></button>
+                                    }
+                                    <b class="plan17-val">@(v?.ToString() ?? "game")</b>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
     <div class="board-cols">
         <div>
             <h3>Đội trưởng & đá phạt</h3>
@@ -137,6 +187,8 @@
     FormationLayout? layout, patchLayout;
     string? formation, patchName, message;
     int?[] settings = new int?[4];
+    int?[] plan = new int?[Pes17Plan.Items.Count];
+    bool pes17;
     IReadOnlyList<int?> strategies = new int?[4];
     bool custom;
     Guid? picked;
@@ -150,6 +202,8 @@
         if (loaded == ClubId) return;   // trang chứa vẽ lại theo nhật ký trận → không đọc lại DB mỗi lần
         loaded = ClubId;
         patchLayout = null; patchName = null;
+        await using (var db = await Dbs.CreateDbContextAsync())
+            pes17 = await new Pes17RoundService(db, Store, Clock).IsPes17SeasonAsync(Season.Id);
         await LoadAsync();
     }
 
@@ -169,6 +223,7 @@
         formation = tactics?.Formation;
         preset = TacticPresets.Match(tactics)?.Key;
         settings = [tactics?.BackLine, tactics?.Pressure, tactics?.OffsideTrap, tactics?.CounterAttack];
+        plan = Pes17Plan.Of(tactics);
         strategies = TacticsService.StrategiesOf(tactics) ?? new int?[4];
         patchLayout ??= await Q.PatchLayoutAsync(Season.Id, ClubId, Store, GameForms);
         patchName ??= patchLayout is null ? null : Formations.Names.FirstOrDefault(n => Formations.Layout(n).Positions.SequenceEqual(patchLayout.Positions));
@@ -238,6 +293,8 @@
         settings[i] = v;
         await SaveTacticsAsync();
     }
+
+    Task SetPlan(int item, int? value) => SaveAsync(s => s.SetPes17PlanAsync(ClubId, item, value));
 
     Task SetStrategy(int button, ChangeEventArgs e) =>
         SaveAsync(s => s.SetStrategyAsync(ClubId, button, int.TryParse(e.Value as string, out var v) ? v : null));

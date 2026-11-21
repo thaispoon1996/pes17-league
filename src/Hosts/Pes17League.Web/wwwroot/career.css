@@ -3082,3 +3082,18 @@ html:has(.bx-sheet) { overflow: hidden; }
 .cx .role-bar button.on { background: var(--cyan); border-color: var(--cyan); color: var(--n0); }
 .cx .role-bar button:hover:not(.on) { background: color-mix(in srgb, var(--tc) 14%, transparent); }
 .cx .role-bar button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* Chiến thuật đội mùa PES17 (PO chọn 21/11): thanh 10 mức như Game Plan — vạch cyan sáng dần, số mức chữ display */
+.cx .plan17 { padding: 12px 14px 14px; border-radius: 14px; background: var(--glass); border: 1px solid var(--line); }
+.cx .plan17 h3 { font: 800 italic 18px/1.1 var(--f-display); text-transform: uppercase; letter-spacing: .02em; color: #fff; }
+.cx .plan17-group h4 { font: 800 italic 14px/1 var(--f-display); text-transform: uppercase; letter-spacing: .06em; color: var(--cyan); }
+.cx .plan17-label { color: #fff; }
+.cx .plan17-bar .unset { background: rgba(255, 255, 255, .06); color: var(--muted); font: 800 14px var(--f-display); }
+.cx .plan17-bar .unset.on { background: var(--cyan); color: var(--n0); }
+.cx .plan17-bar .tick i { background: rgba(255, 255, 255, .12); }
+.cx .plan17-bar .tick.fill i { background: var(--cyan); box-shadow: 0 0 8px -1px rgba(54, 227, 255, .7); }
+.cx .plan17-bar .tick:hover:not(:disabled) i { box-shadow: 0 0 0 1px var(--cyan); }
+.cx .plan17-bar button:focus-visible { outline-color: var(--cyan); }
+.cx .plan17-val { font: 800 italic 18px/1 var(--f-display); }
+@media (prefers-reduced-motion: reduce) { .cx .plan17-bar .tick i { transition: none; } }
+

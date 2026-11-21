@@ -500,7 +500,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         emit(event="stage", stage="boot")
         deploy(squads)
         both = human == "both"
-        to_team_select(both)
+        to_team_select(both, human == "away")
         pick(home, away, both)
         match_time(MATCH_TIME if human else BOT_MATCH_TIME)
         coach_mode(human is None)

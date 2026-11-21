@@ -315,6 +315,9 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.Property<Guid?>("PenaltyTakerId")
                         .HasColumnType("uuid");
 
+                    b.Property<int[]>("Pes17Plan")
+                        .HasColumnType("integer[]");
+
                     b.Property<int[]>("Positions")
                         .HasColumnType("integer[]");
 

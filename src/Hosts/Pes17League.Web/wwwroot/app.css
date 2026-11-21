@@ -359,6 +359,28 @@ pre.log { white-space: pre-wrap; font-size: 12px; margin: 0; background: var(--c
 .board-cols h3 { margin: 0 0 8px; font-size: 14px; }
 .row-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 6px; }
 .row-field select { flex: 0 1 62%; min-width: 0; }
+/* Chiến thuật đội mùa PES17 (PO chọn 21/11): 4 lựa chọn + 3 thanh 10 mức như màn Game Plan của PES 17 */
+.plan17 { margin-top: 16px; display: grid; gap: 4px 28px; }
+.plan17 h3 { margin: 0; font-size: 14px; }
+.plan17 > p { margin: 0 0 6px; font-size: 12px; }
+@media (min-width: 900px) { .plan17 { grid-template-columns: 1fr 1fr; } .plan17 > h3, .plan17 > p { grid-column: 1 / -1; } }
+.plan17-group { display: grid; gap: 8px; align-content: start; }
+.plan17-group h4 { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.plan17-row { display: grid; justify-items: start; gap: 4px; }
+.plan17-label { display: grid; font-size: 13px; font-weight: 600; }
+.plan17-label small { font-size: 11px; font-weight: 500; color: var(--muted); }
+.plan17 .seg button { min-height: 34px; }
+.plan17-bar { display: inline-flex; align-items: center; gap: 1px; }
+.plan17-bar button { min-height: 34px; min-width: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; }
+.plan17-bar .unset { width: 30px; margin-right: 4px; background: var(--card-2); }
+.plan17-bar .unset.on { background: var(--brand); color: #fff; }
+.plan17-bar .tick { width: 21px; display: grid; place-items: center; }
+.plan17-bar .tick i { display: block; width: 16px; height: 8px; border-radius: 2px; background: var(--line); transition: background .15s; }
+.plan17-bar .tick.fill i { background: var(--accent); }
+.plan17-bar .tick:hover:not(:disabled) i { box-shadow: 0 0 0 1px var(--accent); }
+.plan17-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan17-val { min-width: 38px; text-align: right; font-size: 13px; color: var(--muted); }
+.plan17-bar:has(.fill) .plan17-val { color: var(--text); }
 .ghost-btn { background: transparent; border: 1px solid var(--line, var(--line)); color: inherit; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
 /* Admin (bước 3) */
 .subnav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
