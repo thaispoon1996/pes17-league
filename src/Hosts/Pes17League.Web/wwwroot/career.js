@@ -151,6 +151,7 @@
     root.querySelectorAll('.cx-board[data-logo]').forEach(tint);
     hashScroll();
     syncSheet(root);
+    railCenter(root);
     enter();
   }
   // Link có #mục (vd. hlv#hop-dong từ menu): trang nạp dữ liệu xong mới có mục → cuộn tới khi mục xuất hiện, mỗi địa chỉ 1 lần.
@@ -218,6 +219,33 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !document.querySelector('.ui-dialog.on')) document.querySelector(':is(.mk-sheet, .bx-sheet) .x')?.click();
   });
+  // Lịch (PO 21/11): bấm cột "Hành trình" → cuộn tới khung đó trong dòng thời gian (không có trận → khung kế sau), nháy viền; k<0 → lên thanh chọn khung.
+  window.cxLx = {
+    row(k) {
+      const smooth = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      const off = (document.querySelector('.cx-top')?.offsetHeight || 0) + (document.querySelector('.cx-sub')?.offsetHeight || 0);
+      if (k < 0) {
+        const el = document.querySelector('.lx-seg'); if (!el) return;
+        scrollTo({ top: el.getBoundingClientRect().top + scrollY - off - 4, behavior: smooth });
+        return;
+      }
+      const rows = [...document.querySelectorAll('.lx-tl .r[id^="k-"]')];
+      const el = document.getElementById('k-' + k) || rows.find(r => +r.id.slice(2) >= k) || rows[rows.length - 1];
+      if (!el) return;
+      el.scrollIntoView({ behavior: smooth, block: 'center' });
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 1500);
+    }
+  };
+  // Thanh khung (Toàn bộ lịch): giữ khung đang chọn ở giữa dải khi đổi khung.
+  let railK = '';
+  function railCenter(root) {
+    const rail = root.querySelector('.lx-days .rail'), cur = rail?.querySelector('[aria-current="true"]');
+    if (!cur) { railK = ''; return; }
+    if (railK === cur.dataset.k) return;
+    const first = !railK; railK = cur.dataset.k;
+    rail.scrollTo({ left: cur.offsetLeft - (rail.clientWidth - cur.offsetWidth) / 2, behavior: first || reduce ? 'auto' : 'smooth' });
+  }
   let queued = false;
   new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; scan(); }); })
     .observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-count', 'class'] });

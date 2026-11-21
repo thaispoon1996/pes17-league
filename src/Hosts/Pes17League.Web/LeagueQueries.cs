@@ -199,6 +199,18 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
     }
 
     /// <summary>Tóm tắt các giải (trang Các giải, cột phải trang chủ).</summary>
+    /// <summary>Số CLB từng giải của mùa và các giải có <paramref name="clubId"/> (Lịch career: suy ra vòng cúp kế tiếp, chỗ chờ bốc thăm).</summary>
+    public async Task<(Dictionary<Guid, int> Clubs, HashSet<Guid> Joined)> EntriesAsync(Guid seasonId, Guid clubId)
+    {
+        await using var db = await dbs.CreateDbContextAsync();
+        var rows = await (from x in db.EditionClubs
+                          join e in db.Editions on x.EditionId equals e.Id
+                          where e.SeasonId == seasonId
+                          group x by x.EditionId into g
+                          select new { g.Key, N = g.Count(), Me = g.Any(y => y.ClubId == clubId) }).ToListAsync();
+        return (rows.ToDictionary(r => r.Key, r => r.N), [.. rows.Where(r => r.Me).Select(r => r.Key)]);
+    }
+
     public async Task<List<CompetitionSummary>> SummariesAsync(Guid seasonId, IReadOnlyList<EditionView> editions, IOptionFileStore store, TimeProvider clock)
     {
         await using var db = await dbs.CreateDbContextAsync();

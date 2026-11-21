@@ -1,10 +1,131 @@
 @page "/lich"
+@using System.Globalization
 @inject LeagueQueries Q
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
+@inject IJSRuntime JS
 
 @* Lịch & kết quả từng vòng (bước 7, PO chọn 06/11): mặc định vòng đang diễn ra, ‹ trước / sau ›; mùa liên đoàn nhóm trận theo giải.
-   Chữ hiển thị "Vòng"; query vẫn ?khung=N. Cột phải: trận của tôi cả mùa. ?mua=N xem lại mùa cũ. *@
+   Chữ hiển thị "Vòng"; query vẫn ?khung=N. Cột phải: trận của tôi cả mùa. ?mua=N xem lại mùa cũ.
+   Career (PO duyệt mockup 21/11, khối .lx): hero + dải "Hành trình mùa giải" (mỗi khung 1 cột: thắng lên, thua xuống, hoà giữa); 2 chế độ
+   "Lịch của tôi" (lọc theo giải, dòng thời gian theo khung, trận tiếp theo, chỗ chờ bốc thăm cúp, cột phải) / "Toàn bộ lịch" (thanh chọn khung,
+   giải của mình mở trước). ?khung=N (link từ trang khác) mở "Toàn bộ lịch" ở khung N. Giải online giữ nguyên markup cũ. *@
 @if (loaded && season is null) { <p>@(Mua is null ? "Chưa có mùa đang chạy." : $"Không có mùa số {Mua}.") <a href="mua">Các mùa →</a></p> }
-@if (season is not null)
+@if (season is not null && Shell is not null)
+{
+    var me = season.HumanClubId;
+    var rec = Record(my);
+    var run = Streak();
+    <div class="lx no-busy">
+        <section class="lx-hero">
+            <div class="top">
+                <div class="lx-id">
+                    <span class="ring"><Crest Name="@Name(me)" Logo="@season.Logo(me)" /></span>
+                    <div class="t">
+                        <h1>Lịch thi đấu</h1>
+                        <div class="meta">@Name(me)@(mineEds.Count > 0 ? " · " + string.Join(", ", mineEds.Select(e => e.Name)) : "")</div>
+                    </div>
+                    <a class="season" href="mua" title="Các mùa">@season.Label</a>
+                </div>
+                <div class="lx-sum">
+                    @if (rec.P == 0)
+                    {
+                        <div><b data-count="@my.Count">@my.Count</b><small>Trận đã xếp</small></div>
+                        <div><b>@mineEds.Count</b><small>Giải đấu</small></div>
+                        <div><b>@my.Count(f => f.Home == me)</b><small>Sân nhà</small></div>
+                        <div><b>@my.Count(f => f.Away == me)</b><small>Sân khách</small></div>
+                    }
+                    else
+                    {
+                        <div><b><span data-count="@rec.P">@rec.P</span><small class="of">/@my.Count</small></b><small>Đã đá</small></div>
+                        <div><b><span class="w">@rec.W</span>-<span class="d">@rec.D</span>-<span class="l">@rec.L</span></b><small>Thắng-hoà-bại</small></div>
+                        <div><b>@($"{rec.Gf}:{rec.Ga}")</b><small>Ghi:thủng</small></div>
+                        <div><b>@(run?.N.ToString() ?? "–")</b><small>@(run?.Text ?? "Chuỗi")</small></div>
+                    }
+                </div>
+            </div>
+            @if (matchdays.Count > 0)
+            {
+                var cols = $"grid-template-columns:repeat({matchdays.Count}, minmax(0, 1fr))";
+                <div class="lx-wave">
+                    <div class="hd"><h2>Hành trình mùa giải</h2><small>@matchdays.Count khung · chạm cột để tới trận</small></div>
+                    <div class="bars" style="@cols">
+                        @if (cur > 0) { <span class="pin" style="left:@(Pct(cur))%">Khung @cur</span> }
+                        @foreach (var m in matchdays)
+                        {
+                            var k = m.Number;
+                            var eu = kinds.GetValueOrDefault(k) == Kind.Eu ? " eu" : "";
+                            if (myByK.GetValueOrDefault(k) is { } f)
+                            {
+                                var r = ResOf(f);
+                                var cls = r?.Cls ?? (f == next ? "nxt" : "sd");
+                                var h = r is null ? "" : $"--h:{14 + 9 * Math.Min(3, Math.Abs(r.My - r.Th))}px;";
+                                var lbl = $"Khung {k}: {At(f.Home == me)}{Name(Opp(f))}{(r is null ? "" : $" {r.My}–{r.Th}")}";
+                                <button type="button" class="@($"c {cls}{eu}")" style="@($"{h}--i:{k}")" title="@lbl" aria-label="@lbl" @onclick="() => Bar(k)"><i></i></button>
+                            }
+                            else if (tbds.FirstOrDefault(t => t.K == k) is { } t)
+                            {
+                                var tl = $"Khung {k}: {t.E.Name} {t.Title.ToLowerInvariant()}";
+                                <button type="button" class="@($"c tbd{eu}")" title="@tl" aria-label="@tl" @onclick="() => Bar(k)"><i></i></button>
+                            }
+                            else
+                            {
+                                <span class="@($"c none{eu}")" title="@($"Khung {k}: không có trận của bạn")"><i></i></span>
+                            }
+                        }
+                    </div>
+                    @if (halves is { } hv)
+                    {
+                        <div class="halves" style="@cols">
+                            <span style="@($"grid-column:{hv.A1} / {hv.A2 + 1}")">Lượt đi @league?.Name</span>
+                            <span style="@($"grid-column:{hv.B1} / {matchdays.Count + 1}")">Lượt về</span>
+                        </div>
+                    }
+                    <div class="lgd">
+                        <span><i class="w"></i>Thắng (cao = cách biệt)</span><span><i class="l"></i>Thua</span><span><i class="d"></i>Hoà</span><span><i class="sd"></i>Sắp đá</span>
+                        @if (kinds.Values.Contains(Kind.Eu)) { <span><i class="eu"></i>Khung cúp châu Âu</span> }
+                        @if (tbds.Count > 0) { <span><i class="tbd"></i>Chờ bốc thăm</span> }
+                    </div>
+                </div>
+            }
+        </section>
+
+        <div class="lx-seg" role="group" aria-label="Cách xem">
+            <button type="button" aria-pressed="@B(!allView)" @onclick="() => View(false)"><span class="ms">person</span>Lịch của tôi</button>
+            <button type="button" aria-pressed="@B(allView)" @onclick="() => View(true)"><span class="ms">calendar_view_week</span>Toàn bộ lịch</button>
+        </div>
+
+        @if (!allView)
+        {
+            <div class="lx-grid lx-mine">
+                <div>
+                    @if (mineEds.Count > 0)
+                    {
+                        <div class="lx-comps" role="group" aria-label="Lọc theo giải">
+                            <button type="button" aria-pressed="@B(comp is null)" @onclick="() => Comp(null)">
+                                <span class="lg"><span class="ms">calendar_month</span></span><b>Tất cả</b><small>@my.Count trận · @rec.P đã đá</small>
+                            </button>
+                            @foreach (var c in cards)
+                            {
+                                var id = c.E.Id;
+                                <button type="button" aria-pressed="@B(comp == id)" @onclick="() => Comp(id)">
+                                    <span class="lg"><Crest Name="@c.E.Name" Logo="@c.E.Logo" /></span><b>@c.E.Name</b><small>@c.Sub</small>
+                                </button>
+                            }
+                        </div>
+                    }
+                    @Timeline()
+                </div>
+                @Side()
+            </div>
+        }
+        else
+        {
+            @DayView()
+        }
+    </div>
+}
+else if (season is not null)
 {
     <section class="hero"><a class="pill" href="mua" title="Các mùa">@season.Label</a><h1>Lịch thi đấu &amp; kết quả</h1></section>
     <div class="grid">
@@ -59,6 +180,7 @@
 }
 
 @code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
     [SupplyParameterFromQuery(Name = "khung")] public int? Khung { get; set; }
     [SupplyParameterFromQuery(Name = "mua")] public int? Mua { get; set; }
 
@@ -88,12 +210,651 @@
                 matchdays = await Q.MatchdaysAsync(season.Id);
                 editions = await Q.EditionsAsync(season.Id);
                 byEdition = fixtures.ToLookup(f => f.EditionId);
+                if (Shell is not null) await BuildCareerAsync();
             }
             loaded = true;
+            appliedKhung = null;
+            day = 0;
         }
         md = matchdays.FirstOrDefault(m => m.Number == Khung) ?? matchdays.FirstOrDefault(m => m.Status != MatchdayStatus.Settled) ?? matchdays.LastOrDefault();
         shown = md is null ? [] : [.. fixtures.Where(f => f.Matchday == md.Number)];
+        // Career: ?khung=N mở "Toàn bộ lịch" ở khung đó — chỉ khi query đổi (bố cục vẽ lại không kéo người xem về).
+        if (Shell is not null && Khung != appliedKhung)
+        {
+            appliedKhung = Khung;
+            if (Khung is int k && matchdays.Any(m => m.Number == k)) { allView = true; day = k; open = null; }
+        }
+        if (day == 0) day = cur;
     }
 
     bool Has(int number) => matchdays.Any(m => m.Number == number);
+
+    // ===== Career (.lx) =====
+    enum Kind { Dom, Eu, Cup }
+    sealed record Res(string Cls, int My, int Th, int? MyPen, int? ThPen);
+    sealed record Tbd(int K, EditionView E, string Title, string Sub);
+    sealed record CompCard(EditionView E, string Sub);
+    sealed record Pos(int Rank, int Played, int Points, int Of);
+    sealed record Rec(int P, int W, int D, int L, int Gf, int Ga);
+    sealed record DayGroup(Guid Key, EditionView? E, List<FixtureView> Fx, bool Mine);
+
+    Dictionary<int, Kind> kinds = [];
+    Dictionary<Guid, EditionView> edById = [];
+    List<EditionView> mineEds = [];
+    List<FixtureView> my = [];
+    Dictionary<int, FixtureView> myByK = [];
+    FixtureView? next;
+    int cur;
+    int? openK;
+    Dictionary<Guid, Dictionary<Guid, Pos>> pos = [];
+    ILookup<Guid?, FixtureView> formSrc = Array.Empty<FixtureView>().ToLookup(f => f.EditionId);
+    List<Tbd> tbds = [];
+    List<CompCard> cards = [];
+    EditionView? league;
+    (int A1, int A2, int B1)? halves;
+
+    // trạng thái xem (chỉ trong trang, không đổi địa chỉ)
+    bool allView;
+    Guid? comp;
+    bool unfold;
+    int day;
+    HashSet<Guid>? open;
+    int? rowTo;
+    int? appliedKhung;
+
+    async Task BuildCareerAsync()
+    {
+        var me = season!.HumanClubId;
+        edById = editions.ToDictionary(e => e.Id);
+        var (counts, joined) = await Q.EntriesAsync(season.Id, me);
+        mineEds = [.. editions.Where(e => joined.Contains(e.Id) || mine.Any(f => f.EditionId == e.Id)).OrderBy(e => e.Type switch
+        {
+            CompetitionType.DomesticLeague => 0, CompetitionType.ContinentalCup => 1, _ => 2,
+        })];
+        league = mineEds.FirstOrDefault(e => e.Type == CompetitionType.DomesticLeague);
+
+        // Loại khung: theo giải của trận trong khung; khung chưa có trận (cúp chờ bốc thăm) suy từ Matchday.Stage/Leg
+        // (SeasonCalendar: khung cúp quốc gia đứng trước khung loại trực tiếp châu lục; chung kết châu lục ở cuối).
+        var firstEuKo = matchdays.Where(m => m.Stage == FixtureStage.KnockoutPlayoff || m.Leg is not null).Select(m => (int?)m.Number).Min();
+        var typeByK = fixtures.Where(f => f.EditionId is { } id && edById.ContainsKey(id)).GroupBy(f => f.Matchday)
+            .ToDictionary(g => g.Key, g => edById[g.First().EditionId!.Value].Type);
+        kinds = matchdays.ToDictionary(m => m.Number, m => typeByK.TryGetValue(m.Number, out var t)
+            ? t switch { CompetitionType.DomesticLeague => Kind.Dom, CompetitionType.DomesticCup => Kind.Cup, _ => Kind.Eu }
+            : m.Stage switch
+            {
+                null or FixtureStage.League => Kind.Dom,
+                FixtureStage.LeaguePhase or FixtureStage.KnockoutPlayoff => Kind.Eu,
+                _ => m.Leg is not null || (firstEuKo is int x && m.Number > x) ? Kind.Eu : Kind.Cup,
+            });
+
+        my = [.. mine.OrderBy(f => f.Matchday)];
+        myByK = my.GroupBy(f => f.Matchday).ToDictionary(g => g.Key, g => g.First());
+        next = my.FirstOrDefault(f => f.Status != FixtureStatus.Played);
+        cur = (matchdays.FirstOrDefault(m => m.Status != MatchdayStatus.Settled) ?? matchdays.LastOrDefault())?.Number ?? 0;
+        openK = matchdays.Where(m => m.Status is MatchdayStatus.WindowOpen or MatchdayStatus.Locked or MatchdayStatus.Playing).Select(m => (int?)m.Number).Min();
+
+        pos = [];
+        foreach (var e in mineEds.Where(e => e.Type != CompetitionType.DomesticCup))
+        {
+            var rows = await Q.EditionStandingsAsync(e.Id, Store, Clock);
+            pos[e.Id] = rows.Select((r, i) => (r, i)).GroupBy(x => x.r.Club)
+                .ToDictionary(g => g.Key, g => new Pos(g.First().i + 1, g.First().r.Played, g.First().r.Points, rows.Count));
+        }
+        formSrc = fixtures.Where(f => f.Status == FixtureStatus.Played && f.HomeGoals is not null && f.Stage is FixtureStage.League or FixtureStage.LeaguePhase)
+            .ToLookup(f => f.EditionId);
+
+        tbds = [];
+        cards = [.. mineEds.Select(e => new CompCard(e, e.Type == CompetitionType.DomesticLeague ? LeagueSub(e) : Cup(e, counts.GetValueOrDefault(e.Id))))];
+        tbds.Sort((a, b) => a.K.CompareTo(b.K));
+
+        // "Lượt đi / Lượt về" dưới dải: chia đôi các khung có trận của giải VĐQG (vòng tròn 2 lượt).
+        halves = null;
+        if (league is { Rules.Legs: 2 })
+        {
+            var ks = byEdition[league.Id].Select(f => f.Matchday).Distinct().Order().ToList();
+            if (ks.Count >= 2) halves = (ks[0], ks[ks.Count / 2 - 1], ks[ks.Count / 2]);
+        }
+    }
+
+    string LeagueSub(EditionView e)
+    {
+        var n = my.Count(f => f.EditionId == e.Id);
+        return Me(e.Id) is { } p ? $"Hạng {p.Rank} · {p.Points} điểm" : $"{n} trận · chưa xếp hạng";
+    }
+
+    /// <summary>Dòng phụ thẻ cúp + chỗ "chờ bốc thăm" (vòng kế của mình chưa có cặp đấu).</summary>
+    string Cup(EditionView e, int clubs)
+    {
+        var euro = e.Type == CompetitionType.ContinentalCup;
+        var kind = euro ? Kind.Eu : Kind.Cup;
+        IReadOnlyList<(FixtureStage Stage, int? Leg)> stages = [];
+        try
+        {
+            stages = euro
+                ? e.Rules is { DirectKnockoutPlaces: { } d0, PlayoffPlaces: { } p0 } ? CupDraw.KnockoutStages(clubs, d0, p0) : []
+                : clubs >= 2 ? CupDraw.SingleLegStages(clubs) : [];
+        }
+        catch (ArgumentException) { }
+        var order = stages.Select(s => s.Stage).Distinct().ToList();
+        List<int> Ks(FixtureStage st) => [.. stages.Where(s => s.Stage == st)
+            .Select(s => matchdays.FirstOrDefault(m => m.Stage == st && m.Leg == s.Leg && kinds.GetValueOrDefault(m.Number) == kind)?.Number).OfType<int>()];
+        string Span(FixtureStage st) => Ks(st) switch { [] => "", [var a] => $"khung {a}", var l => $"khung {l.Min()}–{l.Max()}" };
+        string St(FixtureStage st) => AdminText.Stage(st);
+        bool Drawn(FixtureStage st) => byEdition[e.Id].Any(f => f.Stage == st);
+        void Add(FixtureStage st, string title, string text) { if (Ks(st) is [var k, ..]) tbds.Add(new(k, e, title, text)); }
+
+        var mineE = my.Where(f => f.EditionId == e.Id).ToList();
+        var pending = mineE.FirstOrDefault(f => f.Status != FixtureStatus.Played);
+        var ko = mineE.Where(f => f.Stage is not (FixtureStage.League or FixtureStage.LeaguePhase)).ToList();
+        if (pending is not null && pending.Stage != FixtureStage.LeaguePhase) return $"{AdminText.SlotKind(pending.Stage, pending.Leg)} · khung {pending.Matchday}";
+
+        if (euro && ko.Count == 0)
+        {
+            var lp = mineE.Where(f => f.Stage == FixtureStage.LeaguePhase).ToList();
+            var pp = Me(e.Id);
+            var lpOn = pending is not null || byEdition[e.Id].Any(f => f.Stage == FixtureStage.LeaguePhase && f.Status != FixtureStatus.Played);
+            if (e.Rules is not { DirectKnockoutPlaces: { } d, PlayoffPlaces: { } p } || order.Count < 2)
+                return pp is not null ? $"Hạng {pp.Rank}/{pp.Of}" : $"League phase {lp.Count} trận";
+            if (lpOn)
+            {
+                Add(FixtureStage.KnockoutPlayoff, "Vòng loại trực tiếp",
+                    $"Top {d} league phase vào thẳng {St(order[1]).ToLowerInvariant()} ({Span(order[1])}), hạng {d + 1}–{p} đá play-off ({Span(order[0])}), từ hạng {p + 1} bị loại.");
+                return pp is not null ? $"Hạng {pp.Rank}/{pp.Of} · {lp.Count(f => ResOf(f) is not null)}/{lp.Count} trận" : $"League phase {lp.Count} trận";
+            }
+            if (pp is null) return "";
+            if (pp.Rank <= d)
+            {
+                if (!Drawn(order[1])) Add(order[1], $"{St(order[1])} · chờ bốc thăm", $"Hạng {pp.Rank} league phase: bạn vào thẳng vòng này. Cặp đấu có sau khi play-off ({Span(order[0])}) đá xong.");
+                return $"{St(order[1])} · {Span(order[1])}";
+            }
+            if (pp.Rank <= p)
+            {
+                if (!Drawn(order[0])) Add(order[0], "Play-off · chờ bốc thăm", $"Hạng {pp.Rank} league phase: đá play-off 2 lượt ({Span(order[0])}).");
+                return $"Play-off · {Span(order[0])}";
+            }
+            return $"Bị loại ở league phase (hạng {pp.Rank})";
+        }
+        if (ko.Count == 0)
+        {
+            if (order.Count == 0) return "";
+            if (Drawn(order[0]) && order.Count > 1)
+            {
+                // vòng mở màn đã bốc thăm mà không có mình → được bye, vào thẳng vòng sau
+                if (!Drawn(order[1])) Add(order[1], $"{St(order[1])} · chờ bốc thăm", $"Cặp đấu có sau khi {St(order[0]).ToLowerInvariant()} ({Span(order[0])}) đá xong. Bạn vào thẳng vòng này.");
+                return $"{St(order[1])} · {Span(order[1])}";
+            }
+            Add(order[0], $"{St(order[0])} · chờ bốc thăm", "Cặp đấu chưa được bốc thăm.");
+            return $"{St(order[0])} · {Span(order[0])}";
+        }
+        var last = ko.Max(f => f.Stage);
+        var won = Won([.. ko.Where(f => f.Stage == last)]);
+        if (won is false) return last == FixtureStage.Final ? "Á quân" : $"Bị loại · {St(last)}";
+        if (won is null) return $"Chờ vòng sau (đã đá {St(last)})";
+        if (last == FixtureStage.Final) return "Vô địch";
+        var i = order.IndexOf(last);
+        if (i < 0 || i + 1 >= order.Count) return $"Đã qua {St(last)}";
+        var nx = order[i + 1];
+        if (!Drawn(nx)) Add(nx, $"{St(nx)} · chờ bốc thăm", $"Bạn đã qua {St(last).ToLowerInvariant()}. Cặp đấu có sau khi cả vòng đá xong.");
+        return $"{St(nx)} · {Span(nx)}";
+    }
+
+    /// <summary>Mình có qua cặp đấu không: 1 trận (tính cả luân lưu) hoặc 2 lượt — tổng tỷ số → bàn sân khách → đội xếp trên (chủ nhà lượt về),
+    /// như <see cref="CupDraw.TieWinner"/>.</summary>
+    bool? Won(List<FixtureView> legs)
+    {
+        var me = season!.HumanClubId;
+        if (legs is [{ Leg: null } single]) return ResOf(single) is { } r ? r.Cls == "w" : null;
+        var l1 = legs.FirstOrDefault(f => f.Leg == 1);
+        var l2 = legs.FirstOrDefault(f => f.Leg == 2);
+        if (ResOf(l1) is not { } a || ResOf(l2) is not { } b) return null;
+        int ours = a.My + b.My, theirs = a.Th + b.Th;
+        if (ours != theirs) return ours > theirs;
+        var awayFirst = l1!.Away == me;
+        int myAway = awayFirst ? a.My : b.My, thAway = awayFirst ? b.Th : a.Th;
+        if (myAway != thAway) return myAway > thAway;
+        return l2!.Home == me;
+    }
+
+    Res? ResOf(FixtureView? f)
+    {
+        if (f is not { Status: FixtureStatus.Played, HomeGoals: { } hg, AwayGoals: { } ag }) return null;
+        var home = f.Home == season!.HumanClubId;
+        var (us, them, mp, tp) = home ? (hg, ag, f.HomePenalties, f.AwayPenalties) : (ag, hg, f.AwayPenalties, f.HomePenalties);
+        var cls = us > them ? "w" : us < them ? "l" : mp is { } x && tp is { } y && x != y ? (x > y ? "w" : "l") : "d";
+        return new(cls, us, them, mp, tp);
+    }
+
+    Rec Record(IEnumerable<FixtureView> list)
+    {
+        var rs = list.Select(ResOf).OfType<Res>().ToList();
+        return new(rs.Count, rs.Count(r => r.Cls == "w"), rs.Count(r => r.Cls == "d"), rs.Count(r => r.Cls == "l"), rs.Sum(r => r.My), rs.Sum(r => r.Th));
+    }
+
+    (int N, string Text)? Streak()
+    {
+        var rs = my.Select(ResOf).OfType<Res>().Reverse().ToList();
+        if (rs.Count == 0) return null;
+        var unbeaten = rs[0].Cls != "l";
+        var n = rs.TakeWhile(r => (r.Cls != "l") == unbeaten).Count();
+        return (n, unbeaten ? "Trận bất bại" : "Trận thua liền");
+    }
+
+    Pos? Me(Guid editionId) => PosOf(editionId, season!.HumanClubId);
+    Pos? PosOf(Guid? editionId, Guid club) => editionId is { } id && pos.TryGetValue(id, out var t) && t.TryGetValue(club, out var p) && p.Played > 0 ? p : null;
+
+    /// <summary>5 trận gần nhất trong giải (cũ → mới) cho <see cref="FormDots"/>.</summary>
+    string Form(Guid? editionId, Guid club) => string.Concat(formSrc[editionId].Where(f => f.Home == club || f.Away == club).OrderByDescending(f => f.Matchday).Take(5).Reverse()
+        .Select(f =>
+        {
+            var (s, c) = f.Home == club ? (f.HomeGoals!.Value, f.AwayGoals!.Value) : (f.AwayGoals!.Value, f.HomeGoals!.Value);
+            return s > c ? 'W' : s == c ? 'D' : 'L';
+        }));
+
+    string Name(Guid club) => season!.Clubs.GetValueOrDefault(club, "?");
+    string Short(Guid club) => System.Text.RegularExpressions.Regex.Replace(Name(club), @"\s+A?FC$", "");
+    Guid Opp(FixtureView f) => f.Home == season!.HumanClubId ? f.Away : f.Home;
+    EditionView? Ed(FixtureView f) => f.EditionId is { } id ? edById.GetValueOrDefault(id) : null;
+    string CompName(EditionView? e) => e?.Name ?? season!.Name;
+    string RoundOf(FixtureView f) => Fmt.Round(byEdition[f.EditionId], f.Matchday);
+    string Pct(int k) => ((k - .5) / Math.Max(matchdays.Count, 1) * 100).ToString("0.##", CultureInfo.InvariantCulture);
+    static string Share(int n, int total) => (n * 100.0 / total).ToString("0.#", CultureInfo.InvariantCulture);
+    static string B(bool v) => v ? "true" : "false";
+    static string At(bool home) => home ? "" : "\u0040 ";   // "@ Đối thủ" = sân khách
+    static string Letter(Res r) => r.Cls switch { "w" => "T", "d" => "H", _ => "B" };
+    static string ResWord(Res r) => r.Cls switch { "w" => "thắng", "d" => "hoà", _ => "thua" };
+    FixtureView? FirstLeg(FixtureView f) => f.Leg == 2 ? my.FirstOrDefault(g => g.EditionId == f.EditionId && g.Stage == f.Stage && g.Leg == 1) : null;
+    /// <summary>Trận của mình ở khung đang mở, mình tự đá → "Vào trận" (như trang chủ career).</summary>
+    bool NowMine(FixtureView f) => openK == f.Matchday && f.Status == FixtureStatus.Scheduled && !f.AssistantPlays;
+
+    /// <summary>Khung giải VĐQG cho ô cột phải: khung hiện tại nếu giải có trận, không thì khung kế tiếp (hết mùa → khung cuối).</summary>
+    int? LeagueK()
+    {
+        var ks = byEdition[league!.Id].Select(f => f.Matchday).Distinct().Order().ToList();
+        return ks.Count == 0 ? null : ks.Where(k => k >= cur).Select(k => (int?)k).FirstOrDefault() ?? ks[^1];
+    }
+
+    void View(bool all) { allView = all; if (all && day == 0) day = cur; }
+    void Comp(Guid? id) => comp = id;
+    void Bar(int k)
+    {
+        if (allView) { day = k; open = null; return; }
+        comp = null; unfold = true; rowTo = k;
+    }
+    void GoDay(int k) { allView = true; day = k; open = null; rowTo = -1; }
+    void GoMine(int k) { allView = false; comp = null; unfold = true; rowTo = k; }
+    void Step(int d) { var i = matchdays.FindIndex(m => m.Number == day) + d; if (i >= 0 && i < matchdays.Count) { day = matchdays[i].Number; open = null; } }
+    void Toggle(Guid key, bool isOpen)
+    {
+        open ??= [.. DayGroups().Where(g => g.Mine).Select(g => g.Key)];
+        if (isOpen) open.Remove(key); else open.Add(key);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (rowTo is not int k) return;
+        rowTo = null;
+        try { await JS.InvokeVoidAsync("cxLx.row", k); } catch (JSException) { } catch (JSDisconnectedException) { }
+    }
+
+    // ----- Lịch của tôi -----
+    RenderFragment Timeline() => __builder =>
+    {
+        var me = season!.HumanClubId;
+        var items = my.Where(f => comp is null || f.EditionId == comp).Select(f => (K: f.Matchday, F: (FixtureView?)f, T: (Tbd?)null, Played: ResOf(f) is not null))
+            .Concat(tbds.Where(t => comp is null || t.E.Id == comp).Select(t => (K: t.K, F: (FixtureView?)null, T: (Tbd?)t, Played: false)))
+            .OrderBy(x => x.K).ThenBy(x => x.T is null ? 0 : 1).ToList();
+        var played = items.Count(x => x.Played);
+        var hide = !unfold && played > 3 ? played - 3 : 0;
+        string? sec = null;
+        var prev = 0;
+        <div class="lx-tl">
+            @if (items.Count == 0)
+            {
+                <p class="lx-empty"><span class="ms">event_busy</span>Chưa có trận ở giải này.</p>
+            }
+            @if (hide > 0)
+            {
+                <div class="fold-row"><span></span><button type="button" class="fold" @onclick="() => unfold = true"><span class="ms">expand_less</span>Hiện @hide trận đã đá trước đó</button></div>
+            }
+            @foreach (var it in items.Skip(hide))
+            {
+                var s = it.Played ? "Kết quả" : "Sắp tới";
+                if (s != sec)
+                {
+                    <div class="sec"><span class="k"><i></i></span><h3>@s</h3></div>
+                    sec = s;
+                }
+                else if (comp is null && it.K - prev > 1)
+                {
+                    var from = prev + 1;
+                    var to = it.K - 1;
+                    <div class="gap"><span class="k"><i></i></span><span>@(from == to ? $"Nghỉ khung {from}" : $"Nghỉ khung {from}–{to}") · <button type="button" class="lnk" @onclick="() => GoDay(from)">xem các giải khác</button></span></div>
+                }
+                prev = it.K;
+                if (it.T is { } t)
+                {
+                    <div class="r tbd" id="k-@t.K">
+                        <span class="k"><b>@t.K</b><small>khung</small></span>
+                        <div class="card">
+                            <span class="meta"><Crest Name="@t.E.Name" Logo="@t.E.Logo" /><span class="rd">@t.E.Name</span></span>
+                            <span class="main"><span class="ico"><span class="ms">shuffle</span></span><span class="txt"><b>@t.Title</b><small>@t.Sub</small></span></span>
+                        </div>
+                    </div>
+                }
+                else if (it.F is { } f && f == next)
+                {
+                    @NextCard(f)
+                }
+                else if (it.F is { } g)
+                {
+                    var r = ResOf(g);
+                    var e = Ed(g);
+                    var opp = Opp(g);
+                    var home = g.Home == me;
+                    var goals = r is null ? new List<GoalView>() : [.. g.Goals.Where(x => x.ClubId == me && x.Scorer is not null).OrderBy(x => x.Half).ThenBy(x => x.Minute)];
+                    var fl = FirstLeg(g);
+                    var aria = $"Khung {g.Matchday}, {CompName(e)}, {(home ? "sân nhà" : "sân khách")} gặp {Name(opp)}{(r is null ? "" : $", {r.My}–{r.Th}")}";
+                    <div class="@($"r {r?.Cls}")" id="k-@g.Matchday">
+                        <span class="k"><b>@g.Matchday</b><small>khung</small></span>
+                        <a class="card" href="@season.Url($"tran/{g.Id}")" aria-label="@aria">
+                            <span class="meta">
+                                <Crest Name="@CompName(e)" Logo="@e?.Logo" /><span class="rd">@CompName(e) · @RoundOf(g)</span>
+                                @if (r is null && fl is not null) { <span class="leg">@(ResOf(fl) is { } a ? $"Lượt đi {a.My}–{a.Th} {ResWord(a)}" : $"Lượt đi: khung {fl.Matchday}")</span> }
+                            </span>
+                            <span class="main">
+                                <span class="ven @(home ? "h" : "a")">@(home ? "Nhà" : "Khách")</span>
+                                <Crest Name="@Name(opp)" Logo="@season.Logo(opp)" />
+                                <span class="opp">@Name(opp)</span>
+                                <span class="end">
+                                    @if (r is not null) { @ResBadge(r) }
+                                    else if (PosOf(g.EditionId, opp) is { } p) { <span class="hr">Hạng <b>@p.Rank</b></span><FormDots Form="@Form(g.EditionId, opp)" /> }
+                                </span>
+                            </span>
+                            @if (goals.Count > 0)
+                            {
+                                <span class="goals"><span class="ms fill">sports_soccer</span><span>@string.Join(", ", goals.Select(x => $"{x.Scorer} {x.Minute}'"))</span></span>
+                            }
+                        </a>
+                    </div>
+                }
+            }
+        </div>
+    };
+
+    RenderFragment ResBadge(Res r) => __builder =>
+    {
+        <span class="res @r.Cls"><i>@Letter(r)</i>@($"{r.My}–{r.Th}")@if (r.MyPen is { } a && r.ThPen is { } b) { <small>pen @($"{a}–{b}")</small> }</span>
+    };
+
+    RenderFragment NextCard(FixtureView f) => __builder =>
+    {
+        var me = season!.HumanClubId;
+        var e = Ed(f);
+        var opp = Opp(f);
+        var home = f.Home == me;
+        var now = NowMine(f);
+        var fl = FirstLeg(f);
+        var flr = fl is null ? null : ResOf(fl);
+        var after = my.Where(g => g.Matchday > f.Matchday && g.Status != FixtureStatus.Played).Take(2).ToList();
+        <div class="r next" id="k-@f.Matchday">
+            <span class="k"><b>@f.Matchday</b><small>khung</small></span>
+            <div class="nx">
+                <div class="top">
+                    <span class="tag">@(now ? "Đến lượt bạn" : f.Status == FixtureStatus.Playing ? "Đang đá" : "Trận tiếp theo")</span>
+                    <Crest Name="@CompName(e)" Logo="@e?.Logo" /><span>@CompName(e) · @RoundOf(f)</span>
+                </div>
+                <div class="vs">
+                    @Team(f.Home, f.EditionId, e)
+                    <div class="mid"><span class="v">VS</span><span class="ven @(home ? "h" : "a")">@(home ? "Nhà" : "Khách")</span></div>
+                    @Team(f.Away, f.EditionId, e)
+                </div>
+                <div class="fx">
+                    <div><span class="ms">@(home ? "home" : "flight")</span><span>@(home ? "Đá trên sân nhà" : $"Làm khách trên sân {Name(opp)}")</span></div>
+                    @if (fl is not null)
+                    {
+                        <div><span class="ms">history</span><span>Lượt đi (khung @fl.Matchday): @if (flr is not null) { <b>@($"{flr.My}–{flr.Th}")</b><text> @ResWord(flr)</text> } else { <text>chưa đá</text> }</span></div>
+                    }
+                    @if (f.AssistantPlays)
+                    {
+                        <div><span class="ms">smart_toy</span><span>Trợ lý cầm quân trận này</span></div>
+                    }
+                    @if (after.Count > 0)
+                    {
+                        <div><span class="ms">event_upcoming</span><span>Sau đó: @string.Join(", ", after.Select(g => $"{At(g.Home == me)}{Name(Opp(g))} (khung {g.Matchday})"))</span></div>
+                    }
+                </div>
+                <div class="act">
+                    @if (now)
+                    {
+                        <a class="cx-btn gold" href="@season.Url($"chuan-bi/{f.Id}")"><span class="ms fill">sports_esports</span>Vào trận</a>
+                        <a class="cx-btn ghost" href="@season.Url($"tran/{f.Id}")"><span class="ms">query_stats</span>Nhận định</a>
+                    }
+                    else
+                    {
+                        <a class="cx-btn gold" href="@season.Url($"tran/{f.Id}")"><span class="ms">query_stats</span>Nhận định</a>
+                        <a class="cx-btn ghost" href="@season.Url($"clb/{opp}")"><span class="ms">shield</span>Trang CLB đối thủ</a>
+                    }
+                </div>
+            </div>
+        </div>
+    };
+
+    RenderFragment Team(Guid club, Guid? editionId, EditionView? e) => __builder =>
+    {
+        <div class="tm @(club == season!.HumanClubId ? "me" : "")">
+            <Crest Name="@Name(club)" Logo="@season.Logo(club)" />
+            <b>@Name(club)</b>
+            @if (PosOf(editionId, club) is { } p) { <small>Hạng <b>@p.Rank</b></small><FormDots Form="@Form(editionId, club)" /> }
+            else if (e?.Type != CompetitionType.DomesticCup && editionId is { } id && pos.ContainsKey(id)) { <small>Chưa đá trận nào</small> }
+        </div>
+    };
+
+    RenderFragment Side() => __builder =>
+    {
+        var me = season!.HumanClubId;
+        var hf = my.Where(f => f.Home == me).ToList();
+        var af = my.Where(f => f.Away == me).ToList();
+        var h = Record(hf);
+        var a = Record(af);
+        var top = my.Where(f => ResOf(f) is not null).SelectMany(f => f.Goals).Where(g => g.ClubId == me && g.ScorerId is not null)
+            .GroupBy(g => g.ScorerId!.Value).Select(g => (Id: g.Key, Name: g.First().Scorer ?? "?", N: g.Count()))
+            .OrderByDescending(x => x.N).ThenBy(x => x.Name, StringComparer.Ordinal).Take(3).ToList();
+        var lk = league is null ? null : LeagueK();
+        <aside class="lx-side">
+            <section class="lx-box">
+                <h2>Sân nhà · Sân khách <small>@(h.P + a.P > 0 ? $"{h.Gf + a.Gf} bàn thắng" : "mùa này")</small></h2>
+                <div class="ha">
+                    @foreach (var (lbl, r, n) in new[] { ("Sân nhà", h, hf.Count), ("Sân khách", a, af.Count) })
+                    {
+                        <div class="row">
+                            <span>@lbl</span>
+                            <span class="bar">
+                                @if (r.P > 0)
+                                {
+                                    <i class="w" style="width:@(Share(r.W, r.P))%"></i><i class="d" style="width:@(Share(r.D, r.P))%"></i><i class="l" style="width:@(Share(r.L, r.P))%"></i>
+                                }
+                            </span>
+                            <b>@(r.P > 0 ? $"{r.W}-{r.D}-{r.L}" : $"{n} trận")</b>
+                        </div>
+                    }
+                </div>
+            </section>
+            <section class="lx-box">
+                <h2>Ghi bàn cho đội</h2>
+                @if (top.Count > 0)
+                {
+                    <div class="sc">
+                        @for (var i = 0; i < top.Count; i++)
+                        {
+                            var x = top[i];
+                            <a href="@season.Url($"cau-thu/{x.Id}")"><span class="no">@(i + 1)</span><span class="nm">@x.Name</span><span class="v">@x.N<small>bàn</small></span></a>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="lx-empty"><span class="ms">sports_soccer</span>Người ghi bàn của đội sẽ hiện ở đây sau trận đầu tiên.</p>
+                }
+            </section>
+            @if (league is not null && lk is int k)
+            {
+                <section class="lx-box">
+                    <h2>@league.Name · khung @k <small>@Fmt.Round(byEdition[league.Id], k)</small></h2>
+                    <div class="mini">
+                        @foreach (var f in byEdition[league.Id].Where(f => f.Matchday == k))
+                        {
+                            <a href="@season.Url($"tran/{f.Id}")" class="@(f.Home == me || f.Away == me ? "my" : "")">
+                                <span class="ho">@Short(f.Home)</span><Crest Name="@Name(f.Home)" Logo="@season.Logo(f.Home)" />
+                                <em>@(f is { Status: FixtureStatus.Played, HomeGoals: { } hg, AwayGoals: { } ag } ? $"{hg}–{ag}" : "vs")</em>
+                                <Crest Name="@Name(f.Away)" Logo="@season.Logo(f.Away)" /><span>@Short(f.Away)</span>
+                            </a>
+                        }
+                    </div>
+                    <button type="button" class="more" @onclick="() => GoDay(k)">Xem cả khung @k<span class="ms">chevron_right</span></button>
+                </section>
+            }
+        </aside>
+    };
+
+    // ----- Toàn bộ lịch -----
+    List<DayGroup> DayGroups()
+    {
+        var me = season!.HumanClubId;
+        var mineIds = mineEds.Select(e => e.Id).ToHashSet();
+        return [.. fixtures.Where(f => f.Matchday == day).GroupBy(f => f.EditionId)
+            .Select(g => new DayGroup(g.Key ?? Guid.Empty, g.Key is { } id ? edById.GetValueOrDefault(id) : null,
+                [.. g.OrderByDescending(f => f.Home == me || f.Away == me)], g.Any(f => f.Home == me || f.Away == me) || g.Key is { } k && mineIds.Contains(k)))
+            .OrderByDescending(x => x.Mine).ThenBy(x => x.E is null ? -1 : editions.IndexOf(x.E))];
+    }
+
+    RenderFragment DayView() => __builder =>
+    {
+        var me = season!.HumanClubId;
+        var dmd = matchdays.FirstOrDefault(m => m.Number == day);
+        if (dmd is null)
+        {
+            <p class="lx-empty"><span class="ms">event_busy</span>Mùa này chưa có lịch.</p>
+            return;
+        }
+        var kind = kinds.GetValueOrDefault(day);
+        var groups = DayGroups();
+        var isOpen = open ?? [.. groups.Where(g => g.Mine).Select(g => g.Key)];
+        var myF = myByK.GetValueOrDefault(day);
+        var (stCls, stTxt) = dmd.Status switch
+        {
+            MatchdayStatus.Settled or MatchdayStatus.Completed => ("done", "Đã xong"),
+            MatchdayStatus.Playing => ("live", "Đang đá"),
+            MatchdayStatus.Planned => ("", "Sắp đá"),
+            _ => ("", Fmt.Status(dmd.Status)),
+        };
+        var atFirst = day == matchdays[0].Number;
+        var atLast = day == matchdays[^1].Number;
+        <div class="lx-days">
+            <button type="button" class="nav" disabled="@atFirst" aria-label="Khung trước" @onclick="() => Step(-1)"><span class="ms">chevron_left</span></button>
+            <div class="rail">
+                @foreach (var m in matchdays)
+                {
+                    var k = m.Number;
+                    var kk = kinds.GetValueOrDefault(k);
+                    var st = m.Status is MatchdayStatus.Settled or MatchdayStatus.Completed ? " done" : m.Status == MatchdayStatus.Playing ? " live" : "";
+                    var mineHere = myByK.ContainsKey(k);
+                    var label = $"Khung {k}, {AdminText.SlotKind(m.Stage, m.Leg)}{(mineHere ? ", có trận của bạn" : "")}";
+                    <button type="button" class="@($"dy {kk.ToString().ToLowerInvariant()}{(mineHere ? " me" : "")}{st}")" data-k="@k" aria-current="@B(k == day)" aria-label="@label"
+                            @onclick="() => { day = k; open = null; }">
+                        <b>@k</b>
+                        <small>@if (kk == Kind.Eu) { <span class="ms">public</span><text>C.Âu</text> } else if (kk == Kind.Cup) { <span class="ms">emoji_events</span><text>Cúp</text> }</small>
+                    </button>
+                }
+            </div>
+            <button type="button" class="nav" disabled="@atLast" aria-label="Khung sau" @onclick="() => Step(1)"><span class="ms">chevron_right</span></button>
+        </div>
+        <div class="lx-dayhd">
+            <h2>Khung @day<small> /@matchdays.Count</small></h2>
+            <span class="chip @stCls">@stTxt</span>
+            <span class="chip">@AdminText.SlotKind(dmd.Stage, dmd.Leg)</span>
+            <span class="chip">@(groups.Count == 0 ? "Chưa có cặp đấu" : $"{groups.Sum(g => g.Fx.Count)} trận · {groups.Count} giải")</span>
+            @if (groups.Count > 1)
+            {
+                <span class="tools"><button type="button" @onclick="() => open = [.. groups.Select(g => g.Key)]"><span class="ms">unfold_more</span>Mở tất cả</button></span>
+            }
+        </div>
+        @if (myF is not null)
+        {
+            var r = ResOf(myF);
+            var home = myF.Home == me;
+            var k = myF.Matchday;
+            var opp = Opp(myF);
+            <button type="button" class="mymatch" @onclick="() => GoMine(k)">
+                <span class="lbl">Trận của bạn</span>
+                <span class="who"><span class="ven @(home ? "h" : "a")">@(home ? "Nhà" : "Khách")</span><Crest Name="@Name(opp)" Logo="@season.Logo(opp)" /><span class="tn">@Name(opp)</span>@if (r is not null) { @ResBadge(r) }</span>
+                <span class="ms">chevron_right</span>
+            </button>
+        }
+        @if (groups.Count == 0)
+        {
+            var ko = dmd.Stage is not (null or FixtureStage.League or FixtureStage.LeaguePhase);
+            var links = ko ? mineEds.Where(e => e.Type == (kind == Kind.Eu ? CompetitionType.ContinentalCup : CompetitionType.DomesticCup)).ToList() : new List<EditionView>();
+            var wait = tbds.FirstOrDefault(t => t.K == day);
+            <div class="lx-emptyday">
+                <b>@(ko ? $"{AdminText.SlotKind(dmd.Stage, dmd.Leg)}: chưa có cặp đấu" : "Khung này không có trận")</b>
+                @if (ko) { <p>@(wait?.Sub ?? "Cặp đấu được tạo khi vòng trước đá xong. Xem nhánh đấu để biết ai đang còn trong giải.")</p> }
+                @foreach (var e in links)
+                {
+                    <a class="cx-btn ghost sm" href="@season.Url($"giai/{e.CompetitionId}?tab=nhanh")"><span class="ms">account_tree</span>Nhánh đấu @e.Name</a>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="lx-groups">
+                @foreach (var g in groups)
+                {
+                    var on = isOpen.Contains(g.Key);
+                    var key = g.Key;
+                    var name = g.E?.Name ?? season.Name;
+                    var done = g.Fx.Count(f => f.Status == FixtureStatus.Played);
+                    var sub = new List<string>();
+                    if (g.E is { Type: not CompetitionType.ContinentalCup, Country: { } country }) sub.Add(country);
+                    if (g.E is { Type: CompetitionType.DomesticLeague, Tier: { } tier }) sub.Add($"hạng {tier}");
+                    sub.Add(Fmt.Round(byEdition[g.Fx[0].EditionId], day));
+                    if (g.Mine) sub.Add("giải của bạn");
+                    <section class="@($"grp{(g.Mine ? " me" : "")}")">
+                        <button type="button" aria-expanded="@B(on)" @onclick="() => Toggle(key, on)">
+                            <span class="lg"><Crest Name="@name" Logo="@g.E?.Logo" /></span>
+                            <span class="nm"><b>@name</b><small>@string.Join(" · ", sub.Where(x => x.Length > 0))</small></span>
+                            <span class="prog">@($"{done}/{g.Fx.Count}")</span><span class="ms chev">expand_more</span>
+                        </button>
+                        @if (on)
+                        {
+                            <ul>
+                                @foreach (var f in g.Fx)
+                                {
+                                    var mineRow = f.Home == me || f.Away == me;
+                                    var sc = f is { Status: FixtureStatus.Played, HomeGoals: { } hg, AwayGoals: { } ag } ? (H: hg, A: ag) : ((int H, int A)?)null;
+                                    var hp = f.HomePenalties;
+                                    var ap = f.AwayPenalties;
+                                    var homeLost = sc is { } x && (x.H < x.A || x.H == x.A && hp < ap);
+                                    var awayLost = sc is { } y && (y.A < y.H || y.H == y.A && ap < hp);
+                                    <li>
+                                        <a class="@($"m{(mineRow ? " my" : "")}")" href="@season.Url($"tran/{f.Id}")">
+                                            <span class="@($"tn ho{(homeLost ? " lose" : "")}")">@Name(f.Home)</span>
+                                            <Crest Name="@Name(f.Home)" Logo="@season.Logo(f.Home)" />
+                                            @if (sc is { } s)
+                                            {
+                                                <span class="s">@($"{s.H}–{s.A}")@if (hp is { } pa && ap is { } pb) { <small>@($"pen {pa}–{pb}")</small> }</span>
+                                            }
+                                            else if (f.Status == FixtureStatus.Playing) { <span class="s live">Đang đá</span> }
+                                            else { <span class="s pend">vs</span> }
+                                            <Crest Name="@Name(f.Away)" Logo="@season.Logo(f.Away)" />
+                                            <span class="@($"tn{(awayLost ? " lose" : "")}")">@Name(f.Away)</span>
+                                        </a>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                }
+            </div>
+        }
+    };
 }
