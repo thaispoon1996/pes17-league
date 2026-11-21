@@ -99,10 +99,10 @@ public sealed class TacticsService(ClubsDbContext db, TimeProvider clock)
                 attrs.TryGetValue(r.PlayerId, out var a) ? a : new Dictionary<string, int>())).ToList());
     }
 
-    /// <summary>Vị trí tự do dạng cặp (null nếu chưa chỉnh).</summary>
     /// <summary>Mã vai trò ô 1–10 đã chọn (career); null = theo sơ đồ.</summary>
     public static IReadOnlyList<int>? RolesOf(ClubTactics? t) => t?.Roles is { Length: 10 } r && t.Positions is { Length: 20 } ? r : null;
 
+    /// <summary>Vị trí tự do dạng cặp (null nếu chưa chỉnh).</summary>
     public static IReadOnlyList<(int X, int Y)>? PositionsOf(ClubTactics? t) =>
         t?.Positions is { Length: 20 } p ? [.. Enumerable.Range(0, 10).Select(i => (p[2 * i], p[2 * i + 1]))] : null;
 

@@ -26,6 +26,7 @@ var authOff = b.Configuration["PES17_WEB_AUTH"] == "off";   // PO trải nghiệ
 b.Services.AddRazorComponents().AddInteractiveServerComponents();
 b.Services.AddDbContextFactory<ClubsDbContext>(o => o.UseNpgsql(cs, x => x.MigrationsHistoryTable("__EFMigrationsHistory", ClubsDbContext.Schema)));
 b.Services.AddSingleton<IOptionFileStore>(new FileSystemOptionFileStore(storeDir));
+b.Services.AddSingleton(new Pes17GameFormations(Path.GetFullPath(Path.Combine(storeDir, "..", "pesdb", "formations.json"))));   // sơ đồ game PES17 (PO 21/11)
 b.Services.AddSingleton(TimeProvider.System);
 b.Services.AddSingleton(new MatchJobOptions(
     Path.GetFullPath(b.Configuration["Match:Script"]!), Path.Combine(storeDir, "..", "run"), b.Configuration["Match:StreamUrl"]!,

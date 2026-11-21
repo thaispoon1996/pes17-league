@@ -9,6 +9,7 @@
 @inject TimeProvider Clock
 @inject LeagueQueries Q
 @inject IOptionFileStore Store
+@inject Pes17GameFormations GameForms
 @inject IJSRuntime JS
 
 <div class="board @(Locked ? "locked" : "")">
@@ -63,7 +64,7 @@
         <div class="role-bar" role="group" aria-label="Vai trò của @rp.Name">
             <span>Vai trò <b>@Short(rp.Name)</b><small>@rp.Position · @rp.Overall</small></span>
             <div>
-                @foreach (var r in FormationRoles.Pickable)
+                @foreach (var r in FormationRoles.Pickable.Where(r => r is not ("LWB" or "RWB")))
                 {
                     <button type="button" class="@(r == cur ? "on" : null) @Fit(rp.Position, r)" aria-pressed="@(r == cur ? "true" : "false")" @onclick="() => SetRole(rp, r)">@RoleLabel(r)</button>
                 }
@@ -169,7 +170,7 @@
         preset = TacticPresets.Match(tactics)?.Key;
         settings = [tactics?.BackLine, tactics?.Pressure, tactics?.OffsideTrap, tactics?.CounterAttack];
         strategies = TacticsService.StrategiesOf(tactics) ?? new int?[4];
-        patchLayout ??= await Q.PatchLayoutAsync(Season.Id, ClubId, Store);
+        patchLayout ??= await Q.PatchLayoutAsync(Season.Id, ClubId, Store, GameForms);
         patchName ??= patchLayout is null ? null : Formations.Names.FirstOrDefault(n => Formations.Layout(n).Positions.SequenceEqual(patchLayout.Positions));
         var baseLayout = formation is null ? patchLayout ?? Formations.Layout(Formations.Names[0]) : Formations.Layout(formation);
         var positions = TacticsService.PositionsOf(tactics);
@@ -262,7 +263,7 @@
             {
                 // Career: vai trò ô vừa kéo đổi theo vùng thả; các ô khác giữ mã vai trò hiện có.
                 var codes = SlotCodes();
-                codes[p.Slot - 1] = FormationRoles.Code(FormationRoles.At(x, y), y);
+                codes[p.Slot - 1] = FormationRoles.Code(Pes17Role(FormationRoles.At(x, y)), y);
                 await SaveAsync(s => s.SetPositionsAsync(ClubId, positions, roles: codes));
             }
         }
@@ -285,6 +286,9 @@
         picked = null;
         await SaveAsync(s => s.SetPositionsAsync(ClubId, positions, roles: codes));
     }
+
+    /// <summary>Career = PES17: không có LWB/RWB (game chỉ có LB/RB) → vùng biên phòng ngự sâu tính là hậu vệ biên.</summary>
+    static string Pes17Role(string role) => role switch { "LWB" => "LB", "RWB" => "RB", _ => role };
 
     /// <summary>Career hiện tên vai trò kiểu PES 17 (DMF, CMF…); giải online giữ nhãn cũ.</summary>
     string RoleLabel(string role) => Shell is null ? role : role switch

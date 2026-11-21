@@ -24,7 +24,7 @@ public sealed class Pes17RoundService(ClubsDbContext db, IOptionFileStore store,
     public async Task<OptionFileBuild> SnapshotAsync(Guid patchVersionId, Guid? matchdayId, CancellationToken ct = default)
     {
         var squads = await new Pes17SquadExportService(db).ExportAsync(patchVersionId, ct);
-        var json = JsonSerializer.Serialize(squads);
+        var json = squads.ToJson();
         var data = Encoding.UTF8.GetBytes(json);
         var build = new OptionFileBuild
         {

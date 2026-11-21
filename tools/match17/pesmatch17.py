@@ -91,7 +91,7 @@ def is_ask(im: Image.Image) -> bool:
 
 # ---------- đi menu ----------
 
-def to_team_select(both: bool = False) -> None:
+def to_team_select(both: bool = False, away: bool = False) -> None:
     """Tới danh sách giải bên nhà của màn Select Team, qua màn chọn tay cầm đúng 1 lần (xếp P1/P2, xem arrange_pads).
     Chỉ bấm A khi không nhận ra màn (tiêu đề, hộp thoại mạng, menu chính)."""
     end = time.monotonic() + BOOT_TIMEOUT
@@ -108,7 +108,7 @@ def to_team_select(both: bool = False) -> None:
             nav.pad("B w:3")
             continue
         if kind is None and pad_screen(im) is not None:
-            arrange_pads(both)
+            arrange_pads(both, away)
             arranged = True
             continue
         if kind == "teams" or header(im, "away")[0] or kickoff_screen(im):
@@ -152,24 +152,55 @@ def pad_screen(im: Image.Image) -> list[int | None] | None:
     return rows
 
 
-def arrange_pads(both: bool) -> None:
-    """P1 (index 0) đứng HOME; both: P2 (index 1) đứng AWAY; trận khác: không ai đứng AWAY (P1 chọn cả 2 đội). Rồi A."""
+def arrange_pads(both: bool, away: bool = False) -> None:
+    """P1 (index 0) đứng HOME; both: P2 (index 1) đứng AWAY; trận khác: không ai đứng AWAY (P1 chọn cả 2 đội). Rồi A.
+    away (PO 21/11: người chơi đá đội khách — trước đây P1 luôn HOME nên cầm nhầm đội nhà): xem arrange_away."""
+    if away and not both:
+        return arrange_away()
     for _ in range(5):
         rows = pad_screen(nav.shot("m17_pads"))
         if rows is None:
             raise NavError("nav_pads: mất màn chọn tay cầm")
-        home, away = rows.count(0), rows.count(2)
-        if home >= 1 and away == (1 if both else 0):
+        home, away_n = rows.count(0), rows.count(2)
+        if home >= 1 and away_n == (1 if both else 0):
             log(f"tay cầm: {rows}")
             nav.pad("A w:3")
             return
-        if both and away == 0:
+        if both and away_n == 0:
             nav.pad("Right w:1", 1)
-        elif away > (1 if both else 0):
+        elif away_n > (1 if both else 0):
             nav.pad("Left w:1", 1)
         if home == 0:
             nav.pad("Left w:1", 0)
     raise NavError(f"nav_pads: không xếp được tay cầm {rows}")
+
+
+# Dò 21/11: dòng 0 = P1 (slot 0, mỗi lần bấm nhảy hẳn sang HOME/AWAY); dòng 1 đi theo phím của slot 0 từng nấc
+# ([2,2] -L→ [0,1] -L→ [0,0] -R→ [2,1]); dòng 2 = slot 1; dòng 3 = slot 2.
+ROW_SLOT = {0: 0, 2: 1, 3: 2}
+
+
+def arrange_away() -> None:
+    """P1 đứng AWAY, không tay cầm nào đứng HOME (máy đá đội nhà), tay cầm khác về giữa. Rồi A."""
+    rows: list | None = None
+    for _ in range(8):
+        rows = pad_screen(nav.shot("m17_pads"))
+        if rows is None:
+            raise NavError("nav_pads: mất màn chọn tay cầm")
+        if rows[0] == 2 and all(c in (None, 1) for c in rows[1:]):
+            log(f"tay cầm (P1 đội khách): {rows}")
+            nav.pad("A w:3")
+            return
+        if rows[1] == 2:            # dòng 1 kẹt AWAY: 2 lần Left kéo cả P1 lẫn dòng 1 về HOME, vòng sau Right → [2, 1]
+            nav.pad("Left w:2.5 Left w:2.5", 0)
+            continue
+        if rows[0] != 2 or rows[1] == 0:
+            nav.pad("Right w:2.5", 0)
+            continue
+        for row, col in enumerate(rows[2:], 2):
+            if col in (0, 2) and row in ROW_SLOT:
+                nav.pad(("Right" if col == 0 else "Left") + " w:2.5", ROW_SLOT[row])
+    raise NavError(f"nav_pads: không xếp được tay cầm P1 đội khách {rows}")
 
 
 def pick(home: int, away: int, both: bool = False) -> None:

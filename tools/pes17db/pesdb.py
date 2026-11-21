@@ -24,6 +24,9 @@ công khai. Chắc chắn (đã kiểm chéo đội hình Arsenal):
   apply <thư-mục> <squads.json> <ra.bin>
                                              — dựng lại dòng CLB theo đội hình DB ({"mã đội": [[mã cầu thủ, số áo], ...]} theo thứ tự
                                                ô; Pes17League.Cli export-pes17-squads). Đội tuyển + CLB không có trong json giữ nguyên.
+                                               Khoá "_formations": {"mã đội": [[vai trò, X, Y] × 11]} (ô 0 = GK) → ghi thêm
+                                               TacticsFormation.bin cạnh <ra.bin>; cầu thủ thứ k đứng ô k (PO 21/11).
+  formations <thư-mục> <ra.json>             — sơ đồ game của từng đội ({"mã đội": [[vai trò, X, Y] × 11]}) → web làm sơ đồ "Theo game"
 """
 from __future__ import annotations
 
@@ -33,7 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cpk import Cpk
 
-FILES = ("Player", "Team", "PlayerAssignment", "Competition", "CompetitionEntry", "Coach")
+FILES = ("Player", "Team", "PlayerAssignment", "Competition", "CompetitionEntry", "Coach", "Tactics", "TacticsFormation")
 PLAYER_SIZE, TEAM_SIZE, ASSIGN_SIZE = 192, 1400, 16
 
 
@@ -252,6 +255,65 @@ def apply(raw: bytes, squads: dict[int, list[tuple[int, int]]], national: set[in
     return b"".join(out), stats
 
 
+
+# ---------- sơ đồ đội (dò 21/11/2026 trên HANO V6, kiểm bằng màn Game Plan) ----------
+# Tactics 12 byte: u32 đội, u16 mã chiến thuật, 6 byte thông số (chưa giải). Đội có 2+ dòng; dòng ĐẦU có trong TacticsFormation
+#   là chiến thuật game dùng (Aston Villa 107 → 748 = 4-2-1-3 như màn Game Plan). Mỗi mã chỉ thuộc 1 đội.
+# TacticsFormation 12 byte: u32 vai trò (POSITIONS: 0 GK … 12 CF), u16 mã chiến thuật, u8 X (sâu: GK 3 … CF 43), u8 Y (ngang: trái 15 … phải 89),
+#   u32 ô = phương án*16 + ô (3 phương án × 11 ô).
+# Game xếp cầu thủ thứ k (PlayerAssignment.order) vào ô k (kiểm 21/11 trên Game Plan; danh sách màn Kickoff thì sắp theo vai trò).
+TF_SIZE = 12
+
+
+def primary_tactics(tactics_raw: bytes, tf_raw: bytes) -> dict[int, int]:
+    """đội → mã chiến thuật game dùng."""
+    ids = {struct.unpack_from("<H", tf_raw, i + 4)[0] for i in range(0, len(tf_raw), TF_SIZE)}
+    out: dict[int, int] = {}
+    for i in range(0, len(tactics_raw) - 11, 12):
+        team, tid = struct.unpack_from("<IH", tactics_raw, i)
+        if tid in ids and team not in out:
+            out[team] = tid
+    return out
+
+
+def formations(tactics_raw: bytes, tf_raw: bytes) -> dict[int, list[list[int]]]:
+    """đội → 11 ô [vai trò, X, Y] (phương án 0, theo số ô)."""
+    prim = primary_tactics(tactics_raw, tf_raw)
+    want = {tid: team for team, tid in prim.items()}
+    out: dict[int, list] = {}
+    for i in range(0, len(tf_raw), TF_SIZE):
+        role, tid, x, y, slot = struct.unpack_from("<IHBBI", tf_raw, i)
+        if tid in want and slot < 11:
+            out.setdefault(want[tid], [None] * 11)[slot] = [role, x, y]
+    return {t: f for t, f in out.items() if None not in f}
+
+
+def apply_formations(tactics_raw: bytes, tf_raw: bytes, forms: dict[int, list[list[int]]]) -> tuple[bytes, list[int]]:
+    """Ghi sơ đồ (cả 3 phương án) vào chiến thuật chính của từng đội. Trả (TacticsFormation mới, đội bỏ qua vì không có chiến thuật)."""
+    prim = primary_tactics(tactics_raw, tf_raw)
+    for t, f in forms.items():
+        if len(f) != 11 or f[0][0] != 0 or any(r[0] == 0 for r in f[1:]) or any(not 0 < r[0] < len(POSITIONS) for r in f[1:]):
+            raise SystemExit(f"đội {t}: sơ đồ sai (cần 11 ô, ô 0 là GK, ô khác 1..12)")
+        if any(not (1 <= x <= 60 and 1 <= y <= 103) for _, x, y in f):
+            raise SystemExit(f"đội {t}: toạ độ ngoài sân")
+    by_tid = {prim[t]: f for t, f in forms.items() if t in prim}
+    b = bytearray(tf_raw)
+    hit: dict[int, int] = {}
+    for i in range(0, len(b), TF_SIZE):
+        tid = struct.unpack_from("<H", b, i + 4)[0]
+        f = by_tid.get(tid)
+        if f is None:
+            continue
+        slot = struct.unpack_from("<I", b, i + 8)[0] & 15
+        if slot < 11:
+            role, x, y = f[slot]
+            struct.pack_into("<I", b, i, role)
+            b[i + 6], b[i + 7] = x, y
+            hit[tid] = hit.get(tid, 0) + 1
+    bad = [t for t in forms if t not in prim or hit.get(prim[t]) != 33]
+    return bytes(b), bad
+
+
 def load(d: Path) -> dict:
     return {
         "players": players((d / "Player.raw").read_bytes()),
@@ -265,7 +327,9 @@ def main(argv: list[str]) -> int:
         c, out = Cpk(argv[1]), Path(argv[2])
         out.mkdir(parents=True, exist_ok=True)
         for f in FILES:
-            raw = wesys(c.read(f"common/etc/pesdb/{f}.bin"))
+            blob = c.read(f"common/etc/pesdb/{f}.bin")
+            (out / f"{f}.bin").write_bytes(blob)
+            raw = wesys(blob)
             (out / f"{f}.raw").write_bytes(raw)
             print(f, len(raw))
         return 0
@@ -313,12 +377,30 @@ def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[0] == "apply":
         d = Path(argv[1])
         nat = {t["id"] for t in teams((d / "Team.raw").read_bytes()) if t["national"]}
-        squads = {int(k): [(int(p), int(n)) for p, n in v] for k, v in json.loads(Path(argv[2]).read_text()).items()}
+        doc = json.loads(Path(argv[2]).read_text())
+        forms = {int(k): v for k, v in (doc.pop("_formations", None) or {}).items()}
+        squads = {int(k): [(int(p), int(n)) for p, n in v] for k, v in doc.items()}
         raw, info = apply((d / "PlayerAssignment.raw").read_bytes(), squads, nat)
         out = pack_wesys(raw, (d / "PlayerAssignment.bin").read_bytes()[:8])
         assert wesys(out) == raw
         Path(argv[3]).write_bytes(out)
+        tf_out = Path(argv[3]).with_name("TacticsFormation.bin")
+        tf_out.unlink(missing_ok=True)
+        if forms:   # sơ đồ web → TacticsFormation.bin cạnh PlayerAssignment.bin (deploy.sh đóng gói nếu có)
+            tf, bad = apply_formations((d / "Tactics.raw").read_bytes(), (d / "TacticsFormation.raw").read_bytes(), forms)
+            packed = pack_wesys(tf, (d / "TacticsFormation.bin").read_bytes()[:8])
+            assert wesys(packed) == tf
+            tf_out.write_bytes(packed)
+            info["formations"] = len(forms) - len(bad)
+            if bad:
+                info["noTactics"] = bad[:10]
         print(info, len(out))
+        return 0
+    if len(argv) == 3 and argv[0] == "formations":
+        d = Path(argv[1])
+        f = formations((d / "Tactics.raw").read_bytes(), (d / "TacticsFormation.raw").read_bytes())
+        Path(argv[2]).write_text(json.dumps({str(k): v for k, v in sorted(f.items())}))
+        print(len(f), "đội có sơ đồ")
         return 0
     print(__doc__)
     return 1

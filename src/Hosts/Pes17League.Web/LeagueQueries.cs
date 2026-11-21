@@ -273,15 +273,16 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int), FormationLayout> PatchLayouts = new();
 
     /// <summary>Bố cục đội hình gốc của CLB trong OF patch mùa này (chiến thuật "Theo patch"); null = CLB không có trong patch.</summary>
-    public async Task<FormationLayout?> PatchLayoutAsync(Guid seasonId, Guid clubId, IOptionFileStore store)
+    public async Task<FormationLayout?> PatchLayoutAsync(Guid seasonId, Guid clubId, IOptionFileStore store, Pes17GameFormations? game = null)
     {
         await using var db = await dbs.CreateDbContextAsync();
         var patchId = await db.Seasons.Where(s => s.Id == seasonId).Select(s => s.PatchVersionId).SingleAsync();
         var patch = await db.PatchVersions.Where(p => p.Id == patchId).Select(p => new { p.BaseOptionFilePath, p.Name }).SingleAsync();
-        if (Pes17RoundService.IsPes17(patch.Name)) return null;   // PES17 (18/11): file gốc không phải option file PES6 → chưa có sơ đồ gốc, dùng sơ đồ mặc định
         var path = patch.BaseOptionFilePath;
         var index = await db.ClubPesMappings.Where(m => m.PatchVersionId == patchId && m.ClubId == clubId).Select(m => (int?)m.PesClubIndex).SingleOrDefaultAsync();
         if (index is not { } i) return null;
+        // PES17 (PO 21/11): sơ đồ game của đội (pesdb/formations.json) — trước đây null → sơ đồ mặc định, lệch với game
+        if (Pes17RoundService.IsPes17(patch.Name)) return game?.Of(i);
         if (PatchLayouts.TryGetValue((path, i), out var hit)) return hit;
         return PatchLayouts[(path, i)] = OptionFileCodec.Decode(await store.ReadAsync(path)).GetFormationLayout(i);
     }

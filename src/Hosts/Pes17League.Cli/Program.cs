@@ -160,8 +160,8 @@ async Task ExportPes17SquadsAsync(string outPath)
     await using var db = Db();
     var patch = await db.PatchVersions.Where(p => p.Name.StartsWith("PES17")).OrderByDescending(p => p.ImportedAt).FirstAsync();
     var squads = await new Pes17SquadExportService(db).ExportAsync(patch.Id);
-    await File.WriteAllTextAsync(outPath, System.Text.Json.JsonSerializer.Serialize(squads));
-    Console.WriteLine($"{patch.Name}: {squads.Count} CLB, {squads.Values.Sum(s => s.Count)} cầu thủ → {outPath}");
+    await File.WriteAllTextAsync(outPath, squads.ToJson());
+    Console.WriteLine($"{patch.Name}: {squads.Squads.Count} CLB, {squads.Squads.Values.Sum(s => s.Count)} cầu thủ, {squads.Formations.Count} sơ đồ → {outPath}");
 }
 
 async Task<Season> OpenSeasonAsync(ClubsDbContext db) =>
