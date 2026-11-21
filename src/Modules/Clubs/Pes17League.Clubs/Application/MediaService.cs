@@ -7,7 +7,7 @@ public enum InboxKind { Task, Warning, Info }
 
 public sealed record InboxItem(InboxKind Kind, string Title, string Body, string? Link);
 
-public sealed record PressPending(Guid FixtureId, string Opponent, int GoalsFor, int GoalsAgainst);
+public sealed record PressPending(Guid FixtureId, string Opponent, int GoalsFor, int GoalsAgainst, Guid OpponentId = default);
 
 public sealed record MediaDesk(IReadOnlyList<InboxItem> Inbox, PressPending? Press, string FanMood, int FanPoints, int FanGames,
     IReadOnlyList<ConditionRow> Squad, IReadOnlySet<Guid> TalkedThisRound);
@@ -62,7 +62,10 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
 
         PressPending? press = null;
         if (played.FirstOrDefault() is { } last && !await db.PressConferences.AnyAsync(p => p.FixtureId == last.Id && p.ClubId == clubId, ct))
-            press = new(last.Id, names.GetValueOrDefault(last.HomeClubId == clubId ? last.AwayClubId : last.HomeClubId, "?"), For(last), Against(last));
+        {
+            var opp = last.HomeClubId == clubId ? last.AwayClubId : last.HomeClubId;
+            press = new(last.Id, names.GetValueOrDefault(opp, "?"), For(last), Against(last), opp);
+        }
         return (press, points, played.Count);
     }
 
@@ -135,12 +138,7 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
         if (f?.HomeGoals is null || f.AwayGoals is null) return "Trận chưa có kết quả.";
         if (await db.PressConferences.AnyAsync(p => p.FixtureId == fixtureId && p.ClubId == clubId, ct)) return "Đã họp báo trận này.";
         var diff = (f.HomeGoals.Value - f.AwayGoals.Value) * (f.HomeClubId == clubId ? 1 : -1);
-        var (morale, fans) = MediaRules.Press(tone, diff);
-        if (await CoachHooks.ForClubAsync(db, clubId, ct) is { } hlv)   // HLV career: Con người (tinh thần), Truyền thông (CĐV)
-        {
-            if (morale > 0) morale = (int)Math.Round(morale * CoachRules.PeopleFactor(CoachRules.Effective(hlv, CoachSkill.People)), MidpointRounding.AwayFromZero);
-            if (fans > 0) fans = (int)Math.Round(fans * CoachRules.MediaFactor(CoachRules.Effective(hlv, CoachSkill.Media), hlv.Trait), MidpointRounding.AwayFromZero);
-        }
+        var (morale, fans) = PressEffect(tone, diff, await CoachHooks.ForClubAsync(db, clubId, ct));
         var ids = await db.SquadMemberships.Where(m => m.ClubId == clubId && m.LeftAt == null).Select(m => m.PlayerId).ToListAsync(ct);
         var cond = await db.PlayerConditions.Where(c => ids.Contains(c.PlayerId)).ToDictionaryAsync(c => c.PlayerId, ct);
         var now = clock.GetUtcNow();
@@ -155,6 +153,19 @@ public sealed class MediaService(ClubsDbContext db, TimeProvider clock)
         db.PressConferences.Add(new PressConference { FixtureId = fixtureId, ClubId = clubId, Tone = tone, MoraleDelta = morale, At = now });
         await db.SaveChangesAsync(ct);
         return null;
+    }
+
+    /// <summary>Tác động họp báo thật (tinh thần cả đội, CĐV ‰): luật MediaRules.Press + HLV career (Con người → tinh thần, Truyền thông → CĐV; chỉ phần dương).
+    /// Dùng chung cho PressAsync và phần xem trước trên trang Hộp thư.</summary>
+    public static (int Morale, int FansPermille) PressEffect(PressTone tone, int goalDiff, Coach? hlv)
+    {
+        var (morale, fans) = MediaRules.Press(tone, goalDiff);
+        if (hlv is not null)
+        {
+            if (morale > 0) morale = (int)Math.Round(morale * CoachRules.PeopleFactor(CoachRules.Effective(hlv, CoachSkill.People)), MidpointRounding.AwayFromZero);
+            if (fans > 0) fans = (int)Math.Round(fans * CoachRules.MediaFactor(CoachRules.Effective(hlv, CoachSkill.Media), hlv.Trait), MidpointRounding.AwayFromZero);
+        }
+        return (morale, fans);
     }
 
     /// <summary>Nói chuyện riêng: mỗi cầu thủ 1 lần/vòng. Trả về (lỗi, độ thay đổi tinh thần).</summary>

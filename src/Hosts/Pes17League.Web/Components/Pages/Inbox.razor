@@ -5,10 +5,159 @@
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject TimeProvider Clock
 
-@* FM đợt 9 (PO 12/11 duyệt mặc định): hộp thư việc cần làm, họp báo sau trận, nói chuyện cầu thủ, tâm trạng CĐV. Luật MediaRules. *@
+@* FM đợt 9 (PO 12/11 duyệt mặc định): hộp thư việc cần làm, họp báo sau trận, nói chuyện cầu thủ, tâm trạng CĐV. Luật MediaRules.
+   Skin career (PO 21/11, làm thẳng không mockup): bàn việc trước trận — họp báo xem trước tác động thật (MediaService.PressEffect),
+   việc / cảnh báo / tin tách nhóm, nói chuyện cầu thủ chuyển sang Phòng thay đồ. Giải online giữ markup cũ. *@
 @if (season is null) { return; }
 @if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }   @* PO 17/11: chưa có CLB → chỉ lời nhắc, ẩn tab Quản lý *@
-@{ var me = season.HumanClubId; }
+@if (Shell?.P is { } cp && desk is not null)
+{
+    var tasks = desk.Inbox.Where(i => i.Kind == InboxKind.Task).ToList();
+    var todo = tasks.Where(i => !(desk.Press is not null && IsPress(i))).ToList();
+    var warns = desk.Inbox.Where(i => i.Kind == InboxKind.Warning).ToList();
+    var news = desk.Inbox.Where(i => i.Kind == InboxKind.Info).ToList();
+    var avg = desk.Squad.Count == 0 ? 0 : (int)Math.Round(desk.Squad.Average(s => s.Morale));
+    var fanMax = desk.FanGames * 3;
+    var fanPct = fanMax == 0 ? 0 : desk.FanPoints * 100 / fanMax;
+    var waiting = desk.Squad.Where(s => s.InjuredRounds == 0 && !desk.TalkedThisRound.Contains(s.PlayerId)).OrderBy(s => s.Morale).ThenBy(s => s.Name).ToList();
+
+    <PageTitle>Việc cần làm</PageTitle>
+    <div class="ht">
+        <header class="ht-hero">
+            <div class="ht-count @(tasks.Count == 0 ? "clear" : null)" role="img" aria-label="@(tasks.Count == 0 ? "Không còn việc nào" : $"{tasks.Count} việc chờ bạn")">
+                @if (tasks.Count == 0) { <i class="ms fill" aria-hidden="true">task_alt</i> }
+                else { <b data-count="@tasks.Count" aria-hidden="true">@tasks.Count</b> }
+                <small aria-hidden="true">@(tasks.Count == 0 ? "Xong hết" : "việc chờ bạn")</small>
+            </div>
+            <div class="ht-who">
+                <h1>Việc cần làm</h1>
+                <p>@cp.ClubName · @cp.SeasonName. Việc đã xử lý sẽ tự rời khỏi danh sách.</p>
+            </div>
+            <div class="ht-gauges">
+                <div class="ht-g @(warns.Count > 0 ? "bad" : "ok")">
+                    <small>Cảnh báo</small>
+                    <b data-count="@warns.Count">@warns.Count</b>
+                    <em>@(warns.Count == 0 ? "Không có gì đáng lo" : "Xem bên dưới")</em>
+                </div>
+                <div class="ht-g fans">
+                    <small>Cổ động viên</small>
+                    <b>@desk.FanMood</b>
+                    <i class="bar" style="--w:@(fanPct)%"></i>
+                    <em>@(desk.FanGames == 0 ? "Chưa đá trận nào" : $"{desk.FanPoints}/{fanMax} điểm · {desk.FanGames} trận gần nhất")</em>
+                </div>
+                <div class="ht-g mood @Tone(avg)">
+                    <small>Tinh thần đội</small>
+                    <b><span data-count="@avg">@avg</span><sub>/100</sub></b>
+                    <i class="bar" style="--w:@(avg)%"></i>
+                </div>
+            </div>
+        </header>
+
+        @if (message is not null) { <p class="cx-msg @(messageBad ? "neg" : null)" role="status">@message</p> }
+
+        @if (desk.Press is { } pr)
+        {
+            var gd = pr.GoalsFor - pr.GoalsAgainst;
+            var (rc, rt) = Result(gd);
+            <section class="ht-press @rc" id="hop-bao" aria-label="Họp báo sau trận">
+                <div class="ht-press-top">
+                    <span class="ht-onair"><i class="ms fill" aria-hidden="true">mic</i>Họp báo sau trận</span>
+                    <span class="ht-res">@rt</span>
+                </div>
+                <div class="ht-score">
+                    <span class="side"><Crest Name="@cp.ClubName" Logo="@cp.ClubLogo" /><b>@cp.ClubName</b></span>
+                    <span class="sc" aria-label="Tỉ số @pr.GoalsFor–@pr.GoalsAgainst"><b>@pr.GoalsFor</b><i>–</i><b>@pr.GoalsAgainst</b></span>
+                    <span class="side"><Crest Name="@pr.Opponent" Logo="@season.Logo(pr.OpponentId)" /><b>@pr.Opponent</b></span>
+                </div>
+                <blockquote class="ht-q">Ông đánh giá thế nào về màn trình diễn của đội hôm nay?</blockquote>
+                <div class="ht-answers">
+                    @foreach (var (tone, label, icon) in Tones)
+                    {
+                        var (m, f) = MediaService.PressEffect(tone, gd, hlv);
+                        <button class="ht-ans" disabled="@busy" @onclick="() => Press(tone)">
+                            <i class="ms" aria-hidden="true">@icon</i>
+                            <span class="t">@label</span>
+                            <span class="fx"><em class="@Dir(m)">Tinh thần @Signed(m)</em><em class="@Dir(f)">CĐV @FansText(f)</em></span>
+                        </button>
+                    }
+                </div>
+                <p class="ht-fine">Mỗi trận họp báo một lần. @(hlv is null ? "Con số tính theo kết quả trận." : "Con số đã tính theo kết quả trận và kỹ năng của HLV.")</p>
+            </section>
+        }
+        else if (pressed is { } pd)
+        {
+            <section class="ht-press done @pd.Css" aria-label="Đã họp báo">
+                <div class="ht-press-top">
+                    <span class="ht-onair"><i class="ms fill" aria-hidden="true">mic</i>Họp báo sau trận</span>
+                    <span class="ht-res">@pd.Score với @pd.Opponent</span>
+                </div>
+                <div class="ht-said">
+                    <span class="ht-stamp"><i class="ms" aria-hidden="true">check</i>Đã trả lời</span>
+                    <b>@pd.Label</b>
+                    <span class="fx"><em class="@Dir(pd.Morale)">Tinh thần đội @Signed(pd.Morale)</em><em class="@Dir(pd.Fans)">CĐV @FansText(pd.Fans)</em></span>
+                </div>
+            </section>
+        }
+
+        @if (todo.Count > 0 || desk.Press is null)
+        {
+            <section class="ht-sec" aria-labelledby="ht-todo">
+                <div class="ht-h"><h2 id="ht-todo">Cần xử lý</h2>@if (todo.Count > 0) { <small>@todo.Count việc</small> }</div>
+                @if (todo.Count == 0)
+                {
+                    <div class="ht-clear"><i class="ms fill" aria-hidden="true">verified</i><div><b>Không còn việc nào</b><span>Bạn đã xử lý hết việc trước trận.</span></div></div>
+                }
+                else
+                {
+                    <ul class="ht-list">@foreach (var i in todo) { @Row(i) }</ul>
+                }
+            </section>
+        }
+
+        @if (warns.Count > 0)
+        {
+            <section class="ht-sec" aria-labelledby="ht-warn">
+                <div class="ht-h"><h2 id="ht-warn">Cảnh báo</h2><small>@warns.Count mục</small></div>
+                <ul class="ht-list">@foreach (var i in warns) { @Row(i) }</ul>
+            </section>
+        }
+
+        <section class="ht-sec" aria-labelledby="ht-room">
+            <div class="ht-h"><h2 id="ht-room">Phòng thay đồ</h2><small>Mỗi cầu thủ một lần mỗi vòng</small></div>
+            <a class="ht-room" href="phong-thay-do">
+                @if (waiting.Count == 0)
+                {
+                    <span class="ht-room-cap">Bạn đã nói chuyện với cả đội trong vòng này.</span>
+                }
+                else
+                {
+                    <span class="ht-room-cap"><b>@waiting.Count</b> cầu thủ chưa được nói chuyện vòng này. Tinh thần thấp nhất:</span>
+                    <span class="ht-mates">
+                        @foreach (var s in waiting.Take(3))
+                        {
+                            <span class="ht-mate @Tone(s.Morale)">
+                                <b>@s.Name</b><small>@s.Position</small>
+                                <i style="--w:@(s.Morale)%"></i><em>@s.Morale</em>
+                            </span>
+                        }
+                    </span>
+                }
+                <span class="cx-btn ghost sm"><i class="ms" aria-hidden="true">forum</i>Nói chuyện với cầu thủ</span>
+            </a>
+        </section>
+
+        @if (news.Count > 0)
+        {
+            <section class="ht-sec" aria-labelledby="ht-news">
+                <div class="ht-h"><h2 id="ht-news">Tin mới</h2></div>
+                <ul class="ht-list">@foreach (var i in news) { @Row(i) }</ul>
+            </section>
+        }
+    </div>
+}
+else
+{
+var me = season.HumanClubId;
 <div class="fm">
     <ManagerNav />
     <header class="fm-head">
@@ -84,14 +233,26 @@
     </section>
     }
 </div>
+}
 
 @code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+
+    static readonly (PressTone Tone, string Label, string Icon)[] Tones =
+        [(PressTone.Praise, "Khen ngợi các cầu thủ", "thumb_up"), (PressTone.Calm, "Điềm tĩnh, tập trung trận tới", "self_improvement"), (PressTone.Demanding, "Đòi hỏi nhiều hơn", "campaign")];
+    const int LowMorale = 35;   // như Phòng thay đồ
+
+    /// <summary>Kết quả họp báo vừa trả lời (chỉ trong phiên trang, để hiện lại tác động).</summary>
+    sealed record Pressed(string Label, int Morale, int Fans, string Opponent, string Score, string Css);
+
     SeasonInfo? season;
     MediaDesk? desk;
+    Coach? hlv;
+    Pressed? pressed;
     Guid talkPlayer;
     TalkKind talkKind = TalkKind.Encourage;
     string? message;
-    bool busy;
+    bool busy, messageBad;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -104,19 +265,30 @@
         if (season is null || season.HumanClubId == Guid.Empty) return;
         await using var db = await Dbs.CreateDbContextAsync();
         desk = await new MediaService(db, Clock).DeskAsync(season.Id, season.HumanClubId);
+        hlv = await CoachHooks.ForClubAsync(db, season.HumanClubId);
     }
 
     async Task Press(PressTone tone)
     {
+        if (desk?.Press is not { } pr) return;
         busy = true;
-        await using (var db = await Dbs.CreateDbContextAsync())
+        try
         {
-            var (morale, fans) = MediaRules.Press(tone, desk!.Press!.GoalsFor - desk.Press.GoalsAgainst);
-            message = await new MediaService(db, Clock).PressAsync(season!.Id, season.HumanClubId, desk.Press.FixtureId, tone)
-                ?? $"Đã họp báo. Tinh thần đội {morale:+0;-0;0}, CĐV {fans / 10.0:+0.#;-0.#;0}%.";
+            var gd = pr.GoalsFor - pr.GoalsAgainst;
+            var (morale, fans) = MediaService.PressEffect(tone, gd, hlv);
+            string? error;
+            await using (var db = await Dbs.CreateDbContextAsync())
+                error = await new MediaService(db, Clock).PressAsync(season!.Id, season.HumanClubId, pr.FixtureId, tone);
+            messageBad = error is not null;
+            if (error is null && Shell is not null)
+            {
+                message = null;
+                pressed = new(Tones.First(t => t.Tone == tone).Label, morale, fans, pr.Opponent, $"{pr.GoalsFor}–{pr.GoalsAgainst}", Result(gd).Css);
+            }
+            else message = error ?? $"Đã họp báo. Tinh thần đội {morale:+0;-0;0}, CĐV {fans / 10.0:+0.#;-0.#;0}%.";
+            await Load();
         }
-        await Load();
-        busy = false;
+        finally { busy = false; }
     }
 
     async Task Talk()
@@ -132,4 +304,47 @@
         await Load();
         busy = false;
     }
+
+    // ---- skin career ----
+    static bool IsPress(InboxItem i) => i.Kind == InboxKind.Task && i.Link is null && i.Title.StartsWith("Họp báo", StringComparison.Ordinal);
+    static string Tone(int m) => m < LowMorale ? "lo" : m < 60 ? "mid" : "hi";
+    static (string Css, string Text) Result(int gd) => gd > 0 ? ("win", "Thắng") : gd == 0 ? ("draw", "Hoà") : ("loss", "Thua");
+    static string Dir(int v) => v > 0 ? "cx-up" : v < 0 ? "cx-down" : "cx-flat";
+    static string Signed(int v) => v == 0 ? "không đổi" : v.ToString("+0;−0");
+    static string FansText(int permille) => permille == 0 ? "không đổi" : (permille / 10.0).ToString("+0.#;−0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    /// <summary>Biểu tượng, đường dẫn, nhãn hành động của một mục hộp thư (đường dẫn sẵn có của MediaService; mục không có đường dẫn mà xử lý ở Phòng thay đồ thì trỏ sang đó).</summary>
+    static (string Icon, string? Href, string? Cta) Meta(InboxItem i)
+    {
+        var l = i.Link ?? "";
+        var t = i.Title;
+        if (l == "de-nghi") return ("handshake", l, "Xem đề nghị");
+        if (l.StartsWith("chuan-bi/", StringComparison.Ordinal)) return ("sports_soccer", l, "Chuẩn bị");
+        if (l.StartsWith("tin/", StringComparison.Ordinal)) return ("newspaper", l, "Đọc bài");
+        if (l == "ban-lanh-dao") return ("account_balance", l, "Ban lãnh đạo");
+        if (l == "tai-chinh") return (i.Kind == InboxKind.Warning ? "trending_down" : "payments", l, "Tài chính");
+        if (t.Contains("chấn thương")) return ("personal_injury", l == "" ? null : l, "Xem");
+        if (l == "tap-luyen") return ("fitness_center", l, "Đặt giáo án");
+        if (t.Contains("hợp đồng")) return ("history_edu", l == "" ? null : l, "Thị trường");
+        if (t.Contains("quá mệt")) return ("battery_alert", "phong-thay-do", "Xem thể lực");
+        if (t.Contains("không vui")) return ("sentiment_dissatisfied", "phong-thay-do", "Nói chuyện");
+        if (t.Contains("gia hạn")) return ("autorenew", null, null);
+        if (IsPress(i)) return ("mic", "#hop-bao", "Trả lời");
+        return (i.Kind switch { InboxKind.Task => "task_alt", InboxKind.Warning => "warning", _ => "info" }, l == "" ? null : l, l == "" ? null : "Mở");
+    }
+
+    RenderFragment Row(InboxItem i) => __builder =>
+    {
+        var (icon, href, cta) = Meta(i);
+        var kind = i.Kind switch { InboxKind.Task => "k-task", InboxKind.Warning => "k-warn", _ => "k-info" };
+        RenderFragment inner = @<text>
+            <span class="ht-ic"><i class="ms" aria-hidden="true">@icon</i></span>
+            <span class="ht-tx"><b>@i.Title</b><span>@i.Body</span></span>
+            @if (href is not null) { <span class="ht-go">@cta<i class="ms" aria-hidden="true">chevron_right</i></span> }
+        </text>;
+        <li class="ht-row @kind">
+            @if (href is not null) { <a class="ht-item" href="@href">@inner</a> }
+            else { <div class="ht-item">@inner</div> }
+        </li>
+    };
 }
