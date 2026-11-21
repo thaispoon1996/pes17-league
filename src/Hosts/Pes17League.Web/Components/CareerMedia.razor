@@ -1,6 +1,7 @@
-@* Truyền thông career (PO 21/11, mockup claude.ai/artifact/5mK12BQskUVcNsd4zyL5za): họp báo (cảnh dựng từ logo CLB + mặt HLV, lời trích theo
-   câu trả lời × kết quả; họp báo ra mắt = ảnh thật), bài báo sau trận (đồ hoạ tỉ số tô màu theo logo, bài mẫu từ số liệu — TemplateArticleWriter,
-   không AI), album (ảnh thật đã lưu + đồ hoạ trận), tin bên lề (dữ liệu thật của giải). Trang chủ /su-nghiep = khối rút gọn; Full = /truyen-thong. *@
+@* Truyền thông career — "Tờ báo buổi sáng" (PO 21/11, mockup claude.ai/artifact/WFoRcc2mJPsMU5AkctCoYD; khối đầu 5mK12BQskUVcNsd4zyL5za).
+   Trang chủ: tin nóng tự chạy (họp báo, bài báo trận của đội, trận nổi bật thế giới, vụ chuyển nhượng lớn) → dải kết quả khung vừa đá → ChildContent
+   (trận tiếp theo, chỉ số, việc cần làm) → Nhịp sống (Đội nhà / Giải đấu / Thế giới / Chuyển nhượng / Cuộc sống) → album.
+   Full = /truyen-thong: thêm thẻ họp báo, thẻ bài báo (đọc bài), album dạng lưới. Chỉ dữ liệu thật; bài trận mô phỏng = TemplateArticleWriter (không AI). *@
 @using Microsoft.EntityFrameworkCore
 @using Pes17League.Clubs.Infrastructure
 @inject IDbContextFactory<ClubsDbContext> Dbs
@@ -10,112 +11,177 @@
 @inject NewsStore News
 @inject IJSRuntime JS
 
-@if (Shell?.P is null) { return; }
-@if (error is not null) { <p class="cx-msg neg">@error</p> return; }
-@if (data is not { } d) { return; }
-@{
-    var pressN = Full || tab == "press" ? 99 : 1;
-    var matchN = Full || tab == "match" ? 99 : 1;
-    var sideN = Full ? 99 : tab == "side" ? 10 : 4;
-    var sides = d.Side.OrderByDescending(s => s.Weight).ThenByDescending(s => s.At).ToList();
-    var empty = d.Press.Count == 0 && d.Pending is null && d.Matches.Count == 0 && d.Shots.Count == 0 && d.Side.Count == 0;
-}
-<section class="md @(Full ? "full" : null)" aria-labelledby="md-h">
-    @if (!Full) { <h2 class="hm-h" id="md-h">Truyền thông<a href="truyen-thong">Toàn bộ tin</a></h2> }
-    @if (empty)
+@if (Shell?.P is null) { @ChildContent return; }
+@if (error is not null) { <p class="cx-msg neg">@error</p> }
+@if (data is { } d)
+{
+    @if (d.Slides.Count > 0)
     {
-        <p class="hm-none"><i class="ms" aria-hidden="true">newspaper</i>Báo chí sẽ đưa tin sau trận đầu tiên của bạn.</p>
-        return;
-    }
-    <div class="md-tabs" role="tablist" aria-label="Lọc tin truyền thông">
-        @foreach (var (k, label, n) in TabsOf(d))
-        {
-            <button type="button" role="tab" aria-selected="@(tab == k ? "true" : "false")" class="@(tab == k ? "on" : null)" @onclick="() => tab = k">@label @if (n > 0) { <small>@n</small> }</button>
-        }
-    </div>
-
-    @if (tab is "all" or "press")
-    {
-        @if (d.Pending is { } pp)
-        {
-            <a class="md-pend" href="hop-thu#hop-bao">
-                <i class="ms fill" aria-hidden="true">mic</i>
-                <span><b>Phóng viên đang chờ bạn</b><small>Họp báo sau trận @ResText(pp.GoalsFor - pp.GoalsAgainst).ToLowerInvariant() @pp.GoalsFor–@pp.GoalsAgainst với @pp.Opponent</small></span>
-                <em>Họp báo</em>
-            </a>
-        }
-        @foreach (var x in d.Press.Take(pressN)) { @PressCard(x) }
-        @if (tab == "press" && d.Press.Count == 0 && d.Pending is null) { <p class="hm-none"><i class="ms" aria-hidden="true">mic_off</i>Chưa có buổi họp báo nào mùa này.</p> }
-    }
-
-    @if (tab is "all" or "match")
-    {
-        @foreach (var m in d.Matches.Take(matchN)) { @MatchCard(m) }
-        @if (tab == "match" && d.Matches.Count == 0) { <p class="hm-none"><i class="ms" aria-hidden="true">sports_soccer</i>Chưa đá trận nào mùa này.</p> }
-    }
-
-    @if (tab == "all" && d.Shots.Count > 0)
-    {
-        <div class="md-sub"><h3>Album</h3>@if (d.Album) { <a href="cuoc-song?muc=album">Xem tất cả</a> }</div>
-        <div class="md-album @(Full ? "grid" : null)">
-            @foreach (var s in d.Shots.Take(Full ? 60 : 8))
+        <div class="md-hot" data-hot aria-roledescription="carousel" aria-label="Tin nóng">
+            @for (var i = 0; i < d.Slides.Count; i++)
             {
-                @if (s.Match is { } gm)
-                {
-                    <a class="md-shot" href="tran/@gm.Id">
-                        <span class="md-gfx mini r-@gm.Res" data-tint-h="@gm.HomeLogo" data-tint-a="@gm.AwayLogo"><b>@gm.Score</b></span>
-                        <span class="cap"><b>@Short(gm.Home) – @Short(gm.Away)</b><small>@s.Sub</small></span>
-                    </a>
-                }
-                else
-                {
-                    <a class="md-shot" href="@s.Src" target="_blank" rel="noopener">
-                        <img src="@s.Src" alt="@s.Caption" loading="lazy" />
-                        <span class="cap"><b>@s.Caption</b>@if (s.Sub is { Length: > 0 }) { <small>@s.Sub</small> }</span>
-                    </a>
-                }
+                var s = d.Slides[i];
+                <a class="md-slide k-@s.Kind @(i == 0 ? "on" : null)" href="@s.Href" aria-hidden="@(i == 0 ? "false" : "true")" data-tint-h="@s.Game?.HomeLogo" data-tint-a="@s.Game?.AwayLogo">
+                    @if (s.Press is { } pr) { @Scene(pr) }
+                    else if (s.Game is { } g)
+                    {
+                        <span class="md-gfx">@if (s.Photo is not null) { <img class="md-mph" src="/tin-anh/@s.Photo" alt="" /> }</span>
+                        <span class="md-vs"><span class="t"><Crest Name="@g.Home" Logo="@g.HomeLogo" Large="true" /></span><b class="sc">@g.Score</b><span class="t"><Crest Name="@g.Away" Logo="@g.AwayLogo" Large="true" /></span></span>
+                    }
+                    else { <span class="md-deal"><i class="ms" aria-hidden="true">@s.Icon</i><b>@s.Big</b></span> }
+                    <span class="md-shade"></span>
+                    <span class="md-st">
+                        <span class="md-kick t-@s.Tone">@s.Kicker</span>
+                        <b class="h">@s.Title</b>
+                        <small>@s.Sub</small>
+                    </span>
+                </a>
+            }
+            <span class="md-live">Tin nóng</span>
+            @if (d.Slides.Count > 1)
+            {
+                <span class="md-dots">@for (var i = 0; i < d.Slides.Count; i++) { <button type="button" class="@(i == 0 ? "on" : null)" aria-label="Tin @(i + 1)"><i></i></button> }</span>
             }
         </div>
     }
-
-    @if ((tab is "all" or "side") && sides.Count > 0)
+    @if (d.Ticker.Count > 0)
     {
-        @if (tab == "all") { <div class="md-sub"><h3>Bên lề</h3></div> }
-        <ul class="md-side">
-            @foreach (var s in sides.Take(sideN))
+        <div class="md-tick" aria-label="Kết quả khung @d.TickSlot">
+            <b>Khung @d.TickSlot</b>
+            <div><span class="md-tk" style="--dur:@(Math.Max(20, d.Ticker.Count * 4))s">
+                @for (var r = 0; r < 2; r++)
+                {
+                    <span class="md-tkr" aria-hidden="@(r == 1 ? "true" : "false")">
+                        @foreach (var g in d.Ticker) { <a href="tran/@g.Id" tabindex="@(r == 1 ? "-1" : null)" class="@(g.Mine ? "me" : null)"><em>@g.Comp</em> <strong>@Short(g.Home) @g.Score @Short(g.Away)</strong></a> }
+                    </span>
+                }
+            </span></div>
+        </div>
+    }
+    @if (Full && d.Pending is { } pp)
+    {
+        <a class="md-pend" href="hop-thu#hop-bao">
+            <i class="ms fill" aria-hidden="true">mic</i>
+            <span><b>Phóng viên đang chờ bạn</b><small>Họp báo sau trận @ResText(pp.GoalsFor - pp.GoalsAgainst).ToLowerInvariant() @pp.GoalsFor–@pp.GoalsAgainst với @pp.Opponent</small></span>
+            <em>Họp báo</em>
+        </a>
+    }
+}
+@ChildContent
+@if (data is { } dd)
+{
+    var cols = Cols.Where(c => dd.Desk.Any(x => x.Col == c.Key)).ToList();
+    var tabs = new List<(string Key, string Label, int N)> { ("all", "Tất cả", 0) };
+    if (Full) { tabs.Add(("press", "Họp báo", dd.Press.Count)); tabs.Add(("match", "Trận đấu", dd.Matches.Count)); }
+    tabs.AddRange(cols.Select(c => (c.Key, c.Tab, dd.Desk.Count(x => x.Col == c.Key))));
+    <section class="md @(Full ? "full" : null)" aria-labelledby="md-h">
+        @if (!Full) { <h2 class="hm-h" id="md-h">Nhịp sống<a href="truyen-thong">Toàn bộ tin</a></h2> }
+        <div class="md-tabs" role="tablist" aria-label="Lọc tin">
+            @foreach (var (k, label, n) in tabs)
             {
-                <li class="t-@s.Tone">
-                    @if (s.Href is not null)
+                <button type="button" role="tab" aria-selected="@(tab == k ? "true" : "false")" class="@(tab == k ? "on" : null)" @onclick="() => tab = k">@label @if (n > 0) { <small>@n</small> }</button>
+            }
+        </div>
+
+        @if (Full && tab is "all" or "press")
+        {
+            @foreach (var x in dd.Press) { @PressCard(x) }
+            @if (tab == "press" && dd.Press.Count == 0) { <p class="hm-none"><i class="ms" aria-hidden="true">mic_off</i>Chưa có buổi họp báo nào mùa này.</p> }
+        }
+        @if (Full && tab is "all" or "match")
+        {
+            @foreach (var m in dd.Matches) { @MatchCard(m) }
+            @if (tab == "match" && dd.Matches.Count == 0) { <p class="hm-none"><i class="ms" aria-hidden="true">sports_soccer</i>Chưa đá trận nào mùa này.</p> }
+        }
+
+        @if (tab is not ("press" or "match"))
+        {
+            <div class="md-desk @(tab == "all" ? null : "one")">
+                @foreach (var c in cols.Where(c => tab == "all" || tab == c.Key))
+                {
+                    var items = dd.Desk.Where(x => x.Col == c.Key).OrderByDescending(x => x.Weight).ThenByDescending(x => x.At).ToList();
+                    var take = tab == "all" ? (Full ? 6 : 3) : (Full ? 200 : 12);
+                    <section class="md-col t-@c.Tone">
+                        <header><i class="ms fill" aria-hidden="true">@c.Icon</i><b>@(c.Key == "league" ? dd.LeagueName ?? c.Title : c.Title)</b><small>@c.Note</small></header>
+                        <ul>
+                            @foreach (var x in items.Take(take))
+                            {
+                                <li class="t-@x.Tone">
+                                    @if (x.Href is not null) { <a href="@x.Href">@Item(x)</a> } else { <div>@Item(x)</div> }
+                                </li>
+                            }
+                        </ul>
+                        @if (tab == "all" && items.Count > take) { <button type="button" class="md-more" @onclick="() => tab = c.Key">Thêm @(items.Count - take) tin</button> }
+                    </section>
+                }
+            </div>
+        }
+
+        @if (tab == "all" && dd.Shots.Count > 0)
+        {
+            <div class="md-sub"><h3>Album</h3>@if (dd.Album) { <a href="cuoc-song?muc=album">Xem tất cả</a> }</div>
+            <div class="md-album @(Full ? "grid" : null)">
+                @foreach (var s in dd.Shots.Take(Full ? 60 : 8))
+                {
+                    @if (s.Match is { } gm)
                     {
-                        <a href="@s.Href"><i class="ms ic" aria-hidden="true">@s.Icon</i><span class="tx"><b>@s.Title</b>@if (s.Text is not null) { <small>@s.Text</small> }</span><i class="ms go" aria-hidden="true">chevron_right</i></a>
+                        <a class="md-shot" href="@(Full ? $"#md-m-{gm.Id}" : $"truyen-thong#md-m-{gm.Id}")" data-tint-h="@gm.HomeLogo" data-tint-a="@gm.AwayLogo">
+                            <span class="md-gfx mini"><b>@gm.Score</b></span>
+                            <span class="cap"><b>@Short(gm.Home) – @Short(gm.Away)</b><small>@s.Sub</small></span>
+                        </a>
                     }
                     else
                     {
-                        <div><i class="ms ic" aria-hidden="true">@s.Icon</i><span class="tx"><b>@s.Title</b>@if (s.Text is not null) { <small>@s.Text</small> }</span></div>
+                        <a class="md-shot" href="@s.Src" target="_blank" rel="noopener">
+                            <img src="@s.Src" alt="@s.Caption" loading="lazy" />
+                            <span class="cap"><b>@s.Caption</b>@if (s.Sub is { Length: > 0 }) { <small>@s.Sub</small> }</span>
+                        </a>
                     }
-                </li>
-            }
-        </ul>
-        @if (!Full && sides.Count > sideN) { <a class="md-more" href="truyen-thong">Thêm @(sides.Count - sideN) tin bên lề</a> }
-    }
-    @if (tab == "side" && sides.Count == 0) { <p class="hm-none"><i class="ms" aria-hidden="true">feed</i>Chưa có tin bên lề.</p> }
-</section>
+                }
+            </div>
+        }
+    </section>
+}
 
 @code {
     [CascadingParameter] public CareerLayout? Shell { get; set; }
-    /// <summary>Trang /truyen-thong: hiện hết, album dạng lưới.</summary>
+    /// <summary>Trang /truyen-thong: thẻ họp báo + bài báo, hiện hết, album dạng lưới.</summary>
     [Parameter] public bool Full { get; set; }
     /// <summary>Đổi giá trị → đọc lại (trang chủ truyền trận vừa đá).</summary>
     [Parameter] public object? Stamp { get; set; }
+    /// <summary>Đội nhà: tin "vòng vừa qua" trang chủ đã tính (đổi hạng, chỉ số cầu thủ, tài chính, học viện).</summary>
+    [Parameter] public IReadOnlyList<(string Icon, string Tone, string Title, string? Text, string? Href)>? Club { get; set; }
+    /// <summary>Chen giữa dải kết quả và Nhịp sống (trận tiếp theo, chỉ số, việc cần làm).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    sealed record PressItem(DateTimeOffset At, string Tag, string Headline, bool Quote, string Meta, string? Res, string? ResText, int? Morale, Guid? PhotoId, string? Body);
+    sealed record PressItem(DateTimeOffset At, string Tag, string Headline, bool Quote, string Meta, string? Res, string? ResText, int? Morale, Guid? PhotoId);
     sealed record Scorer(string Name, string Minutes, bool Home);
-    sealed record MatchItem(Guid Id, DateTimeOffset? At, string Comp, bool MineHome, string Home, string? HomeLogo, string Away, string? AwayLogo, int HomeGoals, int AwayGoals,
+    sealed record MatchItem(Guid Id, DateTimeOffset? At, string Comp, bool MineHome, string Home, string? HomeLogo, string Away, string? AwayLogo,
         string Score, string Res, IReadOnlyList<Scorer> Scorers, (int H, int A)? Poss, (int H, int HOn, int A, int AOn)? Shots, string? Motm, decimal? MotmRating,
         Guid? ArticleId, string? Title, IReadOnlyList<string> Paras, string? Photo, string? PhotoCaption);
+    sealed record Game(Guid Id, string Comp, string Home, string? HomeLogo, string Away, string? AwayLogo, string Score, bool Mine);
+    sealed record Slide(string Kind, string Kicker, string Tone, string Title, string Sub, string? Href, PressItem? Press = null, Game? Game = null, string? Photo = null, string? Icon = null, string? Big = null);
     sealed record Shot(string Src, string Caption, string? Sub, DateTimeOffset At, MatchItem? Match = null);
-    sealed record SideItem(string Icon, string Tone, string Title, string? Text, string? Href, DateTimeOffset At, int Weight);
-    sealed record Data(IReadOnlyList<PressItem> Press, PressPending? Pending, IReadOnlyList<MatchItem> Matches, IReadOnlyList<Shot> Shots, bool Album, IReadOnlyList<SideItem> Side);
+    sealed record DeskItem(string Col, string Icon, string Tone, string Title, string? Text, string? Value, string? Href, DateTimeOffset At, int Weight, int? Meter = null);
+    sealed record Data(IReadOnlyList<Slide> Slides, IReadOnlyList<Game> Ticker, int TickSlot, IReadOnlyList<PressItem> Press, PressPending? Pending, IReadOnlyList<MatchItem> Matches,
+        IReadOnlyList<Shot> Shots, bool Album, IReadOnlyList<DeskItem> Desk, string? LeagueName);
+    sealed record WorldGame(Guid Id, Guid EditionId, string Comp, int? Tier, int H, int A, int? HP, int? AP, Guid HomeClubId, Guid AwayClubId,
+        DateTimeOffset? PlayedAt, string Home, string? HomeLogo, string Away, string? AwayLogo)
+    {
+        public string Score => Fmt.Score(H, A, HP, AP);
+        public Game ToGame(bool mine) => new(Id, Comp, Home, HomeLogo, Away, AwayLogo, Score, mine);
+    }
+    sealed record Col(string Key, string Tab, string Title, string Icon, string Tone, string? Note);
+    static readonly Col[] Cols =
+    [
+        new("club", "Đội nhà", "Đội nhà", "shield", "gold", "vòng vừa qua"),
+        new("league", "Giải đấu", "Giải đấu", "emoji_events", "gold", "mùa này"),
+        new("world", "Thế giới", "Bóng đá thế giới", "public", "violet", "các giải khác"),
+        new("deals", "Chuyển nhượng", "Chợ chuyển nhượng", "swap_horiz", "cyan", "trong giải"),
+        new("life", "Cuộc sống", "Cuộc sống HLV", "self_improvement", "green", "ví riêng, không phải quỹ CLB"),
+    ];
+    /// <summary>Giải lớn: lên đầu dải kết quả, mục "dẫn đầu các giải lớn".</summary>
+    static readonly string[] Big = ["Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1"];
 
     Data? data;
     string? error, sig, faceUrl, logo, coachName;
@@ -123,13 +189,10 @@
     string tab = "all";
     readonly HashSet<Guid> reading = [];
 
-    IEnumerable<(string Key, string Label, int N)> TabsOf(Data d) =>
-        [("all", "Tất cả", 0), ("press", "Họp báo", d.Press.Count + (d.Pending is null ? 0 : 1)), ("match", "Trận đấu", d.Matches.Count), ("side", "Bên lề", d.Side.Count)];
-
     protected override async Task OnParametersSetAsync()
     {
         if (Shell?.P is not { } p) return;
-        var now = $"{p.SeasonId}|{p.ClubId}|{p.MyPlayed}|{p.Slot}|{Stamp}";
+        var now = $"{p.SeasonId}|{p.ClubId}|{p.MyPlayed}|{p.Slot}|{Stamp}|{Club?.Count}";
         if (now == sig) return;   // trang chủ vẽ lại liên tục khi máy chạy — chỉ đọc lại khi có trận mới
         sig = now;
         try { error = null; data = await LoadAsync(p); }
@@ -139,7 +202,8 @@
     protected override async Task OnAfterRenderAsync(bool first)
     {
         if (data is null) return;
-        try { await JS.InvokeVoidAsync("CoachFace.tint"); } catch (Exception e) when (e is JSException or JSDisconnectedException or TaskCanceledException) { }
+        try { await JS.InvokeVoidAsync("CoachFace.tint"); await JS.InvokeVoidAsync("cxHot"); }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or TaskCanceledException) { }
     }
 
     async Task<Data> LoadAsync(CareerProgress p)
@@ -148,6 +212,8 @@
         var now = Clock.GetUtcNow();
         logo = p.ClubLogo;
         await using var db = await Dbs.CreateDbContextAsync();
+        var desk = new List<DeskItem>();
+        string Label(string comp, FixtureStage stage, int? leg) => stage == FixtureStage.League ? comp : $"{comp} · {AdminText.SlotKind(stage, leg)}";
 
         // ---- Trận của đội (mới nhất trước) + bài mẫu cho trận chưa có bài ----
         var games = await (from f in db.Fixtures.AsNoTracking() join m in db.Matchdays on f.MatchdayId equals m.Id
@@ -181,7 +247,6 @@
         var pids = goals.Select(g => g.ScorerPlayerId).OfType<Guid>().Concat(ratings.Select(r => r.PlayerId)).Distinct().ToList();
         var people = await db.Players.Where(x => pids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name);
 
-        string Label(string comp, FixtureStage stage, int? leg) => stage == FixtureStage.League ? comp : $"{comp} · {AdminText.SlotKind(stage, leg)}";
         var matches = new List<MatchItem>();
         foreach (var g in games)
         {
@@ -196,7 +261,7 @@
             var best = ratings.Where(r => r.FixtureId == f.Id).MaxBy(r => r.Rating);
             var art = arts.GetValueOrDefault(f.Id);
             var ph = art is null ? null : photos.FirstOrDefault(x => x.ArticleId == art.Id);
-            matches.Add(new(f.Id, f.PlayedAt, $"{Label(g.Comp, f.Stage, f.Leg)} · khung {g.Slot}", home, g.Home, g.HomeLogo, g.Away, g.AwayLogo, f.HomeGoals!.Value, f.AwayGoals!.Value,
+            matches.Add(new(f.Id, f.PlayedAt, $"{Label(g.Comp, f.Stage, f.Leg)} · khung {g.Slot}", home, g.Home, g.HomeLogo, g.Away, g.AwayLogo,
                 Fmt.Score(f.HomeGoals, f.AwayGoals, f.HomePenalties, f.AwayPenalties), res, scorers,
                 sh is not null && sa is not null ? (sh.PossessionPct, sa.PossessionPct) : null,
                 sh is not null && sa is not null ? (sh.Shots, sh.ShotsOnTarget, sa.Shots, sa.ShotsOnTarget) : null,
@@ -209,27 +274,26 @@
         faceUrl = coach is null ? null : CoachUi.FaceUrl(coach);
         faceCut = coach is not null && CoachUi.FaceCut(coach);
         coachName = coach?.Name;
-        var desk = await new MediaService(db, Clock).DeskAsync(sid, mine);
+        var media = await new MediaService(db, Clock).DeskAsync(sid, mine);
         var pcs = await (from x in db.PressConferences join f in db.Fixtures on x.FixtureId equals f.Id join m in db.Matchdays on f.MatchdayId equals m.Id
                          where x.ClubId == mine && m.SeasonId == sid orderby x.At descending
                          select new { x.FixtureId, x.Tone, x.MoraleDelta, x.At, Slot = m.Number, f.HomeClubId, f.AwayClubId, f.HomeGoals, f.AwayGoals })
-            .Take(Full ? 80 : 4).ToListAsync();
+            .Take(Full ? 80 : 2).ToListAsync();
         var oppIds = pcs.Select(x => x.HomeClubId == mine ? x.AwayClubId : x.HomeClubId).Distinct().ToList();
         var opps = await db.Clubs.Where(c => oppIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
-        var press_ = new List<PressItem>();
+        var pressList = new List<PressItem>();
         foreach (var x in pcs)
         {
             var home = x.HomeClubId == mine;
             int gf = (home ? x.HomeGoals : x.AwayGoals) ?? 0, ga = (home ? x.AwayGoals : x.HomeGoals) ?? 0;
             var opp = opps.GetValueOrDefault(home ? x.AwayClubId : x.HomeClubId) ?? "?";
-            press_.Add(new(x.At, $"Họp báo · khung {x.Slot}", Quote(x.Tone, gf - ga, x.FixtureId), true,
+            pressList.Add(new(x.At, $"Họp báo · khung {x.Slot}", Quote(x.Tone, gf - ga, x.FixtureId), true,
                 $"HLV {coachName ?? p.ClubName} sau trận {ResText(gf - ga).ToLowerInvariant()} {gf}–{ga} trước {opp}. Bạn chọn: {ToneLabel(x.Tone)}.",
-                ResCss(gf - ga), $"{ResText(gf - ga)} {gf}–{ga}", x.MoraleDelta, null, null));
+                ResCss(gf - ga), $"{ResText(gf - ga)} {gf}–{ga}", x.MoraleDelta, null));
         }
 
         var shots = new List<Shot>();
         var album = false;
-        var side = new List<SideItem>();
         if (coach is not null)
         {
             var cps = await db.CoachPhotos.AsNoTracking().Where(x => x.CoachId == coach.Id).OrderByDescending(x => x.At)
@@ -237,34 +301,51 @@
             album = cps.Count > 0;
             shots.AddRange(cps.Select(x => new Shot($"hlv/anh/{x.Id}", x.Caption, CoachUi.Tick(x.Tick), x.At)));
 
-            // Thư báo giới gửi HLV: ra mắt CLB này = thẻ họp báo (ảnh thật), còn lại = tin bên lề
-            var letters = await db.CoachLetters.AsNoTracking().Where(l => l.CoachId == coach.Id && l.From == LetterFrom.Press && !l.Outgoing)
-                .OrderByDescending(l => l.At).Select(l => new { l.Key, l.ClubId, l.Sender, l.Subject, l.Body, l.At }).Take(Full ? 40 : 6).ToListAsync();
+            // Cuộc sống HLV: ví riêng (sổ ví), mức sống, tài sản, căng thẳng, danh tiếng, thư gia đình / nhà tài trợ / báo giới…
+            var wallet = await db.CoachLedger.Where(e => e.CoachId == coach.Id).SumAsync(e => e.Amount);
+            var owned = (await db.CoachAssets.Where(a => a.CoachId == coach.Id && a.MaturesTick == null).Select(a => a.Key).ToListAsync())
+                .Select(k => CoachRules.Assets.FirstOrDefault(x => x.Key == k)).OfType<CoachAssetDef>().ToList();
+            var living = CoachRules.Living[Math.Clamp(coach.Lifestyle, 0, CoachRules.Living.Length - 1)].Name;
+            desk.Add(new("life", "account_balance_wallet", wallet < 0 ? "red" : "gold", "Ví cá nhân",
+                $"Mức sống {living.ToLowerInvariant()} · " + (owned.Count == 0 ? "chưa có tài sản" : string.Join(", ", owned.Select(o => o.Name))), Fmt.Money(wallet), "cuoc-song?muc=vi", now, 90));
+            desk.Add(new("life", "psychology", coach.Stress >= 70 ? "red" : coach.Stress >= 40 ? "gold" : "green", $"Căng thẳng {coach.Stress}/100",
+                $"Danh tiếng {coach.Reputation}", null, "cuoc-song?muc=vi", now, 85, Math.Clamp(coach.Stress, 0, 100)));
+
+            var letters = await db.CoachLetters.AsNoTracking()
+                .Where(l => l.CoachId == coach.Id && !l.Outgoing && (l.From == LetterFrom.Press || l.From == LetterFrom.Family || l.From == LetterFrom.Sponsor || l.From == LetterFrom.Fans || l.From == LetterFrom.Agent))
+                .OrderByDescending(l => l.At).Select(l => new { l.Id, l.Key, l.From, l.ClubId, l.Sender, l.Subject, l.Body, l.At }).Take(Full ? 40 : 8).ToListAsync();
             foreach (var l in letters)
             {
                 if (l.Key == "ra-mat" && l.ClubId == mine)
                 {
                     var pid = await db.CoachPhotos.Where(x => x.CoachId == coach.Id && x.At >= l.At.AddMinutes(-5) && x.At <= l.At.AddHours(2) && x.Caption.StartsWith("Ra mắt"))
                         .OrderBy(x => x.At).Select(x => (Guid?)x.Id).FirstOrDefaultAsync();
-                    press_.Add(new(l.At, "Họp báo ra mắt", l.Subject, false, $"{l.Sender}: {l.Body}", null, null, null, pid, null));
+                    pressList.Add(new(l.At, "Họp báo ra mắt", l.Subject, false, $"{l.Sender}: {l.Body}", null, null, null, pid));
                 }
-                else if (l.Key != "ra-mat") side.Add(new("feed", "cyan", l.Subject, $"{l.Sender} · {Clip(l.Body, 110)}", "thu-hlv", l.At, 85));
+                else if (l.Key != "ra-mat")
+                    desk.Add(new("life", CoachUi.Icon(l.From), l.From == LetterFrom.Press ? "cyan" : "violet", l.Subject, $"{l.Sender} · {Clip(l.Body, 110)}", null, "thu-hlv", l.At, 70));
             }
         }
         shots.AddRange(matches.Where(m => m.Photo is not null).Select(m => new Shot($"/tin-anh/{m.Photo}", m.PhotoCaption ?? m.Title ?? "", m.Comp, m.At ?? now)));
         shots.AddRange(matches.Where(m => m.Photo is null).Select(m => new Shot("", m.Title ?? "", m.Comp.Split(" · ").Last(), m.At ?? now, m)));
 
-        // ---- Bên lề: giải quốc nội ----
+        // ---- Đội nhà: tin vòng vừa qua của trang chủ + CĐV ----
         var lastAt = matches.FirstOrDefault()?.At ?? now;
-        if (desk.FanGames > 0)
+        var w0 = 80;
+        foreach (var c in Club ?? []) desk.Add(new("club", c.Icon, c.Tone, c.Title, c.Text, null, c.Href, lastAt, w0--));
+        if (media.FanGames > 0)
         {
             var fans = await db.ClubFinances.Where(x => x.ClubId == mine).Select(x => (int?)x.Fans).FirstOrDefaultAsync();
-            var tone = desk.FanMood is "Phấn khích" or "Hài lòng" ? "green" : desk.FanMood is "Thất vọng" or "Giận dữ" ? "red" : "cyan";
-            side.Add(new("groups", tone, $"CĐV {p.ClubName}: {desk.FanMood.ToLowerInvariant()}",
-                $"{desk.FanPoints}/{desk.FanGames * 3} điểm trong {desk.FanGames} trận gần nhất" + (fans is > 0 ? $" · {fans.Value.ToString("N0", Vi)} khán giả" : ""), "phong-thay-do", lastAt, 75));
+            var tone = media.FanMood is "Phấn khích" or "Hài lòng" ? "green" : media.FanMood is "Thất vọng" or "Giận dữ" ? "red" : "cyan";
+            desk.Add(new("club", "groups", tone, $"CĐV {media.FanMood.ToLowerInvariant()}",
+                $"{media.FanPoints}/{media.FanGames * 3} điểm trong {media.FanGames} trận gần nhất" + (fans is > 0 ? $" · {fans.Value.ToString("N0", Vi)} khán giả" : ""), null, "phong-thay-do", lastAt, 90));
         }
+
+        // ---- Giải quốc nội ----
         var le = await (from x in db.EditionClubs join e in db.Editions on x.EditionId equals e.Id join c in db.Competitions on e.CompetitionId equals c.Id
                         where e.SeasonId == sid && x.ClubId == mine && c.Type == CompetitionType.DomesticLeague select new { e.Id, c.Name }).FirstOrDefaultAsync();
+        var leId = le?.Id ?? Guid.Empty;
+        DeskItem? dealSlide = null;
         if (le is not null)
         {
             var leGames = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
@@ -282,84 +363,178 @@
                 {
                     var top = rows[0];
                     var myPos = rows.TakeWhile(r => r.Club != mine).Count() + 1;
-                    side.Add(top.Club == mine
-                        ? new("emoji_events", "gold", $"{p.ClubName} dẫn đầu {le.Name}", $"{top.Points} điểm sau {top.Played} trận", "bxh", at, 90)
-                        : new("leaderboard", "cyan", $"{N(top.Club)} dẫn đầu {le.Name}", $"{top.Points} điểm sau {top.Played} trận · {p.ClubName} hạng {myPos}", "bxh", at, 90));
+                    desk.Add(top.Club == mine
+                        ? new("league", "emoji_events", "gold", $"{p.ClubName} dẫn đầu bảng", $"{top.Points} điểm, hiệu số {top.GoalDifference:+0;-0;0} sau {top.Played} trận", "1", "bxh", at, 90)
+                        : new("league", "leaderboard", "cyan", $"{N(top.Club)} dẫn đầu bảng", $"{top.Points} điểm sau {top.Played} trận · {p.ClubName} hạng {myPos}", "1", "bxh", at, 90));
                 }
 
-                // Ngôi sao khung gần nhất của giải
                 var lr = leGames.Max(x => x.Number);
                 var lrIds = leGames.Where(x => x.Number == lr).Select(x => x.Id).ToList();
                 var star = await (from r in db.MatchRatings join pl in db.Players on r.PlayerId equals pl.Id
                                   where lrIds.Contains(r.FixtureId) && r.Rating != null orderby r.Rating descending
                                   select new { r.PlayerId, pl.Name, r.ClubId, r.Rating, r.Goals }).FirstOrDefaultAsync();
                 if (star is not null)
-                    side.Add(new("star", star.ClubId == mine ? "gold" : "violet", $"Ngôi sao khung {lr}: {star.Name}",
-                        $"{N(star.ClubId)} · điểm {star.Rating!.Value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}" + (star.Goals is > 0 ? $" · {star.Goals} bàn" : ""),
-                        $"cau-thu/{star.PlayerId}", at, 80));
+                    desk.Add(new("league", "star", star.ClubId == mine ? "gold" : "violet", $"Ngôi sao khung {lr}: {star.Name}",
+                        N(star.ClubId) + (star.Goals is > 0 ? $" · {star.Goals} bàn" : ""), Num(star.Rating!.Value), $"cau-thu/{star.PlayerId}", at, 80));
 
-                // Cú đúp, hat-trick trong giải
                 var leIds = leGames.Select(x => x.Id).ToList();
-                var multi = await (from g in db.Goals where leIds.Contains(g.FixtureId) && g.ScorerPlayerId != null
-                                   group g by new { g.FixtureId, g.ScorerPlayerId, g.ClubId } into x where x.Count() >= 2
-                                   select new { x.Key.FixtureId, x.Key.ScorerPlayerId, x.Key.ClubId, N = x.Count() }).ToListAsync();
-                var mIds = multi.Select(x => x.ScorerPlayerId!.Value).Distinct().ToList();
-                var mNames = await db.Players.Where(x => mIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name);
-                foreach (var x in multi)
+                foreach (var x in await MultiAsync(db, leIds))
                 {
                     var f = leGames.First(y => y.Id == x.FixtureId);
                     var home = f.HomeClubId == x.ClubId;
                     int gf = (home ? f.HomeGoals : f.AwayGoals) ?? 0, ga = (home ? f.AwayGoals : f.HomeGoals) ?? 0;
-                    var what = x.N switch { 2 => "lập cú đúp", 3 => "lập hat-trick", _ => $"ghi {x.N} bàn" };
-                    side.Add(new("sports_soccer", x.ClubId == mine ? "gold" : "violet", $"{mNames.GetValueOrDefault(x.ScorerPlayerId!.Value) ?? "?"} {what}",
-                        $"{N(x.ClubId)} {gf}–{ga} {N(home ? f.AwayClubId : f.HomeClubId)} · khung {f.Number}", $"cau-thu/{x.ScorerPlayerId}", f.PlayedAt ?? now, 70 + x.N));
+                    desk.Add(new("league", "sports_soccer", x.ClubId == mine ? "gold" : "violet", $"{x.Name} {What(x.N)}",
+                        $"{N(x.ClubId)} {gf}–{ga} {N(home ? f.AwayClubId : f.HomeClubId)} · khung {f.Number}", x.N.ToString(), $"cau-thu/{x.PlayerId}", f.PlayedAt ?? now, 70 + x.N));
                 }
             }
 
-            // Chuyển nhượng trong giải mùa này: 2 vụ lớn nhất nổi lên trang chủ
+            // Chuyển nhượng trong giải mùa này
             var leClubs = clubNames.Keys.ToList();
             var deals = await (from t in db.Transfers join w in db.TransferWindows on t.TransferWindowId equals w.Id join pl in db.Players on t.PlayerId equals pl.Id
                                where w.SeasonId == sid && t.Status == TransferStatus.Completed && t.CompletedAt != null
                                      && ((t.FromClubId != null && leClubs.Contains(t.FromClubId.Value)) || (t.ToClubId != null && leClubs.Contains(t.ToClubId.Value)))
                                orderby t.CompletedAt descending
-                               select new { t.PlayerId, pl.Name, t.FromClubId, t.ToClubId, t.Fee, t.Kind, t.CompletedAt }).Take(Full ? 60 : 30).ToListAsync();
+                               select new { t.PlayerId, pl.Name, t.FromClubId, t.ToClubId, t.Fee, t.Kind, t.CompletedAt }).Take(Full ? 80 : 40).ToListAsync();
             var ext = deals.SelectMany(x => new[] { x.FromClubId, x.ToClubId }).OfType<Guid>().Where(g => !clubNames.ContainsKey(g)).Distinct().ToList();
             var extNames = await db.Clubs.Where(c => ext.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
             string C(Guid? id) => id is { } g ? clubNames.GetValueOrDefault(g) ?? extNames.GetValueOrDefault(g) ?? "?" : "tự do";
-            var big = deals.Where(x => x.Kind != TransferKind.Release && x.Kind != TransferKind.Loan && x.ToClubId is not null).OrderByDescending(x => x.Fee).Take(2).Select(x => x.PlayerId).ToHashSet();
             foreach (var x in deals)
             {
                 var mineDeal = x.FromClubId == mine || x.ToClubId == mine;
-                var w = big.Contains(x.PlayerId) ? 60 : mineDeal ? 50 : 20;
-                side.Add(x.ToClubId is null || x.Kind == TransferKind.Release
-                    ? new("person_remove", mineDeal ? "gold" : "violet", $"{x.Name} rời {C(x.FromClubId)}", "Giải phóng hợp đồng", $"cau-thu/{x.PlayerId}", x.CompletedAt!.Value, w)
-                    : new("swap_horiz", mineDeal ? "gold" : "violet", x.Kind == TransferKind.Loan ? $"{x.Name} được {C(x.ToClubId)} mượn" : $"{x.Name} gia nhập {C(x.ToClubId)}",
-                        (x.FromClubId is null ? "Cầu thủ tự do" : $"Từ {C(x.FromClubId)}") + (x.Kind == TransferKind.Loan ? "" : " · " + (x.Fee > 0 ? MoneyText.Format(x.Fee) : "miễn phí")), $"cau-thu/{x.PlayerId}", x.CompletedAt!.Value, w));
+                var wt = (int)Math.Min(int.MaxValue, (mineDeal ? 1_000_000_000L : 0) + x.Fee / 1000);   // đội mình trước, rồi theo phí
+                desk.Add(x.ToClubId is null || x.Kind == TransferKind.Release
+                    ? new DeskItem("deals", "person_remove", mineDeal ? "gold" : "violet", $"{x.Name} rời {C(x.FromClubId)}", "Giải phóng hợp đồng", null, $"cau-thu/{x.PlayerId}", x.CompletedAt!.Value, wt)
+                    : new DeskItem("deals", "swap_horiz", mineDeal ? "gold" : "violet", x.Kind == TransferKind.Loan ? $"{x.Name} được {C(x.ToClubId)} mượn" : $"{x.Name} gia nhập {C(x.ToClubId)}",
+                        x.FromClubId is null ? "Cầu thủ tự do" : $"Từ {C(x.FromClubId)}", x.Kind == TransferKind.Loan ? "Mượn" : x.Fee > 0 ? MoneyText.Format(x.Fee) : "0đ",
+                        $"cau-thu/{x.PlayerId}", x.CompletedAt!.Value, wt));
+            }
+            dealSlide = desk.Where(x => x.Col == "deals" && x.Icon == "swap_horiz" && x.Value is not ("Mượn" or "0đ")).MaxBy(x => x.Weight % 1_000_000_000);
+        }
+
+        // ---- Bóng đá thế giới: khung gần nhất có trận ----
+        var tickSlot = await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
+                              where m.SeasonId == sid && f.Status == FixtureStatus.Played select (int?)m.Number).MaxAsync() ?? 0;
+        List<WorldGame> world = tickSlot == 0 ? [] : await (from f in db.Fixtures.AsNoTracking() join m in db.Matchdays on f.MatchdayId equals m.Id
+                                                join e in db.Editions on f.CompetitionEditionId equals (Guid?)e.Id join c in db.Competitions on e.CompetitionId equals c.Id
+                                                join h in db.Clubs on f.HomeClubId equals h.Id join w in db.Clubs on f.AwayClubId equals w.Id
+                                                where m.SeasonId == sid && m.Number == tickSlot && f.Status == FixtureStatus.Played && f.HomeGoals != null && f.AwayGoals != null
+                                                select new WorldGame(f.Id, e.Id, c.Name, c.Tier, f.HomeGoals!.Value, f.AwayGoals!.Value, f.HomePenalties, f.AwayPenalties,
+                                                    f.HomeClubId, f.AwayClubId, f.PlayedAt, h.Name, h.LogoPath, w.Name, w.LogoPath)).ToListAsync();
+        int Rank(WorldGame x) => x.EditionId == leId ? -1 : Array.IndexOf(Big, x.Comp) is var i and >= 0 ? i : 10;
+        var ticker = world.OrderBy(Rank).ThenBy(x => x.Tier ?? 9).ThenBy(x => x.Comp).ThenByDescending(x => x.H + x.A)
+            .Select(x => x.ToGame(x.HomeClubId == mine || x.AwayClubId == mine)).Take(Full ? 60 : 36).ToList();
+        var abroad = world.Where(x => x.EditionId != leId).ToList();
+        var slides = new List<Slide>();
+        var rout = abroad.OrderByDescending(x => Math.Abs(x.H - x.A)).ThenByDescending(x => x.H + x.A).ThenBy(Rank).FirstOrDefault();
+        if (rout is not null && rout.H != rout.A)
+        {
+            var (winner, loser) = rout.H > rout.A ? (rout.Home, rout.Away) : (rout.Away, rout.Home);
+            desk.Add(new("world", "bolt", "violet", $"{Short(rout.Home)} {rout.Score} {Short(rout.Away)}", $"{rout.Comp} · thắng đậm nhất khung {tickSlot}",
+                null, $"tran/{rout.Id}", rout.PlayedAt ?? now, 90));
+            slides.Add(new("world", $"Bóng đá thế giới · {rout.Comp}", "violet", $"{Short(winner)} đè bẹp {Short(loser)}",
+                $"{Short(rout.Home)} {rout.Score} {Short(rout.Away)} · trận thắng đậm nhất khung {tickSlot}", $"tran/{rout.Id}", Game: rout.ToGame(false)));
+        }
+        var fest = abroad.Where(x => x.Id != rout?.Id).OrderByDescending(x => x.H + x.A).FirstOrDefault();
+        if (fest is not null && fest.H + fest.A >= 4)
+            desk.Add(new("world", "local_fire_department", "violet", $"{Short(fest.Home)} {fest.Score} {Short(fest.Away)}",
+                $"{fest.Comp} · trận nhiều bàn nhất khung", $"{fest.H + fest.A} bàn", $"tran/{fest.Id}", fest.PlayedAt ?? now, 85));
+        foreach (var x in (await MultiAsync(db, abroad.Select(x => x.Id).ToList())).Where(x => x.N >= 3))
+        {
+            var f = abroad.First(y => y.Id == x.FixtureId);
+            desk.Add(new("world", "sports_soccer", "violet", $"{x.Name} {What(x.N)}", $"{f.Comp} · {Short(f.Home)} {f.Score} {Short(f.Away)}", x.N.ToString(), $"cau-thu/{x.PlayerId}", f.PlayedAt ?? now, 80 + x.N));
+        }
+        // Dẫn đầu các giải lớn (trừ giải của mình)
+        var bigEds = await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id
+                            where e.SeasonId == sid && Big.Contains(c.Name) && c.Type == CompetitionType.DomesticLeague && e.Id != leId select new { e.Id, c.Name }).ToListAsync();
+        var leaders = new List<(string Comp, Guid Club, int Pts)>();
+        foreach (var e in bigEds.OrderBy(e => Array.IndexOf(Big, e.Name)))
+        {
+            var rows = await new CompetitionService(db, Store, Clock).GetEditionStandingsAsync(e.Id);
+            if (rows.Count > 0 && rows[0].Played > 0) leaders.Add((e.Name, rows[0].Club, rows[0].Points));
+        }
+        if (leaders.Count > 0)
+        {
+            var lids = leaders.Select(l => l.Club).ToList();
+            var lnames = await db.Clubs.Where(c => lids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
+            for (var i = 0; i < leaders.Count; i++)
+            {
+                var l = leaders[i];
+                desk.Add(new("world", "military_tech", "gold", $"{Short(lnames.GetValueOrDefault(l.Club) ?? "?")} dẫn đầu {l.Comp}", null, $"{l.Pts} đ", null, now, 60 - i));
             }
         }
 
-        return new([.. press_.OrderByDescending(x => x.At)], desk.Press, matches, [.. shots.OrderByDescending(s => s.At)], album, side);
+        // ---- Tin nóng: họp báo → bài báo trận của đội → trận nổi bật thế giới → vụ chuyển nhượng lớn ----
+        var hot = new List<Slide>();
+        var pressSorted = pressList.OrderByDescending(x => x.At).ToList();
+        if (pressSorted.FirstOrDefault() is { } lp)
+            hot.Add(new("press", lp.Res is null ? "Họp báo ra mắt" : "Họp báo sau trận", "gold", lp.Quote ? $"“{lp.Headline}”" : lp.Headline,
+                lp.Res is null ? Clip(lp.Meta, 120) : lp.ResText + (lp.Morale is { } mo && mo != 0 ? $" · Tinh thần đội {mo:+0;−0}" : ""), "truyen-thong", Press: lp));
+        if (matches.FirstOrDefault() is { } lm)
+            hot.Add(new("match", $"Bài báo sau trận · {lm.Comp.Split(" · ")[0]}", "cyan", Headline(lm), MatchSub(lm), $"truyen-thong#md-m-{lm.Id}",
+                Game: new(lm.Id, lm.Comp, lm.Home, lm.HomeLogo, lm.Away, lm.AwayLogo, lm.Score, true), Photo: lm.Photo));
+        hot.AddRange(slides);
+        if (dealSlide is not null)
+            hot.Add(new("deal", "Chợ chuyển nhượng", "cyan", dealSlide.Title, $"{dealSlide.Text} · vụ lớn nhất trong giải mùa này", dealSlide.Href, Icon: "swap_horiz", Big: dealSlide.Value));
+
+        return new(hot, ticker, tickSlot, pressSorted, media.Press, matches, [.. shots.OrderByDescending(s => s.At)], album, desk, le?.Name);
     }
 
-    // ---- Thẻ họp báo ----
+    sealed record Multi(Guid FixtureId, Guid PlayerId, Guid ClubId, string Name, int N);
+    /// <summary>Cú đúp trở lên trong các trận đã cho.</summary>
+    static async Task<List<Multi>> MultiAsync(ClubsDbContext db, List<Guid> fixtureIds)
+    {
+        if (fixtureIds.Count == 0) return [];
+        var multi = await (from g in db.Goals where fixtureIds.Contains(g.FixtureId) && g.ScorerPlayerId != null
+                           group g by new { g.FixtureId, g.ScorerPlayerId, g.ClubId } into x where x.Count() >= 2
+                           select new { x.Key.FixtureId, x.Key.ScorerPlayerId, x.Key.ClubId, N = x.Count() }).ToListAsync();
+        var ids = multi.Select(x => x.ScorerPlayerId!.Value).Distinct().ToList();
+        var names = await db.Players.Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name);
+        return [.. multi.Select(x => new Multi(x.FixtureId, x.ScorerPlayerId!.Value, x.ClubId, names.GetValueOrDefault(x.ScorerPlayerId!.Value) ?? "?", x.N))];
+    }
+    static string What(int n) => n switch { 2 => "lập cú đúp", 3 => "lập hat-trick", _ => $"ghi {n} bàn" };
+    static string Num(decimal v) => v.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Tít tin nóng trận của đội: phần sau dấu ":" của tít bài ("A 3–0 B: J. Sancho lập cú đúp") hoặc tỉ số.</summary>
+    static string Headline(MatchItem m) => m.Title is { } t && t.IndexOf(": ", StringComparison.Ordinal) is var i and > 0
+        ? $"{Short(m.Home)} {m.Score} {Short(m.Away)}: {t[(i + 2)..]}" : m.Title ?? $"{Short(m.Home)} {m.Score} {Short(m.Away)}";
+    static string MatchSub(MatchItem m) => string.Join(" · ", new[]
+    {
+        m.Scorers.Count == 0 ? null : string.Join(", ", m.Scorers.Select(s => $"{s.Name} {s.Minutes}")),
+        m.Motm is null ? null : $"Hay nhất trận {m.Motm}" + (m.MotmRating is { } r ? $" {Num(r)}" : ""),
+    }.OfType<string>());
+
+    RenderFragment Item(DeskItem x) => __builder =>
+    {
+        <i class="ms ic" aria-hidden="true">@x.Icon</i>
+        <span class="tx"><b>@x.Title</b>@if (x.Text is not null) { <small>@x.Text</small> }@if (x.Meter is { } mt) { <span class="md-meter"><i style="width:@(mt)%"></i></span> }</span>
+        @if (x.Value is not null) { <em class="v">@x.Value</em> } else if (x.Href is not null) { <i class="ms go" aria-hidden="true">chevron_right</i> }
+    };
+
+    // ---- Cảnh họp báo: ảnh ra mắt thật, hoặc dựng từ logo CLB + mặt HLV + bục + micro ----
+    RenderFragment Scene(PressItem x) => __builder =>
+    {
+        <span class="md-scene" aria-hidden="true">
+            <span class="md-wall" style="@(logo is null ? null : $"--logo:url('{logo}')")"></span>
+            @if (x.PhotoId is { } ph)
+            {
+                <img class="md-photo" src="hlv/anh/@ph" alt="" loading="lazy" />
+            }
+            else
+            {
+                @if (faceUrl is not null) { <img class="md-face @(faceCut ? "cut" : "box")" src="@faceUrl" alt="" loading="lazy" /> }
+                else { <span class="md-man"><i></i></span> }
+                <span class="md-podium">@if (logo is not null) { <img src="@logo" alt="" /> }</span>
+                <span class="md-mic m1"></span><span class="md-mic m2"></span><span class="md-mic m3"></span><span class="md-mic m4"></span>
+            }
+            <span class="md-fl f1"></span><span class="md-fl f2"></span><span class="md-fl f3"></span>
+        </span>
+    };
+
     RenderFragment PressCard(PressItem x) => __builder =>
     {
         <article class="md-press @(x.Res is null ? "debut" : x.Res)">
-            <div class="md-scene" aria-hidden="true">
-                @if (x.PhotoId is { } ph)
-                {
-                    <span class="md-wall" style="@(logo is null ? null : $"--logo:url('{logo}')")"></span>
-                    <img class="md-photo" src="hlv/anh/@ph" alt="" loading="lazy" />
-                }
-                else
-                {
-                    <span class="md-wall" style="@(logo is null ? null : $"--logo:url('{logo}')")"></span>
-                    @if (faceUrl is not null) { <img class="md-face @(faceCut ? "cut" : "box")" src="@faceUrl" alt="" loading="lazy" /> }
-                    else { <span class="md-man"><i></i></span> }
-                    <span class="md-podium">@if (logo is not null) { <img src="@logo" alt="" /> }</span>
-                    <span class="md-mic m1"></span><span class="md-mic m2"></span><span class="md-mic m3"></span><span class="md-mic m4"></span>
-                }
-                <span class="md-fl f1"></span><span class="md-fl f2"></span><span class="md-fl f3"></span>
+            <div class="md-pscene">
+                @Scene(x)
                 <span class="md-tag"><i class="ms fill">photo_camera</i>@x.Tag</span>
                 @if (x.ResText is not null) { <span class="md-res">@x.ResText</span> }
             </div>
@@ -371,7 +546,6 @@
         </article>
     };
 
-    // ---- Thẻ bài báo sau trận ----
     RenderFragment MatchCard(MatchItem m) => __builder =>
     {
         var open = m.ArticleId is { } aid && reading.Contains(aid);
@@ -405,7 +579,7 @@
                     <div class="md-body">@foreach (var para in m.Paras) { <p>@para</p> }</div>
                 }
                 <div class="md-act">
-                    @if (m.Motm is not null) { <span class="md-motm"><i class="ms fill" aria-hidden="true">star</i>Hay nhất trận <b>@m.Motm</b> <em>@(m.MotmRating?.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))</em></span> }
+                    @if (m.Motm is not null) { <span class="md-motm"><i class="ms fill" aria-hidden="true">star</i>Hay nhất trận <b>@m.Motm</b> <em>@(m.MotmRating is { } mr ? Num(mr) : null)</em></span> }
                     <span class="md-btns">
                         @if (m.ArticleId is { } id && m.Paras.Count > 0)
                         {
@@ -440,6 +614,6 @@
     static readonly System.Globalization.CultureInfo Vi = System.Globalization.CultureInfo.GetCultureInfo("vi-VN");
     static string Clip(string s, int n) => s.Length <= n ? s : (s.LastIndexOf(' ', n) is var i and > 0 ? s[..i] : s[..n]) + "…";
     static readonly string[] Tails = [" FC", " AFC", " CF", " SC"];
-    /// <summary>Tên gọn trên đồ hoạ: bỏ đuôi FC/AFC… ("Aston Villa FC" → "Aston Villa").</summary>
+    /// <summary>Tên gọn: bỏ đuôi FC/AFC… ("Aston Villa FC" → "Aston Villa").</summary>
     static string Short(string name) => Tails.FirstOrDefault(t => name.EndsWith(t, StringComparison.Ordinal)) is { } t ? name[..^t.Length] : name;
 }

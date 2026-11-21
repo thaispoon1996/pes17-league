@@ -215,6 +215,32 @@
     if (open) { mailY = scrollY; scrollTo(0, 0); } else scrollTo(0, mailY);
   };
   // Chuyển nhượng (PO 20/11): bấm "Chỗ cần bổ sung" → cuộn tới ô tìm; Esc đóng bảng trượt hồ sơ/bộ lọc (khi không có hộp xác nhận).
+  // Tin nóng trang chủ (CareerMedia): mỗi tin ~5s, chấm tiến độ, dừng khi rê chuột/focus/tab ẩn; reduced-motion = không tự chạy.
+  // Blazor không đặt lại class khi markup không đổi → JS giữ tin đang hiện, gọi lại sau mỗi lần vẽ chỉ đồng bộ.
+  window.cxHot = () => {
+    document.querySelectorAll('.cx [data-hot]').forEach(el => {
+      const slides = [...el.querySelectorAll('.md-slide')], dots = [...el.querySelectorAll('.md-dots button')];
+      const st = el._hot || (el._hot = { i: 0, t: 0, hold: false });
+      const show = i => {
+        st.i = (i + slides.length) % slides.length;
+        slides.forEach((s, k) => { s.classList.toggle('on', k === st.i); s.setAttribute('aria-hidden', k === st.i ? 'false' : 'true'); s.tabIndex = k === st.i ? 0 : -1; });
+        dots.forEach((d, k) => { d.classList.remove('on'); d.classList.toggle('done', k < st.i); d.setAttribute('aria-current', k === st.i ? 'true' : 'false'); });
+        const d = dots[st.i]; if (d) { void d.offsetWidth; d.classList.add('on'); }
+        clearTimeout(st.t);
+        if (slides.length > 1 && !reduce && !st.hold) st.t = setTimeout(() => show(st.i + 1), 5200);
+      };
+      st.show = show;
+      if (!el._hotBound) {
+        el._hotBound = true;
+        dots.forEach((d, k) => d.addEventListener('click', e => { e.preventDefault(); show(k); }));
+        const hold = v => { st.hold = v; el.classList.toggle('paused', v); v ? clearTimeout(st.t) : show(st.i); };
+        el.addEventListener('mouseenter', () => hold(true)); el.addEventListener('mouseleave', () => hold(false));
+        el.addEventListener('focusin', () => hold(true)); el.addEventListener('focusout', () => hold(false));
+        document.addEventListener('visibilitychange', () => document.hidden ? clearTimeout(st.t) : show(st.i));
+        show(0);
+      } else if (slides[st.i] && !slides[st.i].classList.contains('on')) show(st.i);
+    });
+  };
   window.cxScrollTo = sel => { const el = document.querySelector(sel); el && el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !document.querySelector('.ui-dialog.on')) document.querySelector(':is(.mk-sheet, .bx-sheet) .x')?.click();

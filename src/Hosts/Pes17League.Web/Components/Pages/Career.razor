@@ -20,11 +20,12 @@
 
 @if (club is not null)
 {
-    @* Trang chủ career "Phòng điều hành" (PO 20/11, phương án A): trận tiếp theo dưới đèn sân, 4 chỉ số CLB, Cần xử lý (gộp thư quyết định,
-       đề nghị, cảnh báo), Vòng vừa qua (chỉ dữ liệu thật), cột mùa giải (lịch, mục tiêu, BXH, phong độ, cúp), ngôi sao đội. Máy tính 2 cột. *@
+    @* Trang chủ career "Tờ báo buổi sáng" (PO 21/11): tin nóng + dải kết quả (CareerMedia) → trận tiếp theo, 4 chỉ số CLB, Cần xử lý dạng chip (gộp thư quyết định,
+       đề nghị, cảnh báo) → Nhịp sống (Vòng vừa qua = cột Đội nhà) + album; cột mùa giải (lịch, mục tiêu, BXH, phong độ, cúp), ngôi sao đội. Máy tính 2 cột. *@
     var morale = squadMorale;
     <div class="hm">
         <div class="hm-main">
+            <CareerMedia Stamp="@lastFixtureId" Club="@ClubFeed">
             @if (current is null)
             {
                 <section class="cx-card cx-finale hm-hero-alt">
@@ -56,6 +57,7 @@
                             <span class="t @(n.AwayId == clubId ? "me" : null)"><Crest Name="@n.Away" Logo="@n.AwayLogo" Large="true" /><b>@n.Away</b><small>OVR @n.AwayOvr</small><FormDots Form="@n.AwayForm" /></span>
                         </div>
                         <p class="hm-when"><i class="ms" aria-hidden="true">@(current.MineFixture is not null ? "sports" : "schedule")</i>@WhenLine(n)</p>
+                        <span class="cx-btn gold sm hm-go"><i class="ms fill" aria-hidden="true">@(current.MineFixture is not null ? "sports_soccer" : "visibility")</i>@(current.MineFixture is not null ? "Vào trận" : "Xem trận")</span>
                     }
                     else
                     {
@@ -106,7 +108,7 @@
                 </a>
             </div>
 
-            <section class="hm-sec" aria-labelledby="hm-todo">
+            <section class="hm-sec hm-todo" aria-labelledby="hm-todo">
                 <h2 class="hm-h" id="hm-todo">Cần xử lý @if (todo.Count > 0) { <small>@todo.Count</small> }</h2>
                 @if (todo.Count == 0)
                 {
@@ -114,36 +116,17 @@
                 }
                 else
                 {
-                    <ul class="hm-list">
+                    <div class="hm-chips">
                         @foreach (var t in todo)
                         {
-                            <li><a class="hm-item t-@t.Tone" href="@t.Href">
-                                <i class="ms ic" aria-hidden="true">@t.Icon</i>
-                                <span class="tx"><b>@t.Title</b>@if (t.Text is not null) { <small>@t.Text</small> }</span>
-                                @if (t.Chip is not null) { <em>@t.Chip</em> }
-                                <i class="ms go" aria-hidden="true">chevron_right</i>
-                            </a></li>
+                            <a class="hm-chip t-@t.Tone" href="@t.Href" title="@t.Text">
+                                <i class="ms" aria-hidden="true">@t.Icon</i><b>@t.Title</b>@if (t.Chip is not null) { <em>@t.Chip</em> }
+                            </a>
                         }
-                    </ul>
+                    </div>
                 }
             </section>
-
-            @if (feed.Count > 0)
-            {
-                <section class="hm-sec" aria-labelledby="hm-feed">
-                    <h2 class="hm-h" id="hm-feed">Vòng vừa qua @if (lastSlot is { } ls) { <small>khung @ls</small> }</h2>
-                    <ol class="hm-tl">
-                        @foreach (var f in feed)
-                        {
-                            <li class="t-@f.Tone"><a href="@f.Href">
-                                <i class="ms ic" aria-hidden="true">@f.Icon</i>
-                                <span class="tx"><b>@f.Title</b>@if (f.Text is not null) { <small>@f.Text</small> }</span>
-                            </a></li>
-                        }
-                    </ol>
-                </section>
-            }
-            <CareerMedia Stamp="@lastFixtureId" />
+            </CareerMedia>
         </div>
 
         <aside class="hm-side">
@@ -750,6 +733,9 @@
     sealed record FeedItem(string Icon, string Tone, string Title, string? Text, string? Href);
     sealed record Upcoming(Guid Id, int Slot, string Opponent, string? Logo, bool Home, string Competition);
     List<Todo> todo = [];            // Cần xử lý: thư quyết định, việc, cảnh báo (hết, không cắt 3)
+    /// <summary>Đội nhà (cột Nhịp sống): tin vòng vừa qua trừ kết quả/bài báo/chuyển nhượng (đã có ở tin nóng, dải kết quả, cột Chuyển nhượng).</summary>
+    IReadOnlyList<(string Icon, string Tone, string Title, string? Text, string? Href)> ClubFeed => [.. feed
+        .Where(f => f.Icon is not ("sports_soccer" or "newspaper" or "swap_horiz" or "person_remove")).Select(f => (f.Icon, f.Tone, f.Title, f.Text, f.Href))];
     List<FeedItem> feed = [];        // Vòng vừa qua: chỉ dữ liệu thật kể từ trận trước của đội
     List<Upcoming> upcoming = [];    // 3 trận sau trận tiếp theo
     int? squadMorale, prevPos, lastSlot;
