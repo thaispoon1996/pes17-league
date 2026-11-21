@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using Pes17League.Clubs.Infrastructure;
 
@@ -11,8 +12,18 @@ public enum MatchSide { Home, Away }
 /// <param name="ExtraTime">Chung kết (PO 06/11): hoà sau 90' → game tự đá hiệp phụ rồi loạt penalty.</param>
 /// <param name="Refresh">Vào trận nhanh (PO 16/11, cần <paramref name="Go"/>): game dựng sẵn tới màn Chọn đội ("warm"), lúc Go dựng lại OF
 /// (đội hình mới nhất) và ghi squad + đội hình 2 đội vào bộ nhớ game rồi mới chọn đội.</param>
+/// <param name="Sync">Cùng <paramref name="Refresh"/> (PES17, PO 21/11): HLV sửa đội hình trong lúc chờ → bộ chạy dựng lại ảnh chụp và
+/// gửi "sync FILE" để game cài lại ngay, lúc bấm Sẵn sàng thường không phải khởi động lại game nữa.</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
-    bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false);
+    bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null);
+
+/// <summary>Báo "đội hình vừa đổi" trong lúc game dựng sẵn chờ Sẵn sàng (gộp nhiều lần báo thành 1).</summary>
+public sealed class SquadSync
+{
+    private readonly Channel<bool> ch = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
+    public void Changed() => ch.Writer.TryWrite(true);
+    public ChannelReader<bool> Reader => ch.Reader;
+}
 
 /// <param name="Half">1 = hiệp 1, 2 = hiệp 2, 3/4 = hiệp phụ 1/2 (phút 91–120).</param>
 /// <param name="Slot">Ô cầu thủ ghi bàn (cùng thứ tự ô với RunRating); null = không xác định.</param>
@@ -145,11 +156,11 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
 /// BOT → chờ ở màn Thiết lập (<see cref="MatchRunRequest.Go"/>).</param>
     /// <param name="both">Trận giải người vs người (PO 17/11): 2 HLV chung máy 2 người (pesmatch "both"), không thử lại khi lỗi (người chơi bấm Sẵn sàng lại).</param>
     public async Task<FixtureRunReport> PlayFixtureAsync(Guid fixtureId, MatchSide? humanSide, string? container = null, CancellationToken ct = default, Task? go = null,
-        bool both = false) =>
-        (await RunFixtureAsync(fixtureId, container ?? _o.Containers[0], humanSide, ct, go, both: both)).Report;
+        bool both = false, SquadSync? sync = null) =>
+        (await RunFixtureAsync(fixtureId, container ?? _o.Containers[0], humanSide, ct, go, both: both, sync: sync)).Report;
 
     private async Task<(FixtureRunReport Report, RecordResult? Result)> RunFixtureAsync(Guid fixtureId, string container, MatchSide? humanSide, CancellationToken ct, Task? go = null,
-        CancellationToken stop = default, bool both = false)
+        CancellationToken stop = default, bool both = false, SquadSync? sync = null)
     {
         string? error = null;
         var max = both ? 1 : _o.MaxAttempts;
@@ -166,7 +177,7 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             {
                 var req = await RequestAsync(db, fixtureId, container, humanSide, ct) with { Go = go, BothHuman = both };
                 if (go is not null && humanSide is not null)
-                    req = req with { Refresh = async c => { await using var db2 = dbFactory(); return (await RequestAsync(db2, fixtureId, container, humanSide, c)).OptionFile; } };
+                    req = req with { Refresh = async c => { await using var db2 = dbFactory(); return (await RequestAsync(db2, fixtureId, container, humanSide, c)).OptionFile; }, Sync = sync };
                 outcome = await runner.RunAsync(req, ct);
             }
             catch (OperationCanceledException)

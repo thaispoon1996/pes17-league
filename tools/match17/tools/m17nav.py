@@ -11,7 +11,8 @@ Danh sách quay vòng → seek đi Down tối đa N bước; chạm mép (tên k
 """
 from __future__ import annotations
 
-import subprocess, sys, time
+import os, queue, subprocess, sys, threading, time
+from contextlib import contextmanager
 from pathlib import Path
 from PIL import Image, ImageChops
 
@@ -35,10 +36,75 @@ def shot(name: str = "nav") -> Image.Image:
 SLOT = {"home": 0, "away": 0}   # tay cầm (index selkies) chọn đội từng bên; trận 2 người: away = 1 (P2 đứng cột AWAY)
 
 
+BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
+_PADS: dict[int, tuple[subprocess.Popen, "queue.Queue[str]"]] = {}
+_PERSIST = False
+
+
 def pad(keys: str, slot: int = 0) -> None:
-    import os
+    """Gửi chuỗi nút. Trong session(): giữ 1 kết nối tay cầm ảo/slot (pad.sh mỗi lần phải nối lại + chờ cắm pad ~1,3 s)."""
+    if _PERSIST and _pad_line(slot, keys):
+        return
     subprocess.run([str(ROOT / "tools" / "pad.sh"), keys], check=True, capture_output=True,
                    env={**os.environ, "PAD_SLOT": str(slot)})
+
+
+def _pad_line(slot: int, keys: str) -> bool:
+    if slot not in _PADS:
+        subprocess.run(["docker", "cp", str(ROOT / "tools" / "pad17.py"), f"{BENCH}:/tmp/pad17.py"], capture_output=True)
+        p = subprocess.Popen(["docker", "exec", "-i", BENCH, "/lsiopy/bin/python3", "/tmp/pad17.py", str(slot)],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        q: "queue.Queue[str]" = queue.Queue()
+        threading.Thread(target=lambda: [q.put(l.strip()) for l in p.stdout] and None, daemon=True).start()
+        _PADS[slot] = (p, q)
+        if not _wait_line(q, "ready", 15):
+            _close(slot)
+            return False
+    p, q = _PADS[slot]
+    try:
+        p.stdin.write(keys + "\n")
+        p.stdin.flush()
+    except OSError:
+        _close(slot)
+        return False
+    waits = sum(float(k[2:]) for k in keys.split() if k.startswith("w:"))
+    if _wait_line(q, "ok", waits + 0.5 * len(keys.split()) + 10):
+        return True
+    _close(slot)   # treo/đứt → bỏ kết nối; lần sau nối lại (phím có thể đã gửi một phần — người gọi vẫn dò lại màn hình)
+    return True
+
+
+def _wait_line(q: "queue.Queue[str]", want: str, timeout: float) -> bool:
+    end = time.monotonic() + timeout
+    while (left := end - time.monotonic()) > 0:
+        try:
+            if q.get(timeout=left) == want:
+                return True
+        except queue.Empty:
+            break
+    return False
+
+
+def _close(slot: int) -> None:
+    p, _ = _PADS.pop(slot)
+    try:
+        p.stdin.close()
+        p.wait(3)
+    except Exception:
+        p.kill()
+
+
+@contextmanager
+def session():
+    """Đi menu nhanh: giữ kết nối tay cầm suốt khối lệnh, đóng khi ra (trước khi người chơi cầm tay cầm)."""
+    global _PERSIST
+    _PERSIST = True
+    try:
+        yield
+    finally:
+        _PERSIST = False
+        for slot in list(_PADS):
+            _close(slot)
 
 
 def crop(im: Image.Image, side: str) -> Image.Image:

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Channels;
 using Pes17League.Clubs.Application;
 
 namespace Pes17League.Clubs.Infrastructure;
@@ -13,13 +14,18 @@ namespace Pes17League.Clubs.Infrastructure;
 /// <see cref="MatchRunRequest.ExtraTime"/>: PESMATCH_EXTRA_TIME=1 (Thiết lập bật hiệp phụ + penalty).
 /// <paramref name="onEvent"/>: nhận mọi sự kiện (theo dõi trực tiếp trên web).
 /// <see cref="MatchRunRequest.Go"/>: PESMATCH_WAIT_GO=1, game chờ ở màn Thiết lập ("stage":"ready") tới khi ghi "go" vào stdin.
+/// <see cref="MatchRunRequest.Refresh"/>: PESMATCH_WARM=1, "go FILE" = đội hình lúc bấm; <see cref="MatchRunRequest.Sync"/>: đội hình đổi lúc chờ
+/// → yên <see cref="SyncQuiet"/> thì gửi "sync FILE" (PES17: game cài lại ngay, không đợi tới lúc bấm Sẵn sàng).
 /// <paramref name="recordingDir"/>: có → ghi hình cả trận (PESMATCH_REC, C7) vào {recordingDir}/{fixture}-{giờ UTC}.mkv; "wall" = giây trong video.
 /// <paramref name="liveDir"/>: có (cùng ghi hình) → thêm HLS xem trực tiếp (PESMATCH_LIVE) {liveDir}/{fixture}.m3u8, sự kiện "live" khi bắt đầu ghi.
 /// </summary>
 public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<MatchRunRequest, JsonElement>? onEvent = null, string? recordingDir = null,
-    string? liveDir = null)
+    string? liveDir = null, TimeSpan? syncQuiet = null)
     : IMatchRunner
 {
+    /// <summary>Gom thay đổi đội hình: HLV thường chỉnh liền nhiều lần, mỗi lần cài lại PES17 phải khởi động lại game (~1,5–2 phút).</summary>
+    public static readonly TimeSpan SyncQuiet = TimeSpan.FromSeconds(15);
+
     public async Task<MatchRunOutcome> RunAsync(MatchRunRequest r, CancellationToken ct)
     {
         Directory.CreateDirectory(workDir);
@@ -37,6 +43,37 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         if (liveDir is not null) psi.Environment["PESMATCH_LIVE"] = Path.Combine(Path.GetFullPath(liveDir), $"{r.FixtureId:N}.m3u8");
 
         using var p = Process.Start(psi)!;
+        var stdin = new SemaphoreSlim(1, 1);
+        async Task Send(string line)
+        {
+            await stdin.WaitAsync(CancellationToken.None);
+            try { p.StandardInput.WriteLine(line); p.StandardInput.Flush(); } catch { } finally { stdin.Release(); }   // tiến trình đã thoát → bỏ qua
+        }
+        using var running = CancellationTokenSource.CreateLinkedTokenSource(ct);   // hết trận → dừng vòng sync
+        if (r is { Sync: { } sync, Refresh: { } refresh, Go: { } go })
+            _ = SyncAsync(sync, refresh, go, running.Token);
+        async Task SyncAsync(SquadSync sync, Func<CancellationToken, Task<byte[]>> refresh, Task go, CancellationToken c)
+        {
+            try
+            {
+                for (var n = 1; !go.IsCompleted; n++)
+                {
+                    await sync.Reader.ReadAsync(c);
+                    do await Task.WhenAny(Task.Delay(syncQuiet ?? SyncQuiet, c), go);
+                    while (!go.IsCompleted && sync.Reader.TryRead(out _));
+                    c.ThrowIfCancellationRequested();
+                    if (go.IsCompleted) return;              // Sẵn sàng: "go FILE" tự dựng bản mới nhất
+                    var file = Path.Combine(workDir, $"{r.FixtureId:N}.sync{n}.of");
+                    await File.WriteAllBytesAsync(file, await refresh(c), c);
+                    if (!go.IsCompleted) await Send($"sync {Path.GetFullPath(file)}");
+                }
+            }
+            catch (Exception e) when (e is OperationCanceledException or ChannelClosedException) { }
+            catch (Exception e)                              // dựng lỗi: bỏ lần này, lúc Sẵn sàng còn dựng lại
+            {
+                onEvent?.Invoke(r, JsonDocument.Parse(JsonSerializer.Serialize(new { @event = "sync_error", reason = e.Message })).RootElement);
+            }
+        }
         r.Go?.ContinueWith(async _ =>
         {
             var line = "go";
@@ -55,7 +92,7 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
                     return;
                 }
             }
-            try { p.StandardInput.WriteLine(line); p.StandardInput.Flush(); } catch { }
+            await Send(line);
         }, TaskContinuationOptions.OnlyOnRanToCompletion);   // tiến trình đã thoát/dispose → bỏ qua
         var goals = new List<RunGoal>();
         var ratings = new List<RunRating>();
@@ -106,8 +143,11 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         }
         finally
         {
+            running.Cancel();
             if (!p.HasExited) p.Kill(entireProcessTree: true);
             File.Delete(of);
+            foreach (var f in Directory.EnumerateFiles(workDir, $"{r.FixtureId:N}.*.of"))
+                try { File.Delete(f); } catch (IOException) { }
         }
     }
 

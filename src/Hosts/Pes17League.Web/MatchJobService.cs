@@ -60,6 +60,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     private CancellationTokenSource? _cts;
     private Dictionary<Guid, string> _names = [];
     private TaskCompletionSource? _go;
+    private SquadSync? _sync;
     private CancellationTokenSource? _stop;
     private Guid? _declined;
     private Guid? _botMatchday;   // vòng của việc "Đá các trận BOT" đang chạy (để đá tiếp sau trận admin chen ngang)
@@ -236,6 +237,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     public bool PlayHuman(Guid fixtureId, MatchSide side, bool prepare = false, Action? then = null, bool career = false)
     {
         var go = prepare ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
+        var sync = prepare ? new SquadSync() : null;
         var played = false;
         return Start("Trận của tôi", async ct =>
         {
@@ -251,7 +253,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
             if (go is null) Write($"Mở stream — game đang tự vào trận, PO điều khiển đội {(side == MatchSide.Home ? "nhà" : "khách")}.");
             try
             {
-                var r = await Orchestrator().PlayFixtureAsync(fixtureId, side, ct: ct, go: go?.Task);
+                var r = await Orchestrator().PlayFixtureAsync(fixtureId, side, ct: ct, go: go?.Task, sync: sync);
                 Write(r.Played ? "Trận đã ghi kết quả." : $"Chưa ghi kết quả: {r.LastError} (sau {r.Attempts} lần)");
                 played = r.Played;
                 if (r.HighlightError is not null) Write($"Highlight lỗi: {r.HighlightError}");
@@ -263,7 +265,13 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
                 if (go is { Task.IsCompleted: false }) _declined = fixtureId;
                 if (pass.Enabled) await pass.CloseAsync(fixtureId);
             }
-        }, () => { _go = go; _declined = null; }, () => { then?.Invoke(); if (career && played) SimulateCareer(); });
+        }, () => { _go = go; _sync = sync; _declined = null; }, () => { then?.Invoke(); if (career && played) SimulateCareer(); });
+    }
+
+    /// <summary>HLV vừa lưu đội hình/chiến thuật (LineupBoard): đang dựng sẵn chờ Sẵn sàng → game cài lại đội hình ngay (PES17, PO 21/11).</summary>
+    public void SquadChanged()
+    {
+        if (Preparing) _sync?.Changed();
     }
 
     /// <summary>Bấm Đá khi đã chuẩn bị: game vào trận ngay (chưa tới màn Thiết lập thì đi tiếp vào thẳng).</summary>
@@ -349,6 +357,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
             _log.Clear();
             _cts = new CancellationTokenSource();
             _go = null;
+            _sync = null;
             _stop = null;
             StageAt = clock.GetUtcNow();
             _stageTimes.Clear();

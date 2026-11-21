@@ -11,6 +11,7 @@
 @inject IOptionFileStore Store
 @inject Pes17GameFormations GameForms
 @inject IJSRuntime JS
+@inject MatchJobService Jobs
 
 <div class="board @(Locked ? "locked" : "")">
     @* FM đợt 10: phong cách dựng sẵn (TacticPresets) — 1 chạm đặt sơ đồ + thiết lập + L2; chỉnh tay sau đó vẫn được. *@
@@ -272,6 +273,7 @@
             await using var db = await Dbs.CreateDbContextAsync();
             var err = await save(new TacticsService(db, Clock));
             message = err is null ? null : $"Không lưu được chiến thuật: {err}";
+            if (err is null) Jobs.SquadChanged();   // đang dựng sẵn trận → game cài lại ngay
         }
         await LoadAsync();
     }
@@ -377,7 +379,11 @@
         var err = await new LineupService(db).SwapAsync(ClubId, a, b);
         message = err switch { null => null, LineupError.GoalkeeperSlot => "Ô thủ môn chỉ dành cho GK.", _ => $"Không đổi được: {err}" };
         await LoadAsync();
-        if (err is null) await Changed.InvokeAsync();
+        if (err is null)
+        {
+            Jobs.SquadChanged();
+            await Changed.InvokeAsync();
+        }
     }
 
     public async ValueTask DisposeAsync()

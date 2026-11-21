@@ -4,10 +4,13 @@
   pesmatch17.py run CONTAINER SQUADS_JSON HOME_ID AWAY_ID [home|away|both]
     SQUADS_JSON = ảnh chụp đội hình vòng (Pes17RoundService), HOME_ID/AWAY_ID = mã đội PES17 (ClubPesMappings.PesClubIndex).
     1. giữ $DATA/pes17-deploy/match.lock (sync.sh không khởi động lại game khi đang đá)
-    2. tools/pes17db/deploy.sh --squads SQUADS_JSON --restart (đội hình giống bản đã cài thì không làm gì)
+    2. đội hình + sơ đồ + vai + chiến thuật của 2 đội trận này đã có trong game (squads.json đã cài) → không cài lại, không khởi động lại game;
+       khác → tools/pes17db/deploy.sh --squads SQUADS_JSON --force --restart (PES17 chỉ đọc dữ liệu lúc khởi động)
     3. đi menu tới Select Team (chỉ bấm A khi không nhận ra màn chọn đội / Kickoff), chọn giải + CLB bằng mẫu ảnh tên (m17nav)
     4. Match Time: trận có người 10 phút, trận BOT 5 phút. Trận BOT: Y bật Coach Mode (máy đá cả 2 bên) → Kickoff. Trận có người (home|away): dừng ở màn Kickoff ("ready"),
        PESMATCH_WAIT_GO=1 thì chờ dòng "go" ở stdin rồi bấm Kickoff; người chơi (Selkies, link stream trên web) tự chọn bên và đá.
+       PESMATCH_WARM=1 (web dựng sẵn, PO 21/11): như WAIT_GO, thêm "sync FILE" (HLV sửa đội hình lúc chờ, web đã gom) và "go FILE"
+       (đội hình lúc bấm Sẵn sàng): 2 đội khác game → cài lại + khởi động lại game (sync: ngay trong lúc HLV còn chỉnh).
     5. theo dõi trận bằng OCR (tools/m17ocr.py, RapidOCR): HUD → tỷ số + phút từng bàn; bảng số / menu nghỉ → A;
        tỷ số cuối = số to ở menu hết trận. Khi đang đá không bấm gì (Coach Mode: máy tự đá cả bóng chết).
     6. về lại màn chọn đội cho trận sau; xoá match.lock.
@@ -21,7 +24,7 @@
 """
 from __future__ import annotations
 
-import json, os, re, subprocess, sys, threading, time
+import hashlib, json, os, queue, re, subprocess, sys, threading, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -36,6 +39,8 @@ DATA = Path(os.environ.get("PES17_DATA") or (Path(os.environ["PES17_STORE"]).par
 OUT = DATA / "pes17-deploy"
 LOCK = OUT / "match.lock"
 WAIT_GO = os.environ.get("PESMATCH_WAIT_GO") == "1"
+WARM = os.environ.get("PESMATCH_WARM") == "1"
+BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
 BOOT_TIMEOUT = 300        # từ lúc mở game tới màn chọn đội
 NO_PITCH_TIMEOUT = 600    # quá 10 phút không thấy HUD trận → treo
 HUMAN_PREMATCH_TIMEOUT = 1800
@@ -44,7 +49,7 @@ HUMAN_HALFTIME_TIMEOUT = 600   # trận có người: nghỉ giữa hiệp quá 
 # → bên không bấm gì ≥ 4 phút là vắng: đúng 1 bên → error afk_home|afk_away (bên đó xử thua 0-3), cả hai/không rõ → afk (huỷ).
 AFK_STALL = int(os.environ.get("PESMATCH_AFK_STALL", 300))   # biến môi trường chỉ để thử
 AFK_IDLE = int(os.environ.get("PESMATCH_AFK_IDLE", 240))
-GO = threading.Event()
+CMDS: "queue.Queue[tuple[str, str | None]]" = queue.Queue()   # ("go"|"sync", file đội hình|None) từ stdin
 T0 = time.monotonic()
 
 
@@ -91,11 +96,12 @@ def is_ask(im: Image.Image) -> bool:
 
 # ---------- đi menu ----------
 
-def to_team_select(both: bool = False, away: bool = False) -> None:
+def to_team_select(both: bool = False, away: bool = False, fresh: bool = False) -> None:
     """Tới danh sách giải bên nhà của màn Select Team, qua màn chọn tay cầm đúng 1 lần (xếp P1/P2, xem arrange_pads).
-    Chỉ bấm A khi không nhận ra màn (tiêu đề, hộp thoại mạng, menu chính)."""
+    Chỉ bấm A khi không nhận ra màn (tiêu đề, hộp thoại mạng, menu chính).
+    fresh: game vừa khởi động → không thể đang đá/ở menu hết trận, bỏ OCR HUD/menu (~2,5 s mỗi lần bấm). Game crash lúc khởi động → mở lại (tối đa 2 lần)."""
     end = time.monotonic() + BOOT_TIMEOUT
-    stage, arranged, backs = None, False, 0
+    stage, arranged, backs, restarts, dead = None, False, 0, 0, 0
     while time.monotonic() < end:
         im = nav.shot("m17_nav")
         kind, key, _ = header(im, "home")
@@ -111,15 +117,25 @@ def to_team_select(both: bool = False, away: bool = False) -> None:
             arrange_pads(both, away)
             arranged = True
             continue
-        if kind == "teams" or header(im, "away")[0] or kickoff_screen(im):
+        if kind == "teams" or kickoff_screen(im) or header(im, "away")[0]:
             nav.pad("B w:2")
             continue
-        if ocr.hud(im) or ocr.stats_screen(im):
-            raise NavError("game đang đá (thấy HUD/bảng số)")
-        if ocr.menu(im):   # menu hết trận còn lại từ trận trước: Select Team
-            nav.pad("Right w:0.6 A w:3")
-            if is_ask(nav.shot("m17_nav")):
-                nav.pad("Left w:0.4 A w:3")
+        if not fresh:
+            if ocr.hud(im) or ocr.stats_screen(im):
+                raise NavError("game đang đá (thấy HUD/bảng số)")
+            if ocr.menu(im):   # menu hết trận còn lại từ trận trước: Select Team
+                nav.pad("Right w:0.6 A w:3")
+                if is_ask(nav.shot("m17_nav")):
+                    nav.pad("Left w:0.4 A w:3")
+                continue
+        dead = dead + 1 if (st := game_state()) == "dead" else 0
+        if st == "crash" or dead >= 2:
+            if restarts >= 2:
+                raise NavError(f"game_crash: PES2017 lỗi khi khởi động ({st})")
+            restarts += 1
+            log(f"game {st} → mở lại game (lần {restarts})")
+            restart_game()
+            end, fresh, dead = time.monotonic() + BOOT_TIMEOUT, True, 0
             continue
         if stage != "menu":
             stage = "menu"
@@ -194,6 +210,9 @@ def arrange_away() -> None:
         if rows[1] == 2:            # dòng 1 kẹt AWAY: 2 lần Left kéo cả P1 lẫn dòng 1 về HOME, vòng sau Right → [2, 1]
             nav.pad("Left w:2.5 Left w:2.5", 0)
             continue
+        if rows[0] == 0 and rows[1] == 1:   # lúc mới vào màn: Left → [0, 0], vòng sau Right → [2, 1] (Right ngay → [2, 2] mất thêm 2 lần bấm)
+            nav.pad("Left w:2.5", 0)
+            continue
         if rows[0] != 2 or rows[1] == 0:
             nav.pad("Right w:2.5", 0)
             continue
@@ -236,7 +255,7 @@ def match_time(want: int = MATCH_TIME) -> None:
             v = int(m[1])
             if v == want:
                 return
-            nav.pad(("Right" if v < want else "Left") + " w:0.6")
+            nav.pad(" ".join([("Right" if v < want else "Left") + " w:0.3"] * abs(want - v)) + " w:0.3")   # bấm đủ nấc 1 lượt rồi đọc lại
         raise NavError("nav_match_time: không chỉnh được")
     finally:
         nav.pad("B w:2.5 Left w:0.6 Left w:0.6")
@@ -422,8 +441,30 @@ def back_to_team_select() -> None:
 
 # ---------- chính ----------
 
+def game_state() -> str:
+    """ok | crash (Wine "Program Error": winedbg, gặp 21/11 ngay sau khi khởi động lại) | dead (không còn PES2017.exe)."""
+    # winedbg cũ hơn game = sót lại từ lần crash trước (game đã mở lại bằng tay) → không tính
+    r = subprocess.run(["docker", "exec", BENCH, "sh", "-c",
+                        "g=$(pgrep -n -f 'PES2017[.]exe') || { echo dead; exit; }; ge=$(ps -o etimes= -p $g);"
+                        " for d in $(pgrep -f 'wine[d]bg'); do [ $(ps -o etimes= -p $d) -le $ge ] && { echo crash; exit; }; done; echo ok"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() or "ok"
+
+
+def restart_game() -> None:
+    """Tắt hẳn game (cả winedbg) rồi mở lại, như deploy.sh --restart."""
+    subprocess.run(["docker", "exec", BENCH, "sh", "-c",
+                    "pkill -f 'PES2017[.]exe'; pkill -f 'wine[d]bg'; for i in $(seq 30); do pgrep -f 'PES2017[.]exe|wine[d]bg' >/dev/null || exit 0; sleep 0.5; done;"
+                    " pkill -9 -f 'PES2017[.]exe|wine[d]bg'; true"], capture_output=True)
+    time.sleep(2)
+    subprocess.run(["docker", "exec", "-d", BENCH, "bash", "-lc",
+                    "su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"], capture_output=True)
+    emit(event="stage", stage="boot")
+    time.sleep(25)
+
+
 def deploy(squads: str) -> None:
-    r = subprocess.run([str(REPO / "tools" / "pes17db" / "deploy.sh"), "--squads", squads, "--restart"],
+    r = subprocess.run([str(REPO / "tools" / "pes17db" / "deploy.sh"), "--squads", squads, "--force", "--restart"],
                        capture_output=True, text=True, env={**os.environ, "PES17_DATA": str(DATA)})
     log(r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-300:])
     if r.returncode != 0:
@@ -433,25 +474,81 @@ def deploy(squads: str) -> None:
         time.sleep(25)
 
 
-def read_go() -> None:
+def _sha(doc: dict) -> str:   # như deploy.sh
+    return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def teams_part(doc: dict, home: int, away: int) -> str:
+    """Phần của 2 đội trận này trong squads.json: cầu thủ/số áo/thứ tự + sơ đồ + vai + chiến thuật."""
+    ks = (str(home), str(away))
+    part = {k: doc.get(k) for k in ks}
+    for extra in ("_formations", "_jobs", "_plan"):
+        part[extra] = {k: (doc.get(extra) or {}).get(k) for k in ks}
+    return json.dumps(part, sort_keys=True)
+
+
+def game_has(squads: str, home: int, away: int) -> bool:
+    """Game đang chạy và gói đã cài (squads.json khớp deployed.squads.sha) có đúng phần 2 đội của `squads`."""
+    try:
+        cur = json.loads((OUT / "squads.json").read_text())
+        if _sha(cur) != (OUT / "deployed.squads.sha").read_text().strip():
+            return False
+        want = json.loads(Path(squads).read_text())
+    except (OSError, ValueError):
+        return False
+    if teams_part(cur, home, away) != teams_part(want, home, away):
+        return False
+    r = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017.exe"], capture_output=True)
+    return r.returncode == 0
+
+
+def ensure_game(squads: str, home: int, away: int) -> bool:
+    """Cài đội hình nếu 2 đội của trận khác game (khởi động lại game). Trả True nếu đã cài lại."""
+    if game_has(squads, home, away):
+        log("game đã có đội hình 2 đội → không cài lại")
+        return False
+    deploy(squads)
+    return True
+
+
+def read_cmds() -> None:
     for line in sys.stdin:
-        if line.strip().startswith("go"):
-            GO.set()
-            return
+        w = line.split(maxsplit=1)
+        if w and w[0] in ("go", "sync"):
+            CMDS.put((w[0], w[1].strip() if len(w) > 1 else None))
 
 
-def wait_go() -> bool:
-    """Chờ lệnh go (nút "Vào trận" trên web). Người chơi tự bấm Kickoff bằng tay cầm (qua Selkies) thì màn Kickoff mất
-    → coi như đã vào trận, không bấm A nữa. Trả True nếu người chơi tự vào."""
-    gone, t0 = 0, time.monotonic()
-    while not GO.wait(2):
-        gone = 0 if kickoff_screen(nav.shot("m17_wait")) else gone + 1
+def wait_go(squads: str, home: int, away: int, setup) -> bool:
+    """Chờ lệnh go (nút Sẵn sàng trên web). "sync FILE"/"go FILE" có đội hình 2 đội khác game → cài lại, khởi động lại game,
+    setup() về màn Kickoff (stage boot…ready) rồi chờ tiếp / vào trận. Chỉ cài lại khi đang thấy màn Kickoff (người chơi chưa tự vào trận).
+    Người chơi tự bấm Kickoff bằng tay cầm (màn Kickoff mất 3 lần liên tiếp) → coi như đã vào trận. Trả True nếu người chơi tự vào."""
+    gone, t0, go, latest = 0, time.monotonic(), False, squads
+    while True:
+        try:
+            cmd, path = CMDS.get(timeout=2)
+            go, latest = go or cmd == "go", path or latest
+            if not CMDS.empty():
+                continue   # lấy lệnh mới nhất rồi mới xử lý
+        except queue.Empty:
+            pass
+        on_kick = kickoff_screen(nav.shot("m17_wait"))
+        if on_kick and latest != squads:
+            if not game_has(latest, home, away):
+                log("đội hình 2 đội đổi → cài lại game")
+                deploy(latest)
+                setup(True)
+                if not go:
+                    emit(event="stage", stage="ready")
+            squads, gone = latest, 0
+            continue
+        if go:
+            return False
+        gone = 0 if on_kick else gone + 1
         if gone >= 3:
             log("người chơi tự bấm vào trận")
             return True
         if time.monotonic() - t0 > HUMAN_PREMATCH_TIMEOUT:
             raise NavError("human_timeout: không bấm vào trận")
-    return False
 
 
 def grass(im: Image.Image) -> int:
@@ -498,18 +595,24 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
     LOCK.write_text(f"{os.getpid()} {home}-{away}\n")
     try:
         emit(event="stage", stage="boot")
-        deploy(squads)
+        if WAIT_GO or WARM:
+            threading.Thread(target=read_cmds, daemon=True).start()
+        restarted = ensure_game(squads, home, away)
         both = human == "both"
-        to_team_select(both, human == "away")
-        pick(home, away, both)
-        match_time(MATCH_TIME if human else BOT_MATCH_TIME)
-        coach_mode(human is None)
+
+        def setup(fresh: bool) -> None:
+            with nav.session():   # 1 kết nối tay cầm cho cả đoạn đi menu; đóng trước khi người chơi cầm tay cầm
+                to_team_select(both, human == "away", fresh)
+                pick(home, away, both)
+                match_time(MATCH_TIME if human else BOT_MATCH_TIME)
+                coach_mode(human is None)
+
+        setup(restarted)
         self_started = False
         if human and not both:
             emit(event="stage", stage="ready")
-            if WAIT_GO:
-                threading.Thread(target=read_go, daemon=True).start()
-                self_started = wait_go()
+            if WAIT_GO or WARM:
+                self_started = wait_go(squads, home, away, setup)
         emit(event="stage", stage="loading")
         if not self_started:
             nav.pad("A w:2")   # Kickoff
