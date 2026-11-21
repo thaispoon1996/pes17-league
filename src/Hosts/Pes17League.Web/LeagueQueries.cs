@@ -309,6 +309,16 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
 
     private sealed class AgeRow { public Guid PlayerId { get; set; } public int? Age { get; set; } }
 
+    /// <summary>Tuổi (chỉ số AGE mùa này) của một nhóm cầu thủ (vd. đội của mình).</summary>
+    public async Task<Dictionary<Guid, int?>> AgesAsync(Guid seasonId, IReadOnlyCollection<Guid> ids)
+    {
+        if (ids.Count == 0) return [];
+        await using var db = await dbs.CreateDbContextAsync();
+        var arr = ids.ToArray();
+        return (await db.Database.SqlQuery<AgeRow>($"""select "PlayerId", ("Values"->>'AGE')::int as "Age" from clubs."PlayerAttributes" where "SeasonId" = {seasonId} and "PlayerId" = any({arr})""")
+            .ToListAsync()).ToDictionary(a => a.PlayerId, a => a.Age);
+    }
+
     /// <summary>Mọi cầu thủ có giá mùa này kèm trạng thái ẩn/hiện (trang admin).</summary>
     public async Task<List<VisibilityRow>> VisibilityRowsAsync(Guid seasonId) =>
         [.. (await VisibilityAsync(seasonId)).Select(r => new VisibilityRow(r.PlayerId, r.PesPlayerId, r.Name, r.Position, r.ClubId, r.Overall, r.Price, r.Override, r.Visible))];

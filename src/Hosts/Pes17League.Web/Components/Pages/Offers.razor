@@ -7,11 +7,164 @@
 @inject NavigationManager Nav
 
 @* FM đợt 3 (PO 12/11 duyệt mặc định): đề nghị chuyển nhượng giữa CLB có HLV — mua đứt/trao đổi/mượn, trả giá, % bán lại, trả góp,
-   phí giải phóng. ?cau-thu={id} mở form gửi đề nghị. Luật ở TransferOfferService/OfferRules. *@
+   phí giải phóng. ?cau-thu={id} mở form gửi đề nghị. Luật ở TransferOfferService/OfferRules.
+   Career (PO ok mockup 21/11): đầu trang kỳ CN + tab chung với Chuyển nhượng → phiếu đàm phán (cầu thủ, giá so với giá trị, nếu bán thì sao,
+   trả giá nhanh) → đã xử lý → phí giải phóng (chip %); bán xong hiện màn "Đã bán". Giải online giữ markup cũ. *@
 @if (season is null) { return; }
 @* PO 17/11: chưa có CLB → chỉ hiện lời nhắc (không còn return giữa thẻ mở → lỗi render) *@
 @if (season.HumanClubId == Guid.Empty) { <NoClubNote /> return; }
 @{ var me = season.HumanClubId; }
+@if (Shell?.P is { } cp)
+{
+    var (winter, slotIdx, slotTotal) = Market.Win(cp);
+    var incoming = offers.Where(o => o.SellerClubId == me).ToList();
+    var open = incoming.Where(o => o.Status is OfferStatus.Pending or OfferStatus.Countered).ToList();
+    var done = incoming.Where(o => o.Status is not (OfferStatus.Pending or OfferStatus.Countered)).ToList();
+    var sent = offers.Where(o => o.BuyerClubId == me).ToList();
+    var waitN = open.Count(o => o.Status == OfferStatus.Pending);
+    <div class="mk-page of-page">
+        <section class="mk-hero" aria-labelledby="of-h">
+            <div class="mk-status">
+                @if (window is not null) { <span class="mk-pill live">Chợ đang mở</span> } else { <span class="mk-pill shut">Chợ đang đóng</span> }
+                <span class="mk-pill">@(winter ? "Kỳ đông" : "Kỳ hè")</span>
+            </div>
+            <h1 id="of-h">Đề nghị chuyển nhượng</h1>
+            <p class="of-lead">@(window is null ? "Chợ đóng thì không có đề nghị mới. Bạn vẫn đặt được phí giải phóng cho kỳ sau." : "CLB khác muốn mua cầu thủ của bạn. Đồng ý, trả giá hoặc từ chối trước khi chợ đóng.")</p>
+            @if (window is not null)
+            {
+                <div class="mk-slots" aria-hidden="true">@for (var i = 1; i <= slotTotal; i++) { <i class="@(i < slotIdx ? "past" : i == slotIdx ? "now" : null)"></i> }</div>
+                <div class="mk-slots-cap"><span>Khung <b>@slotIdx</b>/@slotTotal của @(winter ? "kỳ đông" : "kỳ hè")</span><span>Đóng sau khung @slotTotal</span></div>
+            }
+            else
+            {
+                <p class="mk-shut">@(cp.NextMarketSlot is { } nm ? $"Chợ mở lại ở khung {nm}. Đề nghị chưa trả lời đã hết hạn khi chợ đóng." : "Chợ không mở lại trong mùa này.")</p>
+            }
+            <div class="mk-money">
+                <div class="mk-kpi">
+                    <small>Chờ bạn trả lời</small>
+                    <b>@waitN</b>
+                    <small>@(waitN > 0 ? "Đồng ý là chốt ngay" : window is null ? (cp.NextMarketSlot is { } nm2 ? $"Chợ mở lại ở khung {nm2}" : "Chợ đã đóng") : "Chưa có ai hỏi mua")</small>
+                </div>
+                <div class="mk-kpi wage">
+                    <small>Số dư CLB</small>
+                    <b class="@(balance < 0 ? "neg" : null)" data-count="@balance" data-fmt="money">@Fmt.Money(balance)</b>
+                    <small>Quỹ lương @Fmt.Money(payroll)/vòng</small>
+                </div>
+            </div>
+        </section>
+
+        <nav class="mk-tabs" aria-label="Chuyển nhượng">
+            <div class="in">
+                <a href="chuyen-nhuong"><i class="ms" aria-hidden="true">person_search</i>Tìm cầu thủ</a>
+                <a href="chuyen-nhuong?tab=giao-dich">Giao dịch</a>
+                <a href="de-nghi" class="on" aria-current="page">Đề nghị @if (waitN > 0) { <span class="n hot">@waitN</span> }</a>
+            </div>
+        </nav>
+
+        @if (message is not null) { <p class="cx-msg @(messageBad ? "neg" : null)" role="status">@message</p> }
+        @if (target is not null) { @Form() }
+
+        <div class="of-h"><h2>Chờ bạn trả lời <span>(@open.Count)</span></h2>@if (open.Count > 0) { <span>Hết hạn khi chợ đóng</span> }</div>
+        @if (open.Count == 0)
+        {
+            <div class="mk-empty">
+                @if (window is null)
+                {
+                    <i class="ms" aria-hidden="true">lock_clock</i><b>Chợ đang đóng</b>
+                    <p>@(cp.NextMarketSlot is { } nm3 ? $"Đề nghị mới sẽ đến khi chợ mở lại ở khung {nm3}." : "Mùa này chợ không mở lại.")</p>
+                }
+                else
+                {
+                    <i class="ms" aria-hidden="true">handshake</i><b>Chưa có ai hỏi mua</b>
+                    <p>Khi CLB khác muốn mua cầu thủ của bạn, đề nghị hiện ở đây và trong Hòm thư.</p>
+                    <a class="mk-btn ghost sm" href="chuyen-nhuong"><i class="ms" aria-hidden="true">person_search</i>Tìm cầu thủ</a>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="of-list">@foreach (var o in open) { @Ticket(o) }</div>
+        }
+
+        @if (sent.Count > 0)
+        {
+            <div class="of-h"><h2>Đề nghị đã gửi</h2></div>
+            @Table(sent, incoming: false)
+        }
+
+        @if (done.Count > 0)
+        {
+            <details class="of-hist">
+                <summary><b>Đã xử lý</b><span>@done.Count trong 30 ngày <i class="ms" aria-hidden="true">expand_more</i></span></summary>
+                <ul>
+                    @foreach (var o in done)
+                    {
+                        var (kind, icon, text, sub, amount) = Hist(o);
+                        <li class="@kind">
+                            <span class="ic"><i class="ms" aria-hidden="true">@icon</i></span>
+                            <span class="tx"><b>@o.Player</b> <span>@text</span>@if (sub is not null) { <small>@sub</small> }</span>
+                            <span class="amt">@Fmt.Money(amount)</span>
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
+
+        @{ var mine = squad.Where(x => !x.OnLoan && x.Price > 0).OrderByDescending(x => x.Price).ToList(); var asked = open.Select(o => o.PlayerId).ToHashSet(); }
+        <div class="of-h"><h2>Phí giải phóng</h2><span>@mine.Count(x => x.Clause is not null)/@mine.Count cầu thủ đã đặt</span></div>
+        <p class="of-note">Đề nghị mua đứt trả <b>bằng hoặc cao hơn</b> phí giải phóng sẽ được chốt ngay, không chờ bạn đồng ý. Không đặt thì bạn tự quyết từng đề nghị. Mức cho phép: @OfferRules.MinClausePercent–@OfferRules.MaxClausePercent% giá trị cầu thủ.</p>
+        <ul class="of-clauses">
+            @foreach (var x in mine.Take(clauseAll ? mine.Count : ClauseShown))
+            {
+                var s = sq.FirstOrDefault(r => r.PlayerId == x.PlayerId);
+                var ed = clauseOpen == x.PlayerId;
+                <li class="of-cl @(ed ? "edit" : null)">
+                    <div class="row">
+                        @if (s is not null) { <span class="mk-tile @Tier(s.Overall)"><b>@s.Overall</b><span class="mk-ps sm @Fmt.Group(s.Position)">@s.Position</span></span> } else { <span></span> }
+                        <div class="who">
+                            <a href="@season.Url($"cau-thu/{x.PlayerId}")">@x.Name</a>
+                            <div class="meta"><span>Giá trị @Fmt.Money(x.Price)</span>@if (asked.Contains(x.PlayerId)) { <span class="tag">Đang được hỏi mua</span> }</div>
+                        </div>
+                        <div class="val @(x.Clause is null ? "none" : null)">
+                            @if (x.Clause is { } c) { <b>@Fmt.Money(c)</b><small>@Pct(c, x.Price)% giá trị</small> } else { <b>Chưa đặt</b> }
+                        </div>
+                        <button type="button" class="of-ib no-busy" aria-label="@(ed ? "Đóng" : $"Đặt phí giải phóng cho {x.Name}")" aria-expanded="@(ed ? "true" : "false")" @onclick="() => ToggleClause(x)"><i class="ms" aria-hidden="true">@(ed ? "close" : "edit")</i></button>
+                    </div>
+                    @if (ed) { @ClauseEditor(x) }
+                </li>
+            }
+        </ul>
+        @if (!clauseAll && mine.Count > ClauseShown) { <button type="button" class="of-more no-busy" @onclick="() => clauseAll = true">Xem cả đội (@mine.Count cầu thủ)</button> }
+    </div>
+
+    @if (sold is { } sd)
+    {
+        <div class="cx-ov cx-signed-ov of-sold-ov" role="dialog" aria-modal="true" aria-label="Đã bán cầu thủ">
+            <canvas class="cx-confetti" aria-hidden="true"></canvas>
+            <div class="cx-signed">
+                <span class="cx-label"><i class="ms fill" aria-hidden="true">payments</i>Thương vụ hoàn tất</span>
+                <div class="cx-pc big tier-@(sd.Overall >= 88 ? 3 : sd.Overall >= 82 ? 2 : sd.Overall >= 75 ? 1 : 0)">
+                    <span class="o">@sd.Overall</span><span class="ps @Fmt.Group(sd.Position)">@sd.Position</span>
+                    <Face Id="@sd.PlayerId" Name="@sd.Name" Size="lg" />
+                    <span class="stamp"><i class="ms fill" aria-hidden="true">sell</i>@(sd.Loan ? "Đã cho mượn" : "Đã bán")</span>
+                </div>
+                <h2>@sd.Name</h2>
+                <p>@season.Clubs.GetValueOrDefault(me, "") → @sd.Buyer</p>
+                <div class="cx-facts">
+                    <div><b>+@Fmt.Money(sd.Fee)</b><span>@(sd.Loan ? "Phí mượn" : "Tiền bán")</span></div>
+                    <div><b class="cyan">@Fmt.Money(balance)</b><span>Số dư mới</span></div>
+                    <div><b class="cyan">@(sd.Wage is { } sw ? Fmt.Money(sw) : "–")</b><span>Lương/vòng bớt</span></div>
+                </div>
+                <div class="cx-acts">
+                    <a class="cx-btn ghost" href="clb">Xem đội hình</a>
+                    <button class="cx-btn gold" @onclick="() => sold = null">Tiếp tục</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+else
+{
 <div class="fm">
     <ManagerNav />
     <header class="fm-head">
@@ -24,10 +177,115 @@
     </header>
     @if (message is not null) { <p class="msg">@message</p> }
 
-    @if (target is not null)
+    @if (target is not null) { @Form() }
+
+    <section>
+        <h2>Đề nghị đến (@offers.Count(o => o.SellerClubId == me && o.Status == OfferStatus.Pending) chờ trả lời)</h2>
+        @Table(offers.Where(o => o.SellerClubId == me).ToList(), incoming: true)
+    </section>
+    <section>
+        <h2>Đề nghị đã gửi</h2>
+        @Table(offers.Where(o => o.BuyerClubId == me).ToList(), incoming: false)
+    </section>
+    <section>
+        <h2>Phí giải phóng cầu thủ của tôi</h2>
+        <p class="fm-note">@OfferRules.MinClausePercent–@OfferRules.MaxClausePercent% giá. Để trống = không có.</p>
+        <table class="table offer-clauses">
+            <thead><tr><th>Cầu thủ</th><th>Giá</th><th>Phí giải phóng</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in squad.OrderByDescending(p => p.Price))
+                {
+                    <tr>
+                        <td>@p.Name @(p.OnLoan ? "(mượn)" : "")</td>
+                        <td>@Fmt.Money(p.Price)</td>
+                        <td>@if (!p.OnLoan) { <input type="number" min="0" step="1000" value="@p.Clause" @onchange="e => clauseEdit[p.PlayerId] = e.Value?.ToString()" /> }</td>
+                        <td>@if (clauseEdit.ContainsKey(p.PlayerId)) { <button disabled="@busy" @onclick="() => SaveClause(p)">Lưu</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+</div>
+}
+
+@code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+    [SupplyParameterFromQuery(Name = "cau-thu")] public Guid? PlayerParam { get; set; }
+
+    sealed record MyPlayer(Guid PlayerId, string Name, long Price, long? Clause, bool OnLoan);
+    sealed record Sold(Guid PlayerId, string Name, Position Position, int Overall, string Buyer, long Fee, long? Wage, bool Loan);
+
+    SeasonInfo? season;
+    TransferWindow? window;
+    long balance, payroll;
+    List<OfferRow> offers = [];
+    List<MyPlayer> squad = [];
+    MarketRow? target;
+    long? targetClause, targetWage;
+    OfferKind draftKind;
+    long draftFee;
+    int draftMatches, draftSellOn, draftInstalments = 1;
+    long draftWage;
+    string? draftSwap, draftNote, message;
+    Dictionary<Guid, long> counter = [];
+    Dictionary<Guid, string?> clauseEdit = [];
+    bool busy;
+
+    // ---------- career (PO ok mockup 21/11) ----------
+    const int ClauseShown = 6;
+    const string BotNote = "CLB BOT hỏi mua";   // lời nhắn mặc định BotMarketService → không hiện
+    static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+    List<SquadRow> sq = [];   // OVR, vị trí, ô đội hình (Slot < 11 = đá chính), hợp đồng
+    Dictionary<Guid, int?> ages = [];
+    Guid? counterOpen, clauseOpen;
+    long? clauseDraft;
+    bool clauseAll, messageBad;
+    Sold? sold;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    async Task LoadAsync()
+    {
+        season = await Q.SeasonAsync();
+        if (season is null || season.HumanClubId == Guid.Empty) return;
+        var me = season.HumanClubId;
+        window = await Q.OpenWindowAsync(season.Id);
+        (balance, payroll, _) = await Q.FinanceAsync(me);
+        await using var db = await Dbs.CreateDbContextAsync();
+        offers = await new TransferOfferService(db, Clock).ListAsync(me);
+        var sid = season.Id;
+        squad = await (from m in db.SquadMemberships
+                       where m.ClubId == me && m.LeftAt == null
+                       join p in db.Players on m.PlayerId equals p.Id
+                       join c in db.Contracts.Where(c => c.Status == ContractStatus.Active) on m.PlayerId equals c.PlayerId into cs
+                       from c in cs.DefaultIfEmpty()
+                       select new MyPlayer(p.Id, p.Name,
+                           db.PlayerPrices.Where(x => x.PlayerId == p.Id && x.SeasonId == sid).Select(x => x.Price).FirstOrDefault(),
+                           c == null ? null : c.ReleaseClause, c != null && c.LoanFromClubId != null)).ToListAsync();
+        if (Shell is not null)
+        {
+            sq = await Q.SquadAsync(sid, me);
+            ages = await Q.AgesAsync(sid, [.. sq.Select(s => s.PlayerId)]);
+        }
+        target = null;
+        if (PlayerParam is { } pid)
+        {
+            target = (await Q.MarketAsync(season.Id, me)).FirstOrDefault(p => p.PlayerId == pid);
+            var tc = await db.Contracts.AsNoTracking().FirstOrDefaultAsync(c => c.PlayerId == pid && c.Status == ContractStatus.Active);
+            (targetClause, targetWage) = (tc?.ReleaseClause, tc?.Wage);
+            if (target is not null && draftFee == 0)
+            {
+                draftFee = target.Price;
+                draftMatches = season.Economy.DefaultContractMatches;
+                draftWage = Math.Max(ContractRules.Wage(target.Price, season.Economy.WagePermille), targetWage ?? 0);
+            }
+        }
+    }
+
+    RenderFragment Form() => __builder =>
     {
         <section class="offer-form">
-            <h2>Gửi đề nghị: @target.Name <small>(@season.Clubs.GetValueOrDefault(target.ClubId ?? Guid.Empty, "?") · giá @Fmt.Money(target.Price))</small></h2>
+            <h2>Gửi đề nghị: @target!.Name <small>(@season!.Clubs.GetValueOrDefault(target.ClubId ?? Guid.Empty, "?") · giá @Fmt.Money(target.Price))</small></h2>
             @if (window is null) { <p class="fm-note">Kỳ chuyển nhượng đang đóng.</p> }
             else
             {
@@ -64,91 +322,200 @@
                 <button disabled="@busy" @onclick="@(() => Nav.NavigateTo("de-nghi"))">Huỷ</button>
             }
         </section>
-    }
+    };
 
-    <section>
-        <h2>Đề nghị đến (@offers.Count(o => o.SellerClubId == me && o.Status == OfferStatus.Pending) chờ trả lời)</h2>
-        @Table(offers.Where(o => o.SellerClubId == me).ToList(), incoming: true)
-    </section>
-    <section>
-        <h2>Đề nghị đã gửi</h2>
-        @Table(offers.Where(o => o.BuyerClubId == me).ToList(), incoming: false)
-    </section>
-    <section>
-        <h2>Phí giải phóng cầu thủ của tôi</h2>
-        <p class="fm-note">@OfferRules.MinClausePercent–@OfferRules.MaxClausePercent% giá. Để trống = không có.</p>
-        <table class="table offer-clauses">
-            <thead><tr><th>Cầu thủ</th><th>Giá</th><th>Phí giải phóng</th><th></th></tr></thead>
-            <tbody>
-                @foreach (var p in squad.OrderByDescending(p => p.Price))
-                {
-                    <tr>
-                        <td>@p.Name @(p.OnLoan ? "(mượn)" : "")</td>
-                        <td>@Fmt.Money(p.Price)</td>
-                        <td>@if (!p.OnLoan) { <input type="number" min="0" step="1000" value="@p.Clause" @onchange="e => clauseEdit[p.PlayerId] = e.Value?.ToString()" /> }</td>
-                        <td>@if (clauseEdit.ContainsKey(p.PlayerId)) { <button disabled="@busy" @onclick="() => SaveClause(p)">Lưu</button> }</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </section>
-</div>
-
-@code {
-    [SupplyParameterFromQuery(Name = "cau-thu")] public Guid? PlayerParam { get; set; }
-
-    sealed record MyPlayer(Guid PlayerId, string Name, long Price, long? Clause, bool OnLoan);
-
-    SeasonInfo? season;
-    TransferWindow? window;
-    long balance;
-    List<OfferRow> offers = [];
-    List<MyPlayer> squad = [];
-    MarketRow? target;
-    long? targetClause, targetWage;
-    OfferKind draftKind;
-    long draftFee;
-    int draftMatches, draftSellOn, draftInstalments = 1;
-    long draftWage;
-    string? draftSwap, draftNote, message;
-    Dictionary<Guid, long> counter = [];
-    Dictionary<Guid, string?> clauseEdit = [];
-    bool busy;
-
-    protected override async Task OnParametersSetAsync() => await LoadAsync();
-
-    async Task LoadAsync()
+    /// <summary>Career: phiếu đàm phán của một đề nghị đến (chờ bạn hoặc bạn đã trả giá, chờ CLB mua).</summary>
+    RenderFragment Ticket(OfferRow o) => __builder =>
     {
-        season = await Q.SeasonAsync();
-        if (season is null || season.HumanClubId == Guid.Empty) return;
-        var me = season.HumanClubId;
-        window = await Q.OpenWindowAsync(season.Id);
-        (balance, _, _) = await Q.FinanceAsync(me);
-        await using var db = await Dbs.CreateDbContextAsync();
-        offers = await new TransferOfferService(db, Clock).ListAsync(me);
-        var sid = season.Id;
-        squad = await (from m in db.SquadMemberships
-                       where m.ClubId == me && m.LeftAt == null
-                       join p in db.Players on m.PlayerId equals p.Id
-                       join c in db.Contracts.Where(c => c.Status == ContractStatus.Active) on m.PlayerId equals c.PlayerId into cs
-                       from c in cs.DefaultIfEmpty()
-                       select new MyPlayer(p.Id, p.Name,
-                           db.PlayerPrices.Where(x => x.PlayerId == p.Id && x.SeasonId == sid).Select(x => x.Price).FirstOrDefault(),
-                           c == null ? null : c.ReleaseClause, c != null && c.LoanFromClubId != null)).ToListAsync();
-        target = null;
-        if (PlayerParam is { } pid)
-        {
-            target = (await Q.MarketAsync(season.Id, me)).FirstOrDefault(p => p.PlayerId == pid);
-            var tc = await db.Contracts.AsNoTracking().FirstOrDefaultAsync(c => c.PlayerId == pid && c.Status == ContractStatus.Active);
-            (targetClause, targetWage) = (tc?.ReleaseClause, tc?.Wage);
-            if (target is not null && draftFee == 0)
-            {
-                draftFee = target.Price;
-                draftMatches = season.Economy.DefaultContractMatches;
-                draftWage = Math.Max(ContractRules.Wage(target.Price, season.Economy.WagePermille), targetWage ?? 0);
-            }
-        }
+        var p = sq.FirstOrDefault(s => s.PlayerId == o.PlayerId);
+        var loan = o.Kind == OfferKind.Loan;
+        var price = o.Price ?? 0;
+        var pct = Pct(o.Fee, price);
+        var scale = Math.Max(o.Fee, price) * 1.18;
+        <article class="of-ticket @(o.Status == OfferStatus.Countered ? "wait" : null)">
+            <header class="of-buyer">
+                <Crest Name="@o.Buyer" Logo="@season!.Logo(o.BuyerClubId)" />
+                <span class="nm"><b>@o.Buyer</b><span>@(loan ? "hỏi mượn" : "hỏi mua")</span></span>
+                <span class="of-chip">@(loan ? $"Mượn {o.ContractMatches} trận" : "Mua đứt")</span>
+            </header>
+            <div class="of-body">
+                <div class="of-player">
+                    @if (p is not null) { <span class="mk-tile @Tier(p.Overall)"><b>@p.Overall</b><span class="mk-ps sm @Fmt.Group(p.Position)">@p.Position</span></span> }
+                    <span class="mk-face"><Face Id="@o.PlayerId" Name="@o.Player" Size="md" /></span>
+                    <div class="who">
+                        <a href="@season.Url($"cau-thu/{o.PlayerId}")">@o.Player</a>
+                        @if (p is not null)
+                        {
+                            <div class="meta">
+                                @if (ages.GetValueOrDefault(p.PlayerId) is { } age) { <span>@age tuổi</span> }
+                                <span class="@(p.Slot < 11 ? "of-xi" : null)">@(p.Slot < 11 ? "Đá chính" : "Dự bị")</span>
+                            </div>
+                            @if (p.MatchesTotal is { } mt) { <div class="meta"><span>@($"HĐ còn {mt - p.MatchesPlayed} trận" + (p.Wage is { } w ? $" · lương {Fmt.Money(w)}/vòng" : ""))</span></div> }
+                        }
+                    </div>
+                </div>
+                <div class="of-price">
+                    <small>@(loan ? "Phí mượn" : "Giá đề nghị")</small>
+                    <div class="line">
+                        <b class="big" data-count="@o.Fee" data-fmt="money">@Fmt.Money(o.Fee)</b>
+                        @if (price > 0 && !loan) { <span class="of-delta @(pct >= 100 ? "up" : "down")">@(pct >= 100 ? "+" : "−")@Math.Abs(pct - 100)% so với giá trị</span> }
+                        else if (price > 0) { <span class="of-delta">@pct% giá trị</span> }
+                    </div>
+                    @if (price > 0)
+                    {
+                        <div class="of-bar @(o.Fee < price ? "low" : null)" aria-hidden="true">
+                            <i style="width:@((o.Fee / scale * 100).ToString("0.#", Inv))%"></i>
+                            <span class="mark" style="left:@((price / scale * 100).ToString("0.#", Inv))%"><span>giá trị @Fmt.Money(price)</span></span>
+                        </div>
+                    }
+                </div>
+                <ul class="of-impact">
+                    <li><i class="ms" aria-hidden="true">account_balance_wallet</i><span>Số dư sau khi @(loan ? "cho mượn" : "bán") <b class="up">@Fmt.Money(balance + o.Fee)</b> <em>(+@Fmt.Money(o.Fee))</em></span></li>
+                    @if (!loan && p?.Wage is { } pw) { <li><i class="ms" aria-hidden="true">payments</i><span>Quỹ lương bớt <b>@Fmt.Money(pw)/vòng</b></span></li> }
+                    @if (p is not null)
+                    {
+                        var rest = sq.Where(s => s.Position == p.Position && s.PlayerId != p.PlayerId).OrderByDescending(s => s.Overall).ToList();
+                        <li>
+                            <i class="ms" aria-hidden="true">group</i>
+                            <span>
+                                @if (rest.Count == 0) { <b class="warn">Không còn ai đá @p.Position</b> }
+                                else
+                                {
+                                    <text>Còn lại ở @p.Position: </text>
+                                    @for (var i = 0; i < Math.Min(2, rest.Count); i++) { var r = rest[i]; <text>@(i > 0 ? " · " : "")<b>@r.Name</b> @r.Overall</text> }
+                                    @if (rest.Count == 1) { <span class="warn"> — mỏng người</span> } else if (rest.Count > 2) { <em> +@(rest.Count - 2)</em> }
+                                }
+                            </span>
+                        </li>
+                    }
+                </ul>
+                <p class="of-terms">@TermsLine(o)@if (o.Note is { } note && note != BotNote) { <br /><em>“@note”</em> }</p>
+                @if (o.Status == OfferStatus.Countered)
+                {
+                    <p class="of-wait"><i class="ms" aria-hidden="true">hourglass_top</i><span>Bạn đã trả giá <b>@Fmt.Money(o.CounterFee ?? 0)</b>. Chờ @o.Buyer đồng ý hoặc rút đề nghị.</span></p>
+                }
+                else if (counterOpen == o.Id) { @CounterPanel(o, price) }
+                else
+                {
+                    <div class="of-acts">
+                        <button type="button" class="mk-btn gold" disabled="@busy" data-confirm="@($"{(loan ? "Cho mượn" : "Bán")} {o.Player} cho {o.Buyer} với {Fmt.Money(o.Fee)}? Thương vụ chốt ngay và không huỷ được.")" data-confirm-ok="@(loan ? "Đồng ý cho mượn" : "Đồng ý bán")" @onclick="() => Reply(o, OfferReply.Accept)">
+                            <i class="ms fill" aria-hidden="true">handshake</i>Đồng ý @(loan ? "cho mượn" : "bán") @Fmt.Money(o.Fee)
+                        </button>
+                        <button type="button" class="mk-btn ghost no-busy" disabled="@busy" @onclick="() => OpenCounter(o)"><i class="ms" aria-hidden="true">trending_up</i>Trả giá</button>
+                        <button type="button" class="mk-btn quiet" disabled="@busy" @onclick="() => Reply(o, OfferReply.Reject)">Từ chối</button>
+                    </div>
+                }
+            </div>
+        </article>
+    };
+
+    RenderFragment CounterPanel(OfferRow o, long price) => __builder =>
+    {
+        var cv = counter.TryGetValue(o.Id, out var c0) ? c0 : DefaultCounter(o);
+        var max = price * (o.Kind == OfferKind.Loan ? OfferRules.MaxLoanFeePercent : FeeRules.MaxNegotiatedPercent) / 100;
+        var err = cv <= o.Fee ? $"Giá trả phải cao hơn {Fmt.Money(o.Fee)}." : price > 0 && cv > max ? $"Tối đa {Fmt.Money(max)} ({Pct(max, price)}% giá trị)." : null;
+        <div class="of-counter" role="group" aria-label="Trả giá">
+            <h3>Trả giá</h3>
+            <p>@(season!.IsHuman(o.BuyerClubId) ? $"{o.Buyer} sẽ đồng ý mức của bạn hoặc rút đề nghị." : $"{o.Buyer} trả lời ngay: đồng ý mức của bạn hoặc rút đề nghị.")</p>
+            <div class="of-presets">
+                @foreach (var x in new[] { 10, 20, 30 })
+                {
+                    var v = R10(o.Fee * (1 + x / 100.0));
+                    if (price > 0 && v > max) continue;
+                    <button type="button" class="no-busy @(v == cv ? "on" : null)" @onclick="() => counter[o.Id] = v"><b>+@x%</b>@Fmt.Money(v)</button>
+                }
+            </div>
+            <div class="of-money">
+                <span class="box">
+                    <span>€</span>
+                    <button type="button" class="step no-busy" aria-label="Giảm 50 nghìn" @onclick="() => counter[o.Id] = Math.Max(0, cv - 50_000)">−</button>
+                    <input id="@($"of-c-{o.Id:N}")" inputmode="decimal" aria-label="Giá trả, triệu euro" value="@M2(cv)" @onchange="e => { if (ParseM(e.Value?.ToString()) is { } v) counter[o.Id] = v; }" />
+                    <button type="button" class="step no-busy" aria-label="Tăng 50 nghìn" @onclick="() => counter[o.Id] = cv + 50_000">+</button>
+                    <span>M</span>
+                </span>
+                @if (price > 0) { <span class="pct">= <b>@Pct(cv, price)%</b> giá trị</span> }
+            </div>
+            @if (err is not null) { <p class="of-err">@err</p> }
+            <div class="of-acts2">
+                <button type="button" class="mk-btn gold sm" disabled="@(busy || err is not null)" @onclick="() => SendCounter(o, cv)">Gửi giá @Fmt.Money(cv)</button>
+                <button type="button" class="mk-btn quiet sm no-busy" @onclick="() => counterOpen = null">Huỷ</button>
+            </div>
+        </div>
+    };
+
+    RenderFragment ClauseEditor(MyPlayer x) => __builder =>
+    {
+        long lo = (x.Price + 9_999) / 10_000 * 10_000, hi = x.Price * 2 / 10_000 * 10_000;
+        var bad = clauseDraft is { } d && (d * 100 < x.Price * OfferRules.MinClausePercent || d * 100 > x.Price * OfferRules.MaxClausePercent);
+        <div class="ed">
+            <div class="of-presets">
+                <button type="button" class="no-busy @(clauseDraft is null ? "on" : null)" @onclick="() => clauseDraft = null">Không đặt</button>
+                @foreach (var pc in new[] { 100, 120, 150, 200 })
+                {
+                    var val = Math.Clamp(R10(x.Price * pc / 100.0), lo, hi);
+                    <button type="button" class="no-busy @(clauseDraft == val ? "on" : null)" @onclick="() => clauseDraft = val"><b>@pc%</b>@Fmt.Money(val)</button>
+                }
+            </div>
+            <div class="of-money">
+                <span class="box"><span>€</span><input id="@($"of-cl-{x.PlayerId:N}")" inputmode="decimal" placeholder="—" aria-label="Phí giải phóng, triệu euro" value="@(clauseDraft is { } dv ? M2(dv) : "")" @onchange="e => clauseDraft = ParseM(e.Value?.ToString())" /><span>M</span></span>
+                <span class="pct">@if (clauseDraft is { } d2) { <text>= <b>@Pct(d2, x.Price)%</b> giá trị</text> } else { <text>Để trống = không đặt</text> }</span>
+            </div>
+            @if (bad) { <p class="of-err">Phải từ @Fmt.Money(lo) đến @Fmt.Money(hi).</p> } else { <p class="of-hint">Cho phép @Fmt.Money(lo) – @Fmt.Money(hi).</p> }
+            <div class="of-acts2">
+                <button type="button" class="mk-btn gold sm" disabled="@(busy || bad || clauseDraft == x.Clause)" @onclick="() => SaveClauseCx(x)">Lưu</button>
+                <button type="button" class="mk-btn quiet sm no-busy" @onclick="() => clauseOpen = null">Huỷ</button>
+            </div>
+        </div>
+    };
+
+    static int Pct(long v, long of) => of <= 0 ? 0 : (int)Math.Round(v * 100.0 / of);
+    static long R10(double v) => (long)Math.Round(v / 10_000) * 10_000;
+    static string M2(long v) => (v / 1_000_000m).ToString("0.00", Inv);
+    static long? ParseM(string? s) =>
+        decimal.TryParse(s?.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Number, Inv, out var m) && m >= 0 ? R10((double)(m * 1_000_000)) : null;
+    static string Tier(int ovr) => ovr >= 88 ? "t3" : ovr >= 82 ? "t2" : ovr >= 75 ? "t1" : "t0";
+    static long DefaultCounter(OfferRow o) => R10(o.Fee * 1.1);
+
+    static string TermsLine(OfferRow o)
+    {
+        var s = o.Kind == OfferKind.Loan
+            ? $"{o.Buyer} mượn {o.Player} {o.ContractMatches} trận, trả lương {Fmt.Money(o.Wage)}/vòng."
+            : $"{o.Buyer} ký với {o.Player} {o.ContractMatches} trận, lương {Fmt.Money(o.Wage)}/vòng.";
+        if (o.SwapPlayer is not null) s += $" Kèm {o.SwapPlayer} sang CLB bạn.";
+        if (o.Instalments > 1) s += $" Trả góp {o.Instalments} kỳ (kỳ 1 trả ngay).";
+        if (o.SellOnPercent > 0) s += $" Bạn hưởng {o.SellOnPercent}% nếu họ bán lại.";
+        return s;
     }
+
+    /// <summary>Career: một dòng "Đã xử lý" — lớp màu, icon, mô tả sau tên cầu thủ, dòng phụ, số tiền.</summary>
+    static (string Kind, string Icon, string Text, string? Sub, long Amount) Hist(OfferRow o) => o.Status switch
+    {
+        OfferStatus.Completed => ("ok", "check", $"{(o.Kind == OfferKind.Loan ? "cho" : "sang")} {o.Buyer}{(o.Kind == OfferKind.Loan ? " mượn" : "")}",
+            o.Note?.Contains("phí giải phóng") == true ? "Kích hoạt phí giải phóng" : o.CounterFee is { } cf ? $"Bạn trả giá {Fmt.Money(cf)}, CLB đồng ý" : "Bạn đồng ý",
+            o.CounterFee ?? o.Fee),
+        OfferStatus.Rejected => ("no", "close", $"— bạn từ chối {o.Buyer}", null, o.Fee),
+        OfferStatus.Withdrawn => ("bad", "call_missed", $"— {o.Buyer} rút đề nghị", o.CounterFee is { } cf2 ? $"Sau khi bạn trả giá {Fmt.Money(cf2)}" : null, o.Fee),
+        OfferStatus.Expired => ("no", "schedule", $"— đề nghị của {o.Buyer} hết hạn", "Chợ đóng trước khi bạn trả lời", o.Fee),
+        _ => ("bad", "error", $"— không thành với {o.Buyer}", o.FailReason, o.Fee),
+    };
+
+    void OpenCounter(OfferRow o) { counterOpen = o.Id; message = null; }
+
+    void ToggleClause(MyPlayer x)
+    {
+        if (clauseOpen == x.PlayerId) { clauseOpen = null; return; }
+        clauseOpen = x.PlayerId; clauseDraft = x.Clause; message = null;
+    }
+
+    Task SendCounter(OfferRow o, long cv) { counter[o.Id] = cv; return Reply(o, OfferReply.Counter); }
+
+    Task SaveClauseCx(MyPlayer p) => Run(async svc =>
+    {
+        var v = clauseDraft;
+        var err = await svc.SetReleaseClauseAsync(season!.HumanClubId, p.PlayerId, v);
+        (message, messageBad) = (err ?? $"{p.Name}: " + (v is null ? "bỏ phí giải phóng." : $"phí giải phóng {Fmt.Money(v.Value)}."), err is not null);
+        if (err is null) clauseOpen = null;
+    });
 
     RenderFragment Table(List<OfferRow> rows, bool incoming) => __builder =>
     {
@@ -228,17 +595,19 @@
                 OfferStatus.Pending => $"Đã gửi đề nghị cho {target.Name}.",
                 _ => r.Error,
             };
+            messageBad = r.Error is not null;
             if (r.Ok || r.Status is not null) { draftFee = 0; Nav.NavigateTo("de-nghi"); }
         });
     }
 
     Task Reply(OfferRow o, OfferReply reply) => Run(async svc =>
     {
-        var r = await svc.RespondAsync(o.Id, season!.HumanClubId, reply, counter.TryGetValue(o.Id, out var c) ? c : null);
+        var fee = reply == OfferReply.Counter && counter.TryGetValue(o.Id, out var c) ? c : (long?)null;
+        var r = await svc.RespondAsync(o.Id, season!.HumanClubId, reply, fee);
         message = r.Error ?? reply switch
         {
             OfferReply.Accept => $"Đã bán {o.Player}.",
-            OfferReply.Reject => "Đã từ chối.",
+            OfferReply.Reject => $"Đã từ chối đề nghị của {o.Buyer}.",
             // CLB BOT trả lời ngay khi bị trả giá (chợ BOT career).
             _ => r.Status switch
             {
@@ -247,12 +616,21 @@
                 _ => "Đã trả giá.",
             },
         };
+        messageBad = r.Error is not null || r.Status == OfferStatus.Withdrawn;
+        if (r.Error is null) counterOpen = null;
+        // Career: bán xong → màn "Đã bán" (thẻ cầu thủ + tiền về) thay cho dòng thông báo.
+        if (Shell is not null && r.Error is null && r.Status == OfferStatus.Completed && sq.FirstOrDefault(s => s.PlayerId == o.PlayerId) is { } p)
+        {
+            sold = new(o.PlayerId, o.Player, p.Position, p.Overall, o.Buyer, fee ?? o.Fee, p.Wage, o.Kind == OfferKind.Loan);
+            message = null;
+        }
     });
 
     Task Buyer(OfferRow o, bool accept) => Run(async svc =>
     {
         var r = await svc.BuyerReplyAsync(o.Id, season!.HumanClubId, accept);
         message = r.Error ?? (accept ? $"Hoàn tất: {o.Player} về CLB." : "Đã rút đề nghị.");
+        messageBad = r.Error is not null;
     });
 
     Task SaveClause(MyPlayer p) => Run(async svc =>
@@ -272,8 +650,9 @@
             await using var db = await Dbs.CreateDbContextAsync();
             await action(new TransferOfferService(db, Clock));
         }
-        catch (DbUpdateConcurrencyException) { message = "CLB vừa có giao dịch khác — thử lại."; }
+        catch (DbUpdateConcurrencyException) { message = "CLB vừa có giao dịch khác — thử lại."; messageBad = true; }
         finally { busy = false; }
         await LoadAsync();
+        if (Shell is not null) await Shell.RefreshAsync();   // số dư đầu trang + số đề nghị trên thanh dưới
     }
 }

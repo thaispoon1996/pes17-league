@@ -2507,3 +2507,136 @@ html:has(.bx-sheet) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .cx .lx *, .cx .lx *::before, .cx .lx *::after { animation: none !important; transition: none !important; }
 }
+
+/* ========== Đề nghị chuyển nhượng career (PO ok mockup 21/11, Offers.razor) — gốc .mk-page.of-page, dùng lại .mk-hero/.mk-tabs/.mk-tile/.mk-btn/.mk-empty ========== */
+.cx .of-lead { position: relative; margin: 6px 0 0; max-width: 52ch; color: var(--muted); font-size: 13px; }
+.cx .of-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 22px 2px 10px; }
+.cx .of-h h2 { margin: 0; font: 800 italic 22px/1 var(--f-display); }
+.cx .of-h h2 span { color: var(--gold); }
+.cx .of-h > span { flex: none; color: var(--muted); font-size: 12px; }
+.cx .of-page .mk-empty { margin-top: 0; }
+.cx .of-page .mk-btn.quiet { color: var(--muted); border: 1px solid var(--line); }
+.cx .of-page .mk-btn.quiet:not(:disabled):hover { color: var(--crimson); border-color: rgba(255,77,106,.45); }
+.cx .of-page .mk-btn:disabled { cursor: not-allowed; }
+.cx .of-page .mk-btn.ghost:disabled, .cx .of-page .mk-btn.quiet:disabled { opacity: .5; }
+
+/* phiếu đàm phán */
+.cx .of-list { display: grid; gap: 12px; }
+.cx .of-ticket { position: relative; overflow: hidden; border-radius: 14px; background: var(--glass-solid); border: 1px solid rgba(255,255,255,.1); animation: of-rise .5s cubic-bezier(.2,.8,.2,1) both; }
+.cx .of-ticket:nth-child(2) { animation-delay: .08s; } .cx .of-ticket:nth-child(3) { animation-delay: .16s; }
+@keyframes of-rise { from { opacity: 0; transform: translateY(14px); } }
+.cx .of-ticket::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg, var(--gold), var(--gold-2)); }
+.cx .of-ticket.wait::before { background: var(--cyan); }
+.cx .of-buyer { display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 16px; background: rgba(255,255,255,.03); border-bottom: 1px solid var(--line); }
+.cx .of-buyer .crest { flex: none; width: 28px; height: 28px; font-size: 10px; object-fit: contain; }
+.cx .of-buyer .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx .of-buyer .nm b { font: 800 italic 17px/1 var(--f-display); text-transform: uppercase; letter-spacing: .02em; }
+.cx .of-buyer .nm span { margin-left: 5px; color: var(--muted); font-size: 12px; }
+.cx .of-chip { flex: none; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; color: var(--cyan); background: rgba(54,227,255,.1); border: 1px solid rgba(54,227,255,.25); white-space: nowrap; }
+.cx .of-body { display: grid; gap: 14px; padding: 14px 14px 14px 16px; }
+@container (min-width: 560px) { .cx .of-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; } .cx .of-body > :not(.of-player, .of-price) { grid-column: 1 / -1; } }
+.cx .of-list { container-type: inline-size; }
+.cx .of-player { display: grid; grid-template-columns: 48px 46px minmax(0, 1fr); gap: 10px; align-items: center; }
+.cx .of-player .mk-face { width: 46px; height: 46px; }
+.cx .of-player .who { min-width: 0; }
+.cx .of-player .who a { display: block; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx .of-player .who a:hover { color: var(--cyan); }
+.cx .of-player .meta, .cx .of-cl .meta { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.cx .of-player .meta .of-xi { color: var(--emerald); font-weight: 600; }
+.cx .of-price small { display: block; color: var(--muted); font-size: 12px; }
+.cx .of-price .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.cx .of-price .big { font: 900 italic 40px/1 var(--f-display); color: var(--gold); text-shadow: 0 0 24px rgba(255,201,74,.35); white-space: nowrap; }
+.cx .of-delta { padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: var(--muted); background: rgba(255,255,255,.06); white-space: nowrap; }
+.cx .of-delta.up { color: var(--emerald); background: rgba(61,255,162,.1); }
+.cx .of-delta.down { color: var(--crimson); background: rgba(255,77,106,.1); }
+.cx .of-bar { position: relative; height: 8px; margin: 12px 0 18px; border-radius: 4px; background: rgba(255,255,255,.08); }
+.cx .of-bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, rgba(255,201,74,.35), var(--gold)); transform-origin: left; animation: of-grow .9s .2s cubic-bezier(.2,.8,.2,1) both; }
+.cx .of-bar.low > i { background: linear-gradient(90deg, rgba(255,77,106,.3), var(--crimson)); }
+@keyframes of-grow { from { transform: scaleX(0); } }
+.cx .of-bar .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.cx .of-bar .mark span { position: absolute; top: 18px; right: 0; white-space: nowrap; font-size: 11px; color: var(--cyan); }
+.cx .of-impact { display: grid; gap: 6px; margin: 0; padding: 10px 12px; list-style: none; border-radius: 10px; background: rgba(0,0,0,.22); border: 1px solid var(--line); }
+.cx .of-impact li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13px; }
+.cx .of-impact .ms { font-size: 18px; color: var(--muted); margin-top: 1px; }
+.cx .of-impact b { font-weight: 700; } .cx .of-impact b.up { color: var(--emerald); } .cx .of-impact .warn { color: var(--gold); }
+.cx .of-impact em { font-style: normal; color: var(--muted); }
+.cx .of-terms { margin: -4px 0 0; font-size: 12px; color: var(--muted); }
+.cx .of-wait { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; background: rgba(54,227,255,.06); border: 1px solid rgba(54,227,255,.3); }
+.cx .of-wait .ms { font-size: 18px; color: var(--cyan); }
+.cx .of-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cx .of-acts .mk-btn.gold { grid-column: 1 / -1; }
+@container (min-width: 560px) { .cx .of-acts { grid-template-columns: minmax(0, 2fr) 1fr 1fr; } .cx .of-acts .mk-btn.gold { grid-column: auto; } }
+
+/* trả giá + ô nhập tiền (dùng chung với phí giải phóng) */
+.cx .of-counter { display: grid; gap: 10px; padding: 12px; border-radius: 10px; border: 1px solid rgba(54,227,255,.35); background: rgba(54,227,255,.05); animation: of-rise .25s both; }
+.cx .of-counter h3 { margin: 0; font: 800 italic 17px var(--f-display); color: var(--cyan); }
+.cx .of-counter > p { margin: -6px 0 0; font-size: 12px; color: var(--muted); }
+.cx .of-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.cx .of-presets button { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); font-size: 13px; color: var(--muted); }
+.cx .of-presets button b { margin-right: 4px; color: var(--text); }
+.cx .of-presets button.on { border-color: var(--gold); color: var(--gold); } .cx .of-presets button.on b { color: var(--gold); }
+.cx .of-money { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cx .of-money .box { display: flex; align-items: center; height: 44px; border-radius: 10px; background: #050816; border: 1px solid rgba(255,255,255,.16); }
+.cx .of-money .box:focus-within { border-color: var(--cyan); }
+.cx .of-money .box > span { padding: 0 8px; color: var(--muted); font-weight: 600; }
+.cx .of-money input { width: 84px; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; outline: none;
+  color: var(--text); font: 800 italic 22px var(--f-display); text-align: right; }
+.cx .of-money .step { width: 36px; height: 100%; font-size: 18px; color: var(--muted); }
+.cx .of-money .step:hover { color: var(--text); }
+.cx .of-money .pct { font-size: 13px; color: var(--muted); } .cx .of-money .pct b { color: var(--text); }
+.cx .of-err { margin: 0; font-size: 12px; color: var(--crimson); }
+.cx .of-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.cx .of-acts2 { display: flex; gap: 8px; }
+.cx .of-acts2 .mk-btn.quiet { flex: none; }
+
+/* đã xử lý */
+.cx .of-hist { margin-top: 16px; border-radius: 12px; background: var(--glass-solid); border: 1px solid var(--line); }
+.cx .of-hist summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.cx .of-hist summary::-webkit-details-marker { display: none; }
+.cx .of-hist summary b { font: 800 italic 18px var(--f-display); text-transform: uppercase; }
+.cx .of-hist summary > span { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.cx .of-hist[open] summary .ms { transform: rotate(180deg); }
+.cx .of-hist ul { margin: 0; padding: 0 14px 10px; list-style: none; }
+.cx .of-hist li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.cx .of-hist .ic { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; }
+.cx .of-hist .ic .ms { font-size: 18px; }
+.cx .of-hist .ok .ic { color: var(--emerald); background: rgba(61,255,162,.12); }
+.cx .of-hist .no .ic { color: var(--muted); background: rgba(255,255,255,.06); }
+.cx .of-hist .bad .ic { color: var(--crimson); background: rgba(255,77,106,.1); }
+.cx .of-hist .tx { min-width: 0; font-size: 13px; }
+.cx .of-hist .tx small { display: block; font-size: 12px; color: var(--muted); }
+.cx .of-hist .amt { font: 800 italic 17px var(--f-display); white-space: nowrap; }
+.cx .of-hist .ok .amt { color: var(--emerald); }
+.cx .of-hist :is(.no, .bad) .amt { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* phí giải phóng */
+.cx .of-note { margin: -4px 2px 10px; max-width: 62ch; font-size: 13px; color: var(--muted); }
+.cx .of-note b { color: var(--text); }
+.cx .of-clauses { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cx .of-cl { border-radius: 12px; background: var(--glass-solid); border: 1px solid var(--line); }
+.cx .of-cl.edit { border-color: rgba(54,227,255,.45); }
+.cx .of-cl .row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto 36px; gap: 10px; align-items: center; padding: 8px 8px 8px 10px; }
+.cx .of-cl .mk-tile { width: 40px; height: 44px; } .cx .of-cl .mk-tile b { font-size: 20px; }
+.cx .of-cl .who { min-width: 0; }
+.cx .of-cl .who a { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx .of-cl .who a:hover { color: var(--cyan); }
+.cx .of-cl .tag { font-size: 11px; font-weight: 700; color: var(--gold); }
+.cx .of-cl .val { text-align: right; white-space: nowrap; }
+.cx .of-cl .val b { display: block; font: 800 italic 18px/1 var(--f-display); color: var(--cyan); }
+.cx .of-cl .val small { font-size: 11px; color: var(--muted); }
+.cx .of-cl .val.none b { font: 600 13px var(--f-body); color: var(--muted); }
+.cx .of-ib { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--muted); border: 1px solid var(--line); }
+.cx .of-ib:hover { color: var(--cyan); border-color: rgba(54,227,255,.45); }
+.cx .of-ib .ms { font-size: 20px; }
+.cx .of-cl .ed { display: grid; gap: 10px; padding: 4px 12px 12px; animation: of-rise .2s both; }
+.cx .of-more { width: 100%; margin-top: 8px; padding: 12px; border-radius: 12px; border: 1px dashed rgba(255,255,255,.16); color: var(--muted); font-weight: 600; }
+.cx .of-more:hover { color: var(--text); }
+.cx :where(.of-page) button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* màn "Đã bán" (dùng lại .cx-signed-ov của màn ký) */
+.cx .of-sold-ov { background: radial-gradient(circle at 50% 40%, rgba(61,255,162,.16), rgba(3,5,14,.92) 70%); }
+.cx .of-sold-ov .cx-pc .stamp { background: linear-gradient(90deg, #0b6b45, #16b673, #0b6b45); }
+.cx .of-sold-ov .cx-facts b.cyan { color: var(--cyan); }
+@media (prefers-reduced-motion: reduce) {
+  .cx .of-page *, .cx .of-page *::before, .cx .of-page *::after { animation: none !important; transition: none !important; }
+}

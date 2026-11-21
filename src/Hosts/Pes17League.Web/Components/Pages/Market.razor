@@ -526,7 +526,7 @@ else
     string? scoutMessage;
 
     /// <summary>Kỳ đông/hè, khung thứ mấy trong kỳ, tổng số khung của kỳ (Pes17TransferWindows).</summary>
-    static (bool Winter, int Idx, int Total) Win(CareerProgress cp)
+    internal static (bool Winter, int Idx, int Total) Win(CareerProgress cp)
     {
         var w = Pes17TransferWindows.WinterStart(cp.Slots);
         return cp.Slot >= w
