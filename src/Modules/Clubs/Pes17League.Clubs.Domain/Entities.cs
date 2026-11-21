@@ -259,6 +259,8 @@ public class ClubTactics
     public int? CounterAttack { get; set; }
     /// <summary>Vị trí tự do ô 1–10 (PO duyệt 05/11): 20 số X1,Y1..X10,Y10 theo toạ độ OF; null = theo sơ đồ. Đổi sơ đồ → xoá.</summary>
     public int[]? Positions { get; set; }
+    /// <summary>Vai trò ô 1–10 (career, PO 21/11: kéo thả / chọn tay đổi vai trò): 10 mã vai trò OF (FormationRoles); null = theo sơ đồ. Đổi sơ đồ / về vị trí theo sơ đồ → xoá.</summary>
+    public int[]? Roles { get; set; }
     /// <summary>4 chiến thuật phím L2 (○ ✕ Select □), mỗi giá trị 0..11 như menu game; null = theo patch.</summary>
     public int[]? Strategies { get; set; }
     // Đội trưởng + người đá phạt (PO duyệt 05/11): null hoặc cầu thủ không đá chính → tự chọn người tốt nhất trong 11 người (TeamJobPicker).

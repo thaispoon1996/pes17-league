@@ -6,9 +6,11 @@ namespace Pes17League.OptionFile;
 /// Giai đoạn 2 (spike 05/11, xác minh trong game): Positions = X/Y tự do của ô 1–10 (đè lên sơ đồ, cả 3 bộ);
 /// Strategies = 4 chiến thuật phím L2 (○ ✕ Select □), giá trị <see cref="TeamStrategies.Names"/>;
 /// Jobs = chỉ số ô trong squad (0..31) theo thứ tự <see cref="TeamJob"/>, null từng phần tử = giữ như OF gốc.
+/// Roles (career, PO 21/11) = mã vai trò ô 1–10 (byte 21..30 của khối sơ đồ, xem <see cref="FormationRoles"/>); null = theo sơ đồ.
 /// </summary>
 public sealed record TeamTactics(string? Formation, int? BackLine = null, int? Pressure = null, int? OffsideTrap = null, int? CounterAttack = null,
-    IReadOnlyList<(int X, int Y)>? Positions = null, IReadOnlyList<int?>? Strategies = null, IReadOnlyList<int?>? Jobs = null);
+    IReadOnlyList<(int X, int Y)>? Positions = null, IReadOnlyList<int?>? Strategies = null, IReadOnlyList<int?>? Jobs = null,
+    IReadOnlyList<int>? Roles = null);
 
 /// <summary>Người đá phạt / đội trưởng — thứ tự đúng thứ tự byte 111..116 của khối đội hình (spike 05/11).</summary>
 public enum TeamJob { LongFreeKick, ShortFreeKick, LeftCorner, RightCorner, Penalty, Captain }
@@ -31,13 +33,14 @@ public static class FormationBounds
 }
 
 /// <summary>Bố cục đội hình (vẽ sân trên web): X/Y của ô 1–10 (X = độ sâu, ~9 hàng thủ → ~43 tiền đạo; Y = ngang, ~19 trái → ~85 phải)
-/// và vai trò 11 ô (ô 0 = thủ môn).</summary>
-public sealed record FormationLayout(IReadOnlyList<(int X, int Y)> Positions, IReadOnlyList<string> Roles)
+/// và vai trò 11 ô (ô 0 = thủ môn); Codes = mã vai trò gốc 11 ô (byte 20..30), null khi dựng tay.</summary>
+public sealed record FormationLayout(IReadOnlyList<(int X, int Y)> Positions, IReadOnlyList<string> Roles, IReadOnlyList<int>? Codes = null)
 {
     internal static FormationLayout From(ReadOnlySpan<byte> span)
     {
         var b = span.ToArray();
-        return new([.. Enumerable.Range(0, 10).Select(i => ((int)b[2 * i], (int)b[2 * i + 1]))], [.. b[20..31].Select(r => Formations.RoleName(r))]);
+        return new([.. Enumerable.Range(0, 10).Select(i => ((int)b[2 * i], (int)b[2 * i + 1]))], [.. b[20..31].Select(r => Formations.RoleName(r))],
+            [.. b[20..31].Select(r => (int)r)]);
     }
 }
 
@@ -114,4 +117,55 @@ public static class Formations
         < 36 => "SS",
         _ => "CF",
     };
+}
+
+/// <summary>
+/// Vai trò theo vùng trên sân (career, PO 21/11: kéo thả đổi vai trò, chọn tay DMF → CMF…). Toạ độ OF: X = độ sâu (9 hàng thủ … 43 tiền đạo),
+/// Y = ngang (19 trái … 85 phải). Ngưỡng vùng chọn sao cho mọi ô của 21 sơ đồ mẫu ra đúng nhóm vai trò của mẫu
+/// (trừ 4-4-2 C / 4-3-3 C có tiền vệ giữa đứng sát biên — mẫu gọi CM, vùng gọi LM/RM).
+/// Mã vai trò: mỗi nhóm có biến thể trái/giữa/phải như sơ đồ mẫu (CB 1/3/7, DM 10/12/14, CM 17/19/21, AM 24/26/28, SS 31/33/35, CF 36/38/40).
+/// </summary>
+public static class FormationRoles
+{
+    /// <summary>Vai trò chọn tay được (thứ tự từ dưới lên), tên như <see cref="Formations.RoleName"/>.</summary>
+    public static readonly IReadOnlyList<string> Pickable = ["CB", "LB", "RB", "LWB", "RWB", "DM", "CM", "LM", "RM", "AM", "LW", "RW", "SS", "CF"];
+
+    /// <summary>Vai trò của vùng (X, Y).</summary>
+    public static string At(int x, int y)
+    {
+        var back = x <= 14;
+        bool left = back ? y <= 24 : y <= 32, right = back ? y >= 80 : y >= 72;
+        if (left || right)
+            return x switch { <= 14 => left ? "LB" : "RB", <= 22 => left ? "LWB" : "RWB", <= 37 => left ? "LM" : "RM", _ => left ? "LW" : "RW" };
+        return x switch { <= 14 => "CB", <= 21 => "DM", <= 29 => "CM", <= 37 => "AM", <= 40 => "SS", _ => "CF" };
+    }
+
+    /// <summary>Mã vai trò ghi vào OF: biến thể trái/giữa/phải theo Y.</summary>
+    public static int Code(string role, int y)
+    {
+        var side = y < 46 ? 0 : y <= 58 ? 1 : 2;
+        int[]? lcr = role switch
+        {
+            "CB" => [1, 3, 7], "DM" => [10, 12, 14], "CM" => [17, 19, 21], "AM" => [24, 26, 28], "SS" => [31, 33, 35], "CF" => [36, 38, 40], _ => null,
+        };
+        if (lcr is not null) return lcr[side];
+        return role switch
+        {
+            "GK" => 0, "CWP" => 4, "ASW" => 5, "LB" => 8, "RB" => 9, "LWB" => 15, "RWB" => 16, "LM" => 22, "RM" => 23, "LW" => 29, "RW" => 30,
+            _ => throw new ArgumentException($"Vai trò không có: {role}", nameof(role)),
+        };
+    }
+
+    /// <summary>Chỗ đứng khi chọn tay vai trò: độ sâu của vai trò; vai trò biên → sát biên, vai trò giữa → giữ Y hiện tại (kéo vào trong nếu đang ở biên).</summary>
+    public static (int X, int Y) Anchor(string role, int y)
+    {
+        var mid = Math.Clamp(y, 36, 68);
+        return role switch
+        {
+            "CB" => (9, mid), "LB" => (11, 19), "RB" => (11, 85), "LWB" => (18, 17), "RWB" => (18, 87),
+            "DM" => (18, mid), "CM" => (26, mid), "LM" => (26, 27), "RM" => (26, 77), "AM" => (34, mid),
+            "LW" => (43, 30), "RW" => (43, 74), "SS" => (39, mid), "CF" => (43, mid),
+            _ => throw new ArgumentException($"Vai trò không chọn tay được: {role}", nameof(role)),
+        };
+    }
 }

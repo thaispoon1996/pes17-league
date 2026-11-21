@@ -238,6 +238,8 @@ public sealed class OptionFileImage
             if (v is < 0 or > 2) throw new ArgumentOutOfRangeException(nameof(tactics), v, "Thiết lập đội 0..2 (A/B/C)");
         if (tactics.Positions is { } pos && (pos.Count != 10 || pos.Any(p => p.X is < FormationBounds.MinX or > FormationBounds.MaxX || p.Y is < FormationBounds.MinY or > FormationBounds.MaxY)))
             throw new ArgumentOutOfRangeException(nameof(tactics), "Vị trí tự do: đúng 10 ô, X/Y trong giới hạn");
+        if (tactics.Roles is { } rl && (rl.Count != 10 || rl.Any(v => v is < 1 or > 40)))
+            throw new ArgumentOutOfRangeException(nameof(tactics), "Vai trò: đúng 10 mã ô 1–10, 1..40");
         if (tactics.Strategies is { } st && (st.Count != 4 || st.Any(v => v is < 0 || v >= TeamStrategies.Names.Count)))
             throw new ArgumentOutOfRangeException(nameof(tactics), "Chiến thuật L2: 4 giá trị 0..11");
         if (tactics.Jobs is { } jobs && (jobs.Count != JobCount || jobs.Any(v => v is < 0 or >= SquadSize)))
@@ -248,6 +250,8 @@ public sealed class OptionFileImage
             if (tactics.Formation is { } f) Formations.Preset(f).CopyTo(Data.AsSpan(b + FormationPreset));
             if (tactics.Positions is { } p)
                 for (var i = 0; i < 10; i++) (Data[b + FormationPreset + 2 * i], Data[b + FormationPreset + 2 * i + 1]) = ((byte)p[i].X, (byte)p[i].Y);
+            if (tactics.Roles is { } r)
+                for (var i = 0; i < 10; i++) Data[b + FormationPreset + 21 + i] = (byte)r[i];
             for (var i = 0; i < 4; i++)
                 if (settings[i] is { } v) Data[b + TeamSettings + i] = (byte)v;
         }

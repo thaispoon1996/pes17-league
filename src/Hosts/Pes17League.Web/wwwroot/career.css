@@ -3068,3 +3068,17 @@ html:has(.bx-sheet) { overflow: hidden; }
 /* cảnh họp báo dùng chung thẻ + tin nóng: .md-scene là span → cần block để có chiều cao */
 .cx .md-scene { display: block; }
 .cx .md-pscene { position: relative; }
+
+/* Đội hình career: chọn vai trò cho cầu thủ đang chọn (PO 21/11) — nút tô theo độ hợp vị trí đăng ký */
+.cx .role-bar { display: grid; gap: 8px; margin: 10px 0 2px; padding: 10px 12px; border-radius: 12px; background: var(--glass-solid);
+  border: 1px solid rgba(54, 227, 255, .4); box-shadow: 0 0 24px -10px rgba(54, 227, 255, .6); animation: cx-rise .3s both; }
+.cx .role-bar > span { display: flex; align-items: baseline; gap: 8px; font: 800 italic 16px/1 var(--f-display); text-transform: uppercase; color: var(--muted); }
+.cx .role-bar > span b { color: #fff; }
+.cx .role-bar > span small { margin-left: auto; font: 600 12px var(--f-body, inherit); font-style: normal; text-transform: none; color: var(--muted); }
+.cx .role-bar > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.cx .role-bar button { --tc: var(--muted); min-width: 48px; min-height: 34px; padding: 4px 10px; border-radius: 8px; background: rgba(255, 255, 255, .04);
+  border: 1px solid color-mix(in srgb, var(--tc) 45%, transparent); color: #fff; font: 800 italic 14px/1 var(--f-display); cursor: pointer; }
+.cx .role-bar button.fit { --tc: var(--emerald); } .cx .role-bar button.near { --tc: var(--gold); } .cx .role-bar button.off { --tc: var(--crimson); }
+.cx .role-bar button.on { background: var(--cyan); border-color: var(--cyan); color: var(--n0); }
+.cx .role-bar button:hover:not(.on) { background: color-mix(in srgb, var(--tc) 14%, transparent); }
+.cx .role-bar button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }

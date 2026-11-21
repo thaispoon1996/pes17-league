@@ -22,19 +22,24 @@ public sealed class TacticsService(ClubsDbContext db, TimeProvider clock)
         if (t.Formation is { } f && !Formations.Names.Contains(f)) return TacticsError.UnknownFormation;
         if (new[] { t.BackLine, t.Pressure, t.OffsideTrap, t.CounterAttack }.Any(v => v is < 0 or > 2)) return TacticsError.SettingOutOfRange;
         var row = await RowAsync(clubId, ct);
-        if (row.Formation != t.Formation) row.Positions = null;
+        if (row.Formation != t.Formation) (row.Positions, row.Roles) = (null, null);
         (row.Formation, row.BackLine, row.Pressure, row.OffsideTrap, row.CounterAttack) = (t.Formation, t.BackLine, t.Pressure, t.OffsideTrap, t.CounterAttack);
         return await SaveAsync(row, ct);
     }
 
-    /// <summary>Vị trí tự do: 10 cặp (X, Y) toạ độ OF của ô 1–10; null = về theo sơ đồ.</summary>
-    public async Task<TacticsError?> SetPositionsAsync(Guid clubId, IReadOnlyList<(int X, int Y)>? positions, CancellationToken ct = default)
+    /// <summary>Vị trí tự do: 10 cặp (X, Y) toạ độ OF của ô 1–10; null = về theo sơ đồ (xoá cả vai trò).
+    /// <paramref name="roles"/> (career): 10 mã vai trò ô 1–10; null = giữ vai trò đã lưu (về sơ đồ thì xoá).</summary>
+    public async Task<TacticsError?> SetPositionsAsync(Guid clubId, IReadOnlyList<(int X, int Y)>? positions, CancellationToken ct = default,
+        IReadOnlyList<int>? roles = null)
     {
         if (positions is not null && (positions.Count != 10 || positions.Any(p =>
                 p.X is < FormationBounds.MinX or > FormationBounds.MaxX || p.Y is < FormationBounds.MinY or > FormationBounds.MaxY)))
             return TacticsError.PositionOutOfRange;
+        if (roles is not null && (positions is null || roles.Count != 10 || roles.Any(r => r is < 1 or > 40))) return TacticsError.PositionOutOfRange;
         var row = await RowAsync(clubId, ct);
         row.Positions = positions is null ? null : [.. positions.SelectMany(p => new[] { p.X, p.Y })];
+        if (positions is null) row.Roles = null;
+        else if (roles is not null) row.Roles = [.. roles];
         return await SaveAsync(row, ct);
     }
 
@@ -95,6 +100,9 @@ public sealed class TacticsService(ClubsDbContext db, TimeProvider clock)
     }
 
     /// <summary>Vị trí tự do dạng cặp (null nếu chưa chỉnh).</summary>
+    /// <summary>Mã vai trò ô 1–10 đã chọn (career); null = theo sơ đồ.</summary>
+    public static IReadOnlyList<int>? RolesOf(ClubTactics? t) => t?.Roles is { Length: 10 } r && t.Positions is { Length: 20 } ? r : null;
+
     public static IReadOnlyList<(int X, int Y)>? PositionsOf(ClubTactics? t) =>
         t?.Positions is { Length: 20 } p ? [.. Enumerable.Range(0, 10).Select(i => (p[2 * i], p[2 * i + 1]))] : null;
 

@@ -127,7 +127,7 @@ public sealed class RoundOptionFileService(ClubsDbContext db, IOptionFileStore s
                     && order.IndexOf(p.PlayerId) is var i and >= 0 ? i : (int?)null)];
             if (t is null && jobs is null) continue;
             result[c.PesClubIndex] = new TeamTactics(t?.Formation, t?.BackLine, t?.Pressure, t?.OffsideTrap, t?.CounterAttack,
-                TacticsService.PositionsOf(t), TacticsService.StrategiesOf(t), jobs);
+                TacticsService.PositionsOf(t), TacticsService.StrategiesOf(t), jobs, TacticsService.RolesOf(t));
         }
         return result;
     }

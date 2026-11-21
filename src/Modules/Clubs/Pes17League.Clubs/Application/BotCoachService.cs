@@ -109,7 +109,7 @@ public sealed class BotCoachService(ClubsDbContext db, TimeProvider clock)
         row.Pressure = t.Pressure;
         row.OffsideTrap = t.OffsideTrap;
         row.CounterAttack = t.CounterAttack;
-        row.Positions = null;
+        (row.Positions, row.Roles) = (null, null);
         row.Strategies = t.Strategies is { } s ? [.. s.Select(v => v ?? -1)] : null;
         row.UpdatedAt = now;
     }

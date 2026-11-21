@@ -52,10 +52,24 @@
             if (p is null) { <div class="pl empty" style="left:@(left)%;top:@(top)%"><small>@role</small></div> continue; }
             <div class="pl @Fit(p.Position, role) @(picked == p.PlayerId ? "picked" : "")" style="left:@(left)%;top:@(top)%" data-pid="@p.PlayerId" data-slot="@slot" @onclick="() => Tap(p)">
                 @if (jobs.GetValueOrDefault(TeamJob.Captain)?.PlayerId == p.PlayerId) { <i class="cap">C</i> }
-                <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@role · @p.Overall</small>
+                <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@RoleLabel(role) · @p.Overall</small>
             </div>
         }
     </div>
+    @if (Shell is not null && !Locked && squad.FirstOrDefault(x => x.PlayerId == picked) is { Slot: >= 1 and <= 10 } rp && layout is not null)
+    {
+        @* Career (PO 21/11): chọn tay vai trò cho cầu thủ đang chọn → dời về vùng của vai trò đó (vai trò luôn khớp vị trí). *@
+        var cur = layout.Roles[rp.Slot];
+        <div class="role-bar" role="group" aria-label="Vai trò của @rp.Name">
+            <span>Vai trò <b>@Short(rp.Name)</b><small>@rp.Position · @rp.Overall</small></span>
+            <div>
+                @foreach (var r in FormationRoles.Pickable)
+                {
+                    <button type="button" class="@(r == cur ? "on" : null) @Fit(rp.Position, r)" aria-pressed="@(r == cur ? "true" : "false")" @onclick="() => SetRole(rp, r)">@RoleLabel(r)</button>
+                }
+            </div>
+        </div>
+    }
     <div class="bench">
         <h3>Dự bị</h3>
         <div class="bench-list">
@@ -67,7 +81,7 @@
             }
         </div>
     </div>
-    <p class="muted legend"><i class="fit"></i>đúng vị trí <i class="near"></i>cùng tuyến <i class="off"></i>trái tuyến · Kéo thả hoặc chạm 2 cầu thủ để đổi chỗ (ô thủ môn chỉ dành cho GK); kéo cầu thủ vào chỗ trống trên sân để đặt vị trí tự do.</p>
+    <p class="muted legend"><i class="fit"></i>đúng vị trí <i class="near"></i>cùng tuyến <i class="off"></i>trái tuyến · Kéo thả hoặc chạm 2 cầu thủ để đổi chỗ (ô thủ môn chỉ dành cho GK); kéo cầu thủ vào chỗ trống trên sân để đặt vị trí tự do@(Shell is null ? "" : " (vai trò tự đổi theo vùng); chạm 1 cầu thủ trên sân để chọn vai trò").</p>
     <div class="board-cols">
         <div>
             <h3>Đội trưởng & đá phạt</h3>
@@ -102,6 +116,7 @@
 @code {
     [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
     [Parameter, EditorRequired] public Guid ClubId { get; set; }
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
     [Parameter] public bool Locked { get; set; }
     [Parameter] public string? LockedMessage { get; set; }
     /// <summary>Sau khi đổi chỗ (trang chứa đọc lại bảng cầu thủ).</summary>
@@ -159,7 +174,10 @@
         var baseLayout = formation is null ? patchLayout ?? Formations.Layout(Formations.Names[0]) : Formations.Layout(formation);
         var positions = TacticsService.PositionsOf(tactics);
         custom = positions is not null;
-        layout = positions is null ? baseLayout : new FormationLayout(positions, baseLayout.Roles);
+        var codes = TacticsService.RolesOf(tactics);
+        layout = positions is null ? baseLayout
+            : codes is null ? new FormationLayout(positions, baseLayout.Roles, baseLayout.Codes)
+            : new FormationLayout(positions, [baseLayout.Roles[0], .. codes.Select(c => Formations.RoleName(c))], [baseLayout.Codes?[0] ?? 0, .. codes]);
         starters = (await svc.StartersAsync(Season.Id, [ClubId])).GetValueOrDefault(ClubId) ?? [];
         jobs = Enum.GetValues<TeamJob>().ToDictionary(j => j, j => TeamJobPicker.Resolve(j, TacticsService.GetJob(tactics, j), starters));
     }
@@ -239,10 +257,40 @@
             var y = Math.Clamp((int)Math.Round(left), FormationBounds.MinY, FormationBounds.MaxY);
             var positions = layout.Positions.ToList();
             positions[p.Slot - 1] = (x, y);
-            await SaveAsync(s => s.SetPositionsAsync(ClubId, positions));
+            if (Shell is null) await SaveAsync(s => s.SetPositionsAsync(ClubId, positions));
+            else
+            {
+                // Career: vai trò ô vừa kéo đổi theo vùng thả; các ô khác giữ mã vai trò hiện có.
+                var codes = SlotCodes();
+                codes[p.Slot - 1] = FormationRoles.Code(FormationRoles.At(x, y), y);
+                await SaveAsync(s => s.SetPositionsAsync(ClubId, positions, roles: codes));
+            }
         }
         StateHasChanged();
     }
+
+    /// <summary>Mã vai trò hiện tại ô 1–10 (đã lưu, hoặc của sơ đồ; sơ đồ dựng tay thì suy từ tên + Y).</summary>
+    List<int> SlotCodes() => [.. Enumerable.Range(1, 10).Select(i => layout!.Codes?[i] is { } c && Formations.RoleName(c) == layout.Roles[i]
+        ? c : FormationRoles.Code(layout.Roles[i], layout.Positions[i - 1].Y))];
+
+    /// <summary>Career: chọn tay vai trò → dời cầu thủ về vùng của vai trò (giữ Y nếu là vai trò giữa sân).</summary>
+    async Task SetRole(SquadRow p, string role)
+    {
+        if (layout is null || p.Slot is < 1 or > 10) return;
+        var positions = layout.Positions.ToList();
+        var codes = SlotCodes();
+        var at = FormationRoles.Anchor(role, positions[p.Slot - 1].Y);
+        positions[p.Slot - 1] = at;
+        codes[p.Slot - 1] = FormationRoles.Code(role, at.Y);
+        picked = null;
+        await SaveAsync(s => s.SetPositionsAsync(ClubId, positions, roles: codes));
+    }
+
+    /// <summary>Career hiện tên vai trò kiểu PES 17 (DMF, CMF…); giải online giữ nhãn cũ.</summary>
+    string RoleLabel(string role) => Shell is null ? role : role switch
+    {
+        "DM" => "DMF", "CM" => "CMF", "LM" => "LMF", "RM" => "RMF", "AM" => "AMF", "LW" => "LWF", "RW" => "RWF", _ => role,
+    };
 
     async Task Tap(SquadRow p)
     {

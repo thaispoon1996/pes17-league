@@ -324,6 +324,9 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.Property<Guid?>("RightCornerTakerId")
                         .HasColumnType("uuid");
 
+                    b.Property<int[]>("Roles")
+                        .HasColumnType("integer[]");
+
                     b.Property<Guid?>("ShortFreeKickTakerId")
                         .HasColumnType("uuid");
 
