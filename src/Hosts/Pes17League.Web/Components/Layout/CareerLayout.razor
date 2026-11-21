@@ -434,6 +434,7 @@ else
         if (p is not null)
         {
             mail.Add(new("Việc cần làm & họp báo", "task_alt", "hop-thu", Short: "Việc cần làm"));
+            mail.Add(new("Truyền thông", "newspaper", "truyen-thong", Note: "Họp báo, bài báo, album, bên lề"));
             mail.Add(new("Thư ban tổ chức", "campaign", "thu", Badge: unread, Short: "Thư BTC", Note: "Thông báo giải"));
         }
         var unreadAll = (hasCoach ? coachUnread : 0) + (p is not null ? unread : 0);

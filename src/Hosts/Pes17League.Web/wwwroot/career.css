@@ -2805,3 +2805,149 @@ html:has(.bx-sheet) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .cx .ht *, .cx .ht *::before, .cx .ht *::after, .cx .ht > * { animation: none !important; transition: none !important; }
 }
+
+/* ===== Truyền thông career (PO 21/11, mockup 5mK12BQskUVcNsd4zyL5za): Components/CareerMedia.razor, trang /truyen-thong ===== */
+.cx .md { display: grid; gap: 12px; min-width: 0; }
+.cx .md-tabs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: -4px 0 2px; padding: 2px; }
+.cx .md-tabs::-webkit-scrollbar { display: none; }
+.cx .md-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .12); background: transparent; color: var(--text); font: 800 italic 15px/1 var(--f-display); text-transform: uppercase; transition: background .2s, color .2s, border-color .2s; }
+.cx .md-tabs button small { min-width: 18px; padding: 2px 6px; border-radius: 999px; background: rgba(255, 255, 255, .09); font: 700 12px/1 var(--f-display); font-style: normal; color: var(--muted); }
+.cx .md-tabs button.on { border-color: transparent; background: linear-gradient(90deg, var(--gold), var(--gold-2)); color: var(--n0); box-shadow: 0 6px 18px -6px rgba(255, 159, 28, .6); }
+.cx .md-tabs button.on small { background: rgba(7, 11, 26, .2); color: var(--n0); }
+.cx .md-tabs button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* Phóng viên đang chờ */
+.cx .md-pend { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 12px; color: inherit; text-decoration: none;
+  background: linear-gradient(90deg, rgba(255, 201, 74, .14), rgba(11, 20, 48, .88) 60%); border: 1px solid rgba(255, 201, 74, .45); }
+.cx .md-pend > .ms { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: rgba(255, 77, 106, .16); color: var(--crimson); animation: md-live 1.6s ease-in-out infinite; }
+.cx .md-pend b { display: block; font: 800 italic 18px/1.1 var(--f-display); text-transform: uppercase; color: #fff; }
+.cx .md-pend small { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx .md-pend em { padding: 7px 12px; border-radius: 8px; background: linear-gradient(90deg, var(--gold), var(--gold-2)); color: var(--n0); font: 800 italic 14px/1 var(--f-display); text-transform: uppercase; }
+@keyframes md-live { 50% { box-shadow: 0 0 0 7px rgba(255, 77, 106, 0); background: rgba(255, 77, 106, .28); } 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 106, .45); } }
+
+/* Ảnh họp báo: phông logo CLB, HLV, bục, micro, đèn flash */
+.cx .md-press, .cx .md-match { position: relative; overflow: hidden; min-width: 0; border-radius: 14px; animation: cx-rise .55s cubic-bezier(.2, .8, .2, 1) both; }
+.cx .md-press { background: #0b1430; border: 1px solid rgba(255, 201, 74, .4); box-shadow: 0 18px 50px -22px rgba(255, 201, 74, .4); }
+.cx .md-scene { position: relative; height: 232px; overflow: hidden; isolation: isolate;
+  background: radial-gradient(120% 90% at 50% -10%, rgba(220, 240, 255, .22), transparent 55%), linear-gradient(180deg, #13214f, #070b1a); }
+.cx .md-scene::before { content: ""; position: absolute; left: 50%; bottom: 20px; z-index: 0; width: 300px; height: 240px; transform: translateX(-50%); border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 201, 74, .26), transparent); }
+.cx .md-scene::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: radial-gradient(120% 100% at 50% 30%, transparent 55%, rgba(5, 8, 22, .7)); }
+.cx .md-wall { position: absolute; inset: -18%; z-index: -1; opacity: .17; transform: rotate(-5deg);
+  background: var(--logo, radial-gradient(circle, rgba(255, 201, 74, .5) 0 9px, transparent 10px)) 0 0 / 40px 40px space; }
+.cx .md-face { position: absolute; left: 50%; z-index: 1; transform: translateX(-50%); }
+.cx .md-face.cut { bottom: 30px; height: 200px; width: auto; filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .6)); }
+.cx .md-face.box { bottom: 66px; width: 104px; height: 124px; object-fit: cover; border-radius: 14px; border: 3px solid var(--gold); box-shadow: 0 0 28px rgba(255, 201, 74, .4); }
+.cx .md-man { position: absolute; left: 50%; bottom: 40px; z-index: 1; width: 140px; height: 96px; transform: translateX(-50%); border-radius: 70px 70px 0 0;
+  background: linear-gradient(180deg, #1c2540, #0d1226); box-shadow: inset 0 2px 0 rgba(149, 191, 229, .35); }
+.cx .md-man i { position: absolute; left: 50%; top: -76px; width: 66px; height: 78px; transform: translateX(-50%); border-radius: 45%; background: linear-gradient(180deg, #2a3560, #161e3d); }
+.cx .md-podium { position: absolute; left: 14%; right: 14%; bottom: 0; z-index: 2; display: grid; place-items: center; height: 58px; border-radius: 8px 8px 0 0;
+  background: linear-gradient(180deg, #1a2347, #0c1230); border-top: 3px solid var(--gold); box-shadow: 0 -10px 30px -10px rgba(0, 0, 0, .8); }
+.cx .md-podium img { width: 34px; height: 34px; object-fit: contain; }
+.cx .md-mic { position: absolute; bottom: 54px; z-index: 2; width: 11px; height: 36px; border-radius: 6px 6px 2px 2px; background: #1b1f2b; box-shadow: inset 0 2px 0 rgba(255, 255, 255, .25); }
+.cx .md-mic::after { content: ""; position: absolute; left: -6px; top: 12px; width: 23px; height: 12px; border-radius: 2px; background: var(--c); }
+.cx .md-mic.m1 { left: calc(36% - 6px); --c: var(--crimson); } .cx .md-mic.m2 { left: calc(43% - 6px); --c: var(--cyan); height: 42px; }
+.cx .md-mic.m3 { left: calc(57% - 6px); --c: var(--gold); height: 40px; } .cx .md-mic.m4 { left: calc(64% - 6px); --c: var(--emerald); }
+.cx .md-fl { position: absolute; z-index: 4; width: 110px; height: 110px; border-radius: 50%; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, .95), rgba(200, 230, 255, .3) 40%, transparent); animation: md-flash 4.6s infinite; }
+.cx .md-fl.f1 { left: 2%; top: 22%; } .cx .md-fl.f2 { right: 0; top: 2%; animation-delay: 1.7s; } .cx .md-fl.f3 { left: 30%; top: 44%; width: 70px; height: 70px; animation-delay: 3.1s; }
+@keyframes md-flash { 0%, 90%, 100% { opacity: 0; transform: scale(.5); } 93% { opacity: 1; transform: scale(1); } 96% { opacity: .25; } }
+.cx .md-photo { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 12px 26px rgba(0, 0, 0, .7)); }
+.cx .md-tag, .cx .md-res, .cx .md-comp { position: absolute; top: 12px; z-index: 5; display: inline-flex; align-items: center; gap: 5px; max-width: calc(100% - 24px); padding: 4px 10px; border-radius: 999px;
+  font: 700 12px/1.2 var(--f-display); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: rgba(7, 11, 26, .78); }
+.cx .md-tag { left: 12px; max-width: 62%; color: var(--gold); border: 1px solid rgba(255, 201, 74, .5); }
+.cx .md-tag .ms, .cx .md-comp .ms { font-size: 15px; }
+.cx .md-res { right: 12px; color: var(--gold); border: 1px solid rgba(255, 201, 74, .5); }
+.cx .md-press.win .md-res { color: var(--emerald); border-color: rgba(61, 255, 162, .5); background: rgba(7, 30, 26, .8); }
+.cx .md-press.loss .md-res { color: var(--crimson); border-color: rgba(255, 77, 106, .5); background: rgba(40, 8, 18, .8); }
+.cx .md-pb { display: grid; gap: 8px; padding: 14px 16px 16px; }
+.cx .md-pb h3, .cx .md-mb h3 { margin: 0; font: 800 italic 23px/1.08 var(--f-display); text-transform: uppercase; color: #fff; text-wrap: balance; }
+.cx .md-pb p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--muted); max-width: 68ch; }
+.cx .md-fx { display: flex; flex-wrap: wrap; gap: 6px; }
+.cx .md-fx em { padding: 3px 9px; border-radius: 6px; font-size: 12.5px; font-weight: 600; font-style: normal; color: var(--muted); background: rgba(255, 255, 255, .05); border: 1px solid var(--line); }
+.cx .md-fx em.cx-up { background: rgba(61, 255, 162, .08); border-color: rgba(61, 255, 162, .3); }
+.cx .md-fx em.cx-down { background: rgba(255, 77, 106, .08); border-color: rgba(255, 77, 106, .3); }
+
+/* Bài báo sau trận: đồ hoạ tỉ số, màu lấy từ logo 2 CLB (CoachFace.tint → --th1/--ta1) */
+.cx .md-match { background: var(--glass-solid); border: 1px solid rgba(255, 255, 255, .1); box-shadow: 0 18px 40px -26px rgba(0, 0, 0, .9); animation-delay: 80ms; }
+.cx .md-gfx { position: relative; height: 176px; overflow: hidden; isolation: isolate;
+  background: linear-gradient(115deg, var(--th1, #1d3170) 0 49.6%, rgba(255, 255, 255, .55) 49.6% 50.4%, var(--ta1, #3b1a3e) 50.4% 100%); transition: background .4s; }
+.cx .md-gfx::after { content: ""; position: absolute; inset: 0; z-index: 1; background: radial-gradient(80% 120% at 50% 0%, rgba(255, 255, 255, .16), transparent 60%), linear-gradient(180deg, rgba(7, 11, 26, .2) 20%, rgba(7, 11, 26, .88)); }
+.cx .md-gfx.ph::after { background: linear-gradient(180deg, rgba(7, 11, 26, .3), rgba(7, 11, 26, .9)); }
+.cx .md-mph { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cx .md-comp { left: 12px; color: var(--cyan); border: 1px solid rgba(54, 227, 255, .45); }
+.cx .md-vs { position: absolute; left: 0; right: 0; bottom: 16px; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 0 14px; }
+.cx .md-vs .t { display: grid; justify-items: center; gap: 5px; min-width: 0; text-align: center; }
+.cx .md-vs .crest.lg { width: 54px; height: 54px; font-size: 16px; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .6)); }
+.cx .md-vs .t b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 italic 15px/1.1 var(--f-display); text-transform: uppercase; color: #fff; }
+.cx .md-vs .t.me b { color: var(--gold); }
+.cx .md-vs .sc { font: 800 italic 60px/.9 var(--f-display); color: #fff; letter-spacing: -.01em; white-space: nowrap; text-shadow: 0 4px 24px rgba(0, 0, 0, .6); animation: md-pop .6s cubic-bezier(.2, 1.4, .4, 1) both .2s; }
+@keyframes md-pop { from { opacity: 0; transform: scale(1.9); } }
+.cx .md-match.r-win .md-vs .sc { text-shadow: 0 0 26px rgba(61, 255, 162, .55), 0 4px 24px rgba(0, 0, 0, .6); }
+.cx .md-match.r-loss .md-vs .sc { text-shadow: 0 0 26px rgba(255, 77, 106, .5), 0 4px 24px rgba(0, 0, 0, .6); }
+.cx .md-mb { display: grid; gap: 10px; padding: 14px 16px 16px; }
+.cx .md-mb h3 { font-size: 22px; }
+.cx .md-goals { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: #c3c9e4; }
+.cx .md-goals li { display: inline-flex; align-items: center; gap: 4px; }
+.cx .md-goals .ms { font-size: 15px; color: var(--muted); }
+.cx .md-goals li.h .ms { color: var(--th2, var(--cyan)); } .cx .md-goals li.a .ms { color: var(--ta2, var(--gold)); }
+.cx .md-goals span { color: var(--muted); }
+.cx .md-stat { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, .25); border: 1px solid rgba(255, 255, 255, .08); font-size: 12px; color: var(--muted); }
+.cx .md-stat .bar { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px; align-items: center; gap: 8px; }
+.cx .md-stat .bar b { color: #fff; font: 800 italic 15px/1 var(--f-display); } .cx .md-stat .bar b:last-child { text-align: right; }
+.cx .md-stat .bar span { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--ta1, var(--gold)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+.cx .md-stat .bar i { width: var(--p); background: var(--th1, var(--cyan)); border-right: 2px solid #070b1a; animation: cx-grow .9s cubic-bezier(.2, .8, .2, 1) both .3s; transform-origin: left; }
+.cx .md-stat .lb { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.cx .md-body { display: grid; gap: 10px; padding: 12px 0 2px; border-top: 1px solid var(--line); animation: cx-rise .35s ease both; }
+.cx .md-body p { margin: 0; font-size: 14.5px; line-height: 1.65; color: #d3d8ef; max-width: 68ch; }
+.cx .md-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.cx .md-motm { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); }
+.cx .md-motm .ms { font-size: 17px; color: var(--gold); }
+.cx .md-motm b { color: #fff; } .cx .md-motm em { font: 800 italic 16px/1 var(--f-display); color: var(--emerald); }
+.cx .md-btns { display: flex; gap: 8px; margin-left: auto; }
+
+/* Album + bên lề */
+.cx .md-sub { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 6px 2px -2px; }
+.cx .md-sub h3 { margin: 0; font-size: 20px; color: #fff; }
+.cx .md-sub a, .cx .md-more { font-size: 13px; font-weight: 600; color: var(--cyan); }
+.cx .md-more { justify-self: start; margin: -2px 2px 0; }
+.cx .md-album { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; padding-bottom: 4px; }
+.cx .md-shot { flex: none; width: 150px; scroll-snap-align: start; display: grid; grid-template-rows: 112px auto; overflow: hidden; border-radius: 10px; color: inherit; text-decoration: none;
+  background: var(--glass-solid); border: 1px solid var(--line); transition: transform .2s, border-color .2s; }
+.cx .md-shot:hover { transform: translateY(-2px); border-color: rgba(255, 201, 74, .45); }
+.cx .md-shot img { width: 100%; height: 112px; object-fit: cover; object-position: 50% 22%; display: block; background: #0b1430; }
+.cx .md-gfx.mini { height: 112px; display: grid; place-items: center; }
+.cx .md-gfx.mini b { position: relative; z-index: 2; font: 800 italic 34px/1 var(--f-display); color: #fff; text-shadow: 0 3px 14px rgba(0, 0, 0, .6); }
+.cx .md-shot .cap { display: grid; gap: 2px; padding: 8px 10px 10px; font-size: 12px; line-height: 1.35; }
+.cx .md-shot .cap b { color: #fff; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cx .md-shot .cap small { color: var(--muted); font-size: 11.5px; }
+.cx .md-album.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); overflow: visible; }
+.cx .md-album.grid .md-shot { width: auto; }
+.cx .md-side { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cx .md-side li > a, .cx .md-side li > div { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 12px; border-radius: 10px;
+  color: inherit; text-decoration: none; background: var(--glass-solid); border: 1px solid var(--line); transition: border-color .2s; }
+.cx .md-side li > a:hover { border-color: rgba(54, 227, 255, .4); }
+.cx .md-side .ic { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; font-size: 21px; color: var(--tc); background: color-mix(in srgb, var(--tc) 13%, transparent); }
+.cx .md-side .tx { min-width: 0; }
+.cx .md-side .tx b { display: block; font-size: 14px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx .md-side .tx small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx .md-side .go { color: var(--muted); font-size: 20px; }
+.cx .md-side .t-gold { --tc: var(--gold); } .cx .md-side .t-cyan { --tc: var(--cyan); } .cx .md-side .t-violet { --tc: var(--violet); }
+.cx .md-side .t-green { --tc: var(--emerald); } .cx .md-side .t-red { --tc: var(--crimson); }
+.cx .ht-album { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--cyan); }
+.cx .ht-album .ms { font-size: 18px; }
+
+/* Trang /truyen-thong */
+.cx .md-page { display: grid; gap: 16px; max-width: 1120px; margin: 0 auto; padding-bottom: 96px; }
+.cx .md-hero h1 { margin: 0; font-size: 38px; line-height: 1; color: #fff; }
+.cx .md-hero p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+@media (min-width: 1000px) {
+  .cx .md.full { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; column-gap: 16px; }
+  .cx .md.full > :not(.md-press):not(.md-match) { grid-column: 1 / -1; }
+  .cx .md.full .md-scene { height: 250px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cx .md *, .cx .md *::before, .cx .md *::after, .cx .md > * { animation: none !important; transition: none !important; }
+  .cx .md-fl { display: none; }
+}

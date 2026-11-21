@@ -164,7 +164,8 @@
   function clearPad(c) { if (!c) return; c.getContext('2d').clearRect(0, 0, c.width, c.height); c.dataset.ink = '0'; }
 
   // ---------- ảnh lưu niệm họp báo ----------
-  /** Ảnh 640×800: phông logo CLB, HLV (đã tách nền: đứng thẳng; chưa: khung vàng), khăn màu CLB, tên. o.cut = ảnh mặt đã tách nền. Trả JPEG. */
+  /** Ảnh 640×800: phông logo CLB, HLV (đã tách nền: đứng thẳng; chưa: khung vàng), khăn màu CLB, tên. o.cut = ảnh mặt đã tách nền.
+      o.press = { tag, score, win } (họp báo sau trận, PO 21/11): bục có logo + micro thay khăn, nhãn trên ảnh. Trả JPEG. */
   async function photo(o) {
     const cl = await clubLook(o.logo), face = o.face ? await loadImg(o.face) : null;
     const c = document.createElement('canvas'); c.width = 640; c.height = 800;
@@ -188,7 +189,7 @@
       x.fillStyle = halo; x.fillRect(0, 0, 640, 700);
       x.save(); x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 30; x.shadowOffsetY = 12;
       x.drawImage(face, 60, 120, 520, 520); x.restore();
-      scarf(320, 600, 360);
+      if (!o.press) scarf(320, 600, 360);
     } else {
       // giữ nền gốc: chân dung trong khung bo tròn viền vàng
       const fx = 150, fy = 90, fw = 340, fh = 400, r = 28;
@@ -199,8 +200,9 @@
       else { x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.arc(320, 230, 70, 0, 7); x.fill(); x.beginPath(); x.ellipse(320, 470, 150, 150, 0, Math.PI, 0); x.fill(); }
       x.restore();
       rr(); x.lineWidth = 6; x.strokeStyle = '#FFC94A'; x.stroke();
-      scarf(320, fy + fh - 34, 400);
+      if (!o.press) scarf(320, fy + fh - 34, 400);
     }
+    if (o.press) podium(x, cl, cols, o.press);
     const gr = x.createLinearGradient(0, 600, 0, 800); gr.addColorStop(0, 'rgba(7,11,26,0)'); gr.addColorStop(.4, 'rgba(7,11,26,.92)'); x.fillStyle = gr; x.fillRect(0, 600, 640, 200);
     x.fillStyle = '#FFC94A'; x.fillRect(40, 690, 6, 74);
     x.fillStyle = '#ffffff'; x.font = 'italic 800 46px "Barlow Condensed", sans-serif'; x.fillText((o.name || '').toUpperCase(), 60, 728);
@@ -210,11 +212,41 @@
     return jpeg(c, .85);
   }
 
+  /** Bục họp báo: mặt bục màu CLB + logo, 4 micro màu đài, nhãn họp báo + tỉ số ở góc trên. */
+  function podium(x, cl, cols, p) {
+    const g = x.createLinearGradient(0, 560, 0, 680); g.addColorStop(0, '#1a2347'); g.addColorStop(1, '#0a1030');
+    x.fillStyle = g; x.fillRect(70, 572, 500, 108);
+    x.fillStyle = cols[1]; x.fillRect(70, 568, 500, 5);
+    if (cl?.img) x.drawImage(cl.img, 290, 592, 60, 60);
+    for (const [mx, col] of [[200, '#e8364f'], [262, '#36E3FF'], [378, '#FFC94A'], [440, '#3DFFA2']]) {
+      x.fillStyle = '#1b1f2b'; x.beginPath(); if (x.roundRect) x.roundRect(mx - 9, 500, 18, 72, 9); else x.rect(mx - 9, 500, 18, 72); x.fill();
+      x.fillStyle = col; x.fillRect(mx - 16, 528, 32, 16);
+    }
+    const chip = (t, px, py, fg, right) => {
+      x.font = 'italic 800 26px "Barlow Condensed", sans-serif'; const w = x.measureText(t).width + 28, lx = right ? px - w : px;
+      x.fillStyle = 'rgba(7,11,26,.78)'; x.fillRect(lx, py, w, 40); x.strokeStyle = fg; x.lineWidth = 2; x.strokeRect(lx, py, w, 40);
+      x.fillStyle = fg; x.fillText(t, lx + 14, py + 29);
+    };
+    if (p.tag) chip(String(p.tag).toUpperCase(), 24, 24, '#FFC94A');
+    if (p.score) chip(String(p.score).toUpperCase(), 616, 24, p.win > 0 ? '#3DFFA2' : p.win < 0 ? '#FF4D6A' : '#FFC94A', true);
+  }
+
+  /** Tô màu theo logo CLB (PO 21/11, đồ hoạ trận ở Truyền thông): [data-tint-h]/[data-tint-a] = logo đội nhà/khách → --th1,--th2 / --ta1,--ta2. */
+  async function tint(root) {
+    for (const el of (root || document).querySelectorAll('[data-tint-h],[data-tint-a]')) {
+      if (el.dataset.tinted) continue; el.dataset.tinted = '1';
+      for (const [k, v] of [['h', el.dataset.tintH], ['a', el.dataset.tintA]]) {
+        const cl = v ? await clubLook(v) : null; if (!cl) continue;
+        el.style.setProperty(`--t${k}1`, cl.a); el.style.setProperty(`--t${k}2`, cl.b);
+      }
+    }
+  }
+
   /** Nháy flash màn họp báo. */
   function flash(el) {
     if (!el || RM) return;
     el.querySelectorAll('.fl').forEach((f, i) => setTimeout(() => { f.style.left = (10 + Math.random() * 70) + '%'; f.style.top = (8 + Math.random() * 50) + '%'; f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }, i * 160));
   }
 
-  window.CoachFace = { crop, cut, faceBytes, dirty, clearFace, pad, inked, clearPad, photo, flash };
+  window.CoachFace = { crop, cut, faceBytes, dirty, clearFace, pad, inked, clearPad, photo, flash, tint };
 })();

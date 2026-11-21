@@ -4,6 +4,7 @@
 @inject LeagueQueries Q
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject TimeProvider Clock
+@inject IJSRuntime JS
 
 @* FM đợt 9 (PO 12/11 duyệt mặc định): hộp thư việc cần làm, họp báo sau trận, nói chuyện cầu thủ, tâm trạng CĐV. Luật MediaRules.
    Skin career (PO 21/11, làm thẳng không mockup): bàn việc trước trận — họp báo xem trước tác động thật (MediaService.PressEffect),
@@ -96,6 +97,7 @@
                     <b>@pd.Label</b>
                     <span class="fx"><em class="@Dir(pd.Morale)">Tinh thần đội @Signed(pd.Morale)</em><em class="@Dir(pd.Fans)">CĐV @FansText(pd.Fans)</em></span>
                 </div>
+                @if (photoSaved) { <a class="ht-album" href="truyen-thong"><i class="ms" aria-hidden="true">photo_camera</i>Ảnh họp báo đã vào Album · xem ở Truyền thông</a> }
             </section>
         }
 
@@ -243,6 +245,7 @@ var me = season.HumanClubId;
     const int LowMorale = 35;   // như Phòng thay đồ
 
     /// <summary>Kết quả họp báo vừa trả lời (chỉ trong phiên trang, để hiện lại tác động).</summary>
+    bool photoSaved;
     sealed record Pressed(string Label, int Morale, int Fans, string Opponent, string Score, string Css);
 
     SeasonInfo? season;
@@ -272,9 +275,10 @@ var me = season.HumanClubId;
     {
         if (desk?.Press is not { } pr) return;
         busy = true;
+        var gd = pr.GoalsFor - pr.GoalsAgainst;
+        var shoot = false;
         try
         {
-            var gd = pr.GoalsFor - pr.GoalsAgainst;
             var (morale, fans) = MediaService.PressEffect(tone, gd, hlv);
             string? error;
             await using (var db = await Dbs.CreateDbContextAsync())
@@ -284,11 +288,41 @@ var me = season.HumanClubId;
             {
                 message = null;
                 pressed = new(Tones.First(t => t.Tone == tone).Label, morale, fans, pr.Opponent, $"{pr.GoalsFor}–{pr.GoalsAgainst}", Result(gd).Css);
+                shoot = true;
             }
             else message = error ?? $"Đã họp báo. Tinh thần đội {morale:+0;-0;0}, CĐV {fans / 10.0:+0.#;-0.#;0}%.";
             await Load();
         }
         finally { busy = false; }
+        if (shoot) { StateHasChanged(); await PressPhotoAsync(Shell?.P, pr, gd); }
+    }
+
+    /// <summary>PO 21/11 (Truyền thông): sau họp báo tự chụp ảnh bục họp báo (logo CLB + mặt HLV + micro) vào Album. Lỗi chụp → bỏ qua, không chặn họp báo.</summary>
+    async Task PressPhotoAsync(CareerProgress? cp, PressPending pr, int gd)
+    {
+        if (hlv is null || cp is null) return;
+        try
+        {
+            var score = $"{Result(gd).Text} {pr.GoalsFor}–{pr.GoalsAgainst}";
+            var r = await JS.InvokeAsync<IJSStreamReference?>("CoachFace.photo", new
+            {
+                face = CoachUi.FaceUrl(hlv), cut = CoachUi.FaceCut(hlv), logo = cp.ClubLogo, name = hlv.Name,
+                caption = $"Họp báo sau trận gặp {pr.Opponent}", press = new { tag = "Họp báo sau trận", score, win = Math.Sign(gd) },
+            });
+            if (r is null) return;
+            byte[] bytes;
+            await using (r)
+            {
+                await using var st = await r.OpenReadStreamAsync(CoachService.MaxPhotoBytes);
+                using var ms = new MemoryStream();
+                await st.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            await using var db = await Dbs.CreateDbContextAsync();
+            photoSaved = (await new CoachService(db, Clock).AddPhotoAsync(hlv.ManagerId, $"Họp báo · {score} {pr.Opponent}", bytes)).Id is not null;
+            StateHasChanged();
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or TaskCanceledException or IOException) { }
     }
 
     async Task Talk()

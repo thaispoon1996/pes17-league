@@ -1,0 +1,22 @@
+@page "/truyen-thong"
+
+<PageTitle>Truyền thông</PageTitle>
+
+@* Toàn bộ tin truyền thông career (PO 21/11): họp báo, bài báo sau trận, album, tin bên lề — <see cref="CareerMedia"/> bản đầy đủ. Chỉ trong khung career. *@
+@if (Shell?.P is not { } p)
+{
+    <div class="hx-empty"><i class="ms" aria-hidden="true">newspaper</i><div><b>Truyền thông chỉ có trong chế độ sự nghiệp.</b> Nhận dẫn một CLB để báo chí đưa tin về đội bạn.</div>
+        <a class="cx-btn gold sm" href="su-nghiep">Sự nghiệp</a></div>
+    return;
+}
+<div class="md-page">
+    <header class="md-hero">
+        <h1 id="md-h">Truyền thông</h1>
+        <p>Họp báo, bài báo sau trận, album ảnh và tin bên lề quanh @p.ClubName mùa @p.SeasonName.</p>
+    </header>
+    <CareerMedia Full="true" />
+</div>
+
+@code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+}
