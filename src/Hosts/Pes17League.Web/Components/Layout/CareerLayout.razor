@@ -44,6 +44,29 @@ else
                             <span><b>Sự nghiệp HLV</b><small>@(coach switch { null => "Chưa có hồ sơ", CoachStatus.Creating => "Đang tạo hồ sơ", _ => "Chưa có CLB" })</small></span>
                         </a>
                     }
+                    @* Chuông thông báo (PO 22/11): việc cần xử lý, thay khối "Cần xử lý" ở trang chủ. Máy tính thả xuống, điện thoại bảng dưới dải trên. *@
+                    @if (me is not null)
+                    {
+                        <details class="nav-more cxh-bell @(todo.Count > 0 ? "has" : null)">
+                            <summary class="no-busy" aria-label="@(todo.Count > 0 ? $"Thông báo: {todo.Count} việc cần xử lý" : "Thông báo")" title="Cần xử lý">
+                                <i class="ms @(todo.Count > 0 ? "fill" : null)" aria-hidden="true">notifications</i>@if (todo.Count > 0) { <span class="badge">@todo.Count</span> }
+                            </summary>
+                            <div class="nav-more__menu cxh-bp">
+                                <p class="cxh-bh"><b>Cần xử lý</b>@if (todo.Count > 0) { <small>@todo.Count việc</small> }</p>
+                                @if (todo.Count == 0)
+                                {
+                                    <p class="cxh-none"><i class="ms" aria-hidden="true">task_alt</i>Không có việc cần xử lý.</p>
+                                }
+                                @foreach (var t in todo)
+                                {
+                                    <a class="cxh-it t-@t.Tone" href="@t.Href">
+                                        <i class="ms" aria-hidden="true">@t.Icon</i><span>@t.Title@if (t.Text is not null) { <small>@t.Text</small> }</span>
+                                        @if (t.Chip is not null) { <em>@t.Chip</em> }
+                                    </a>
+                                }
+                            </div>
+                        </details>
+                    }
                     <a class="cxh-link" href="tim-kiem" aria-label="Tìm kiếm"><i class="ms" aria-hidden="true">search</i><span>Tìm kiếm</span></a>
                     @if (MusicOn) { <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button> }
                     @if (admin) { <a class="cxh-link wide" href="admin"><i class="ms" aria-hidden="true">settings</i><span>Quản trị</span></a> }
@@ -256,6 +279,7 @@ else
     bool ready, onboarding, admin;
     Guid? me;
     int unread, coachUnread;
+    List<TodoItem> todo = [];   // chuông thông báo
     CoachStatus? coach;
     string? who, profile;
     CareerMatchResult? result;
@@ -289,6 +313,7 @@ else
     public async Task RefreshAsync()
     {
         await LoadAsync(first: false);
+        await CountMailAsync();   // việc vừa xử lý trên trang → chuông cập nhật ngay
         await InvokeAsync(StateHasChanged);
     }
 
@@ -351,9 +376,11 @@ else
         wasRunning = Jobs.Running;
     });
 
+    /// <summary>Số thư chưa đọc (ô Hòm thư) + việc cần xử lý (chuông).</summary>
     async Task CountMailAsync()
     {
         await using var db = await Dbs.CreateDbContextAsync();
+        todo = me is { } mid ? await CareerTodo.LoadAsync(db, Clock, mid, P) : [];
         unread = await new MailService(db, Clock).UnreadAsync(me);
         coach = me is { } id ? await db.Coaches.AsNoTracking().Where(c => c.ManagerId == id).Select(c => (CoachStatus?)c.Status).FirstOrDefaultAsync() : null;
         coachUnread = me is { } m && coach is CoachStatus.Employed or CoachStatus.Unemployed ? await new CoachLetterService(db, Clock).UnreadAsync(m) : 0;

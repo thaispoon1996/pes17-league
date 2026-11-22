@@ -22,7 +22,7 @@
 @if (club is not null)
 {
     @* Trang chủ career giao diện xanh (PO 22/11 duyệt mockup claude.ai/artifact/Lok9GhdGbYcAXoeF8BCmxY): dải HLV → cột trái: kết quả khung vừa đá,
-       trận tiếp theo + nút hành động (Vào trận / Mô phỏng / Tiếp tục / Sang mùa mới), vị trí hiện tại, cần xử lý, tin nóng + Nhịp sống (CareerMedia);
+       trận tiếp theo + nút hành động (Vào trận / Mô phỏng / Tiếp tục / Sang mùa mới), vị trí hiện tại, Trang nhất (CareerMedia; việc cần xử lý ở chuông đầu trang);
        cột phải: mục tiêu ban lãnh đạo, lịch sắp tới, BXH, phong độ, cúp, ngôi sao đội. Thứ tự hiển thị cột trái đặt bằng CSS order (.ch-main). *@
     var morale = squadMorale;
     var mine = table.FirstOrDefault(r => r.Mine);
@@ -111,22 +111,6 @@
                     </div>
                 </section>
 
-                <section class="h-card ch-todo" aria-labelledby="hm-todo">
-                    <div class="h-sec"><h2 id="hm-todo"><i class="ms" aria-hidden="true">task_alt</i>Cần xử lý</h2>@if (todo.Count > 0) { <span class="h-chip warn">@todo.Count việc</span> }</div>
-                    @if (todo.Count == 0)
-                    {
-                        <p class="ch-none">@(current is null ? "Không có việc cần xử lý." : "Không có việc gấp. Đá trận hoặc bấm Tiếp tục để sang khung sau.")</p>
-                    }
-                    else
-                    {
-                        <div class="ch-todos">
-                            @foreach (var t in todo)
-                            {
-                                <a class="t-@t.Tone" href="@t.Href" title="@t.Text"><i class="ms" aria-hidden="true">@t.Icon</i><b>@t.Title</b>@if (t.Chip is not null) { <em>@t.Chip</em> }</a>
-                            }
-                        </div>
-                    }
-                </section>
                 </CareerMedia>
             </div>
 
@@ -715,10 +699,8 @@
     List<ResultRow> recent = [];
     List<TableRow> table = [];
     List<CupRow> cups = [];
-    sealed record Todo(string Icon, string Tone, string Title, string? Text, string Href, string? Chip);
     sealed record FeedItem(string Icon, string Tone, string Title, string? Text, string? Href);
     sealed record Upcoming(Guid Id, int Slot, string Opponent, string? Logo, bool Home, string Competition);
-    List<Todo> todo = [];            // Cần xử lý: thư quyết định, việc, cảnh báo (hết, không cắt 3)
     /// <summary>Đội nhà (cột Nhịp sống): tin vòng vừa qua trừ kết quả/bài báo/chuyển nhượng (đã có ở tin nóng, dải kết quả, cột Chuyển nhượng).</summary>
     IReadOnlyList<(string Icon, string Tone, string Title, string? Text, string? Href)> ClubFeed => [.. feed
         .Where(f => f.Icon is not ("sports_soccer" or "newspaper" or "swap_horiz" or "person_remove")).Select(f => (f.Icon, f.Tone, f.Title, f.Text, f.Href))];
@@ -732,7 +714,6 @@
     DateTimeOffset? since;           // lúc đội đá trận trước trận vừa rồi (mốc "vòng vừa qua")
     BoardStatus? board;
     Star? star;
-    string? newFeature;
     int? marketLeft, marketNext;
     bool marketOpen;
 
@@ -1004,64 +985,13 @@
             n > 0 ? $"Ghi {n} bàn mùa này" : "OVR cao nhất đội", attrs);
     }
 
-    /// <summary>Cần xử lý: mục mới mở khoá, thư HLV cần quyết định (theo hạn), việc và cảnh báo từ bàn làm việc (MediaService), thư chưa đọc.
-    /// Mục trỏ tới tính năng chưa mở thì đưa về trang gần nhất.</summary>
+    /// <summary>Bàn làm việc (MediaService): tinh thần đội, CĐV, báo cáo cho ô chỉ số. Việc cần xử lý nay ở chuông đầu trang (CareerTodo, PO 22/11).</summary>
     async Task LoadDeskAsync(ClubsDbContext db, Guid seasonId, Guid mineId)
     {
-        var p = Shell?.P;
-        string? Gate(string? link) => link switch
-        {
-            null => null,
-            "tap-luyen" when p is not null && !p.Has(CareerUnlocks.Training) => null,
-            "tai-chinh" when p is not null && !p.Has(CareerUnlocks.Finance) => null,
-            "ban-lanh-dao" when p is not null && !p.Has(CareerUnlocks.Board) => null,
-            "chuyen-nhuong" when p is not null && !p.Has(CareerUnlocks.Transfer) => "clb",
-            _ => link,
-        };
-        static string Icon(InboxItem i) => i.Link switch
-        {
-            "de-nghi" => "handshake",
-            "tap-luyen" when i.Kind == InboxKind.Task => "fitness_center",
-            "tap-luyen" => "healing",
-            "chuyen-nhuong" => "contract_edit",
-            "tai-chinh" => "account_balance",
-            "ban-lanh-dao" => "domain",
-            _ when i.Title.Contains("Họp báo") => "mic",
-            _ when i.Title.Contains("mệt") => "battery_alert",
-            _ when i.Title.Contains("không vui") => "sentiment_dissatisfied",
-            _ => i.Kind == InboxKind.Info ? "pending_actions" : "assignment",
-        };
-
         var desk = await new MediaService(db, Clock).DeskAsync(seasonId, mineId);
         squadMorale = desk.Squad.Count == 0 ? null : (int)Math.Round(desk.Squad.Average(s => s.Morale));
         fanMood = desk.FanMood;
         desk_ = desk;
-        todo = [];
-        newFeature = p?.Unlocked.Where(p.IsNew).OrderBy(f => CareerUnlocks.Introduced.ToList().IndexOf(f)).LastOrDefault();
-        if (newFeature is { } nf && CareerLayout.Intros.TryGetValue(nf, out var nfo))
-            todo.Add(new("lock_open", "gold", "Mới mở khoá: " + nfo.Title, nfo.Text, nfo.Href, "Mới"));
-
-        if (coach is { Status: not CoachStatus.Creating } co)
-        {
-            var now = await CoachService.NowTickAsync(db);
-            var waiting = await db.CoachLetters.AsNoTracking().Where(l => l.CoachId == co.Id && l.Kind == LetterKind.Decision && l.Chosen == null && !l.Archived)
-                .OrderBy(l => l.DeadlineTick).ToListAsync();
-            foreach (var l in waiting)
-            {
-                int? left = l.DeadlineTick is { } d && d / 100 == now / 100 && d > now ? d - now : null;
-                todo.Add(new("gavel", left is <= 1 ? "red" : "gold", l.Subject, "Thư từ " + l.Sender, $"thu-hlv?thu={l.Id}", left is { } n ? $"Còn {n} vòng" : "Cần quyết định"));
-            }
-            var unread = await db.CoachLetters.CountAsync(l => l.CoachId == co.Id && !l.Outgoing && !l.Read && !l.Archived && !(l.Kind == LetterKind.Decision && l.Chosen == null));
-            if (unread > 0) todo.Add(new("mail", "cyan", $"{unread} thư chưa đọc", "Hòm thư HLV", "thu-hlv", null));
-        }
-
-        // Việc trước, cảnh báo sau; "Chuẩn bị vòng" đã có ở thẻ trận tiếp theo; tin (báo cáo, bài báo, BLĐ) sang Vòng vừa qua / ô chỉ số.
-        foreach (var i in desk.Inbox.Where(i => i.Kind == InboxKind.Task && !(i.Link ?? "").StartsWith("chuan-bi")))
-            todo.Add(new(Icon(i), "gold", i.Title, i.Body, Gate(i.Link) ?? "hop-thu", null));
-        foreach (var i in desk.Inbox.Where(i => i.Kind == InboxKind.Warning))
-            todo.Add(new(Icon(i), "red", i.Title, i.Body, Gate(i.Link) ?? "phong-thay-do", null));
-        foreach (var i in desk.Inbox.Where(i => i.Kind == InboxKind.Info && i.Link is null))
-            todo.Add(new(Icon(i), "cyan", i.Title, i.Body, "clb", null));
     }
 
     MediaDesk? desk_;
