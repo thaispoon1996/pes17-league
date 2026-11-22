@@ -77,6 +77,24 @@ else
         <aside class="panel">
             <div class="panel-head"><h2>Vua phá lưới</h2></div>
             <TopScorers Season="season" Fixtures="own" />
+            @if (physique.Count > 0)
+            {
+                <div class="panel-head"><h2>Thể hình</h2></div>
+                <p class="muted note">Trung bình đội hình hiện tại · xếp theo chiều cao</p>
+                <table class="table static">
+                    <thead><tr><th class="left">CLB</th><th>Cao</th><th>Nặng</th></tr></thead>
+                    <tbody>
+                        @foreach (var (club, avg) in physique)
+                        {
+                            <tr>
+                                <td class="left"><a href="@season.Url($"clb/{club}")"><Crest Name="@season.Clubs.GetValueOrDefault(club, "?")" Logo="@season.Logo(club)" />@season.Clubs.GetValueOrDefault(club, "?")</a></td>
+                                <td>@(avg.HeightCm is { } h ? $"{h:0.0}" : "–")</td>
+                                <td>@(avg.WeightKg is { } w ? $"{w:0.0}" : "–")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         </aside>
     </div>
 }
@@ -92,6 +110,7 @@ else
     SeasonInfo? season;
     EditionView? edition;
     IReadOnlyList<StandingRow<Guid>> rows = [];
+    List<(Guid Club, PhysiqueAvg Avg)> physique = [];
     List<FixtureView> own = [], table = [];
     IReadOnlyList<Zone> zones = [];
     IReadOnlyList<BracketRound>? bracket;
@@ -118,6 +137,11 @@ else
             zones = Fmt.Zones(edition, editions, rows.Count);
             bracket = Cup ? await Q.BracketAsync(edition.Id, Store, Clock) : null;
             matchdays = Cup ? await Q.MatchdaysAsync(season.Id) : [];
+            var clubIds = rows.Select(r => r.Club).Distinct().ToList();
+            var byClub = await Q.ClubsPhysiqueAsync(season.Id, clubIds);
+            physique = [.. clubIds.Select(c => (c, byClub.GetValueOrDefault(c, new(null, null))))
+                .OrderByDescending(x => x.Item2.HeightCm ?? 0)
+                .ThenByDescending(x => x.Item2.WeightKg ?? 0)];
         }
         loaded = true;
     }

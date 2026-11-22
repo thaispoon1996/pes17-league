@@ -203,6 +203,8 @@
                     </div>
                     <ul class="facts">
                         <li><span>Tuổi trung bình</span><b>@Avg(stats.Values.Where(x => x.Age is not null).Select(x => x.Age!.Value))</b></li>
+                        <li><span>Chiều cao TB</span><b>@(physique.HeightCm is { } cm ? $"{cm:0.0} cm" : "–")</b></li>
+                        <li><span>Cân nặng TB</span><b>@(physique.WeightKg is { } kg ? $"{kg:0.0} kg" : "–")</b></li>
                         <li><span>OVR trung bình cả đội</span><b>@Avg(squad.Select(p => p.Overall))</b></li>
                         <li><span>Hợp đồng sắp hết</span><b class="@(expiring > 0 ? "warn" : "")">@expiring cầu thủ</b></li>
                     </ul>
@@ -246,6 +248,7 @@
     TransferWindow? window;
     List<SquadRow> squad = [];
     Dictionary<Guid, SquadStat> stats = [];
+    PhysiqueAvg physique = new(null, null);
     long balance, payroll;
     TeamForm? glance;
     FixtureView? next;
@@ -291,6 +294,7 @@
         window = await Q.OpenWindowAsync(season.Id);
         squad = await Q.SquadAsync(season.Id, clubId);
         stats = await Q.SquadStatsAsync(season, clubId, [.. squad.Select(p => p.PlayerId)]);
+        physique = await Q.PhysiqueAvgAsync(season.Id, [.. squad.Select(p => p.PlayerId)]);
         (balance, payroll, ledger) = await Q.FinanceAsync(clubId);
         (glance, next) = await Q.ClubGlanceAsync(season, clubId);
     }

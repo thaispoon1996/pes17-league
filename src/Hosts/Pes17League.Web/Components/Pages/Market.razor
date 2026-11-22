@@ -51,6 +51,11 @@
                     }
                     else { <small>Không đặt trần lương</small> }
                 </div>
+                <div class="mk-kpi">
+                    <small>Thể hình đội mình</small>
+                    <b>@(myPhysique.HeightCm is { } cm ? $"{cm:0.0}" : "–")<em> cm</em></b>
+                    <small>@(myPhysique.WeightKg is { } kg ? $"{kg:0.0} kg" : "– kg")</small>
+                </div>
             </div>
             @if (weak.Count > 0)
             {
@@ -156,7 +161,7 @@
             }
 
             <div class="mk-list-h" id="mk-list">
-                <div><h3>@ListTitle</h3><p>@rows.Count.ToString("N0", Vi) cầu thủ@(rows.Count > Shown ? $" · hiện {Shown} đầu" : "")</p></div>
+                <div><h3>@ListTitle</h3><p>@rows.Count.ToString("N0", Vi) cầu thủ@(rows.Count > Shown ? $" · hiện {Shown} đầu" : "") · @FmtPhysique(PhysiqueAvg.Of(rows.Select(p => (p.Height, p.Weight))))</p></div>
                 <button type="button" class="mk-sort no-busy" @onclick="NextSort">Sắp xếp<b>@Sorts.First(s => s.Key == sort).Label</b><i class="ms" aria-hidden="true">swap_vert</i></button>
             </div>
             <ul class="mk-rows">
@@ -288,6 +293,7 @@ else
         <div>
             <small>Đội hình</small><b class="big">@squad.Count cầu thủ</b>
             <span>@string.Join(" · ", Groups.Select(g => $"{g.Short} {squad.Count(p => p.Position.Group() == g.Group)}"))</span>
+            <span>@FmtPhysique(myPhysique)</span>
         </div>
     </div>
     @if (me == Guid.Empty) { <NoClubNote Suffix=" nên chưa mua được" /> }
@@ -365,7 +371,7 @@ else
                     <select @bind="maxAge" title="Tuổi tối đa"><option value="0">Tuổi bất kỳ</option>@foreach (var a in new[] { 21, 23, 25, 28, 30 }) { <option value="@a">≤ @a tuổi</option> }</select>
                     <select @bind="sort" title="Sắp xếp">@foreach (var (key, label) in Sorts) { <option value="@key">@label</option> }</select>
                 </div>
-                <div class="fm-h"><h2>Kết quả tìm kiếm</h2><small>@rows.Count cầu thủ@(rows.Count > Shown ? $" · hiện {Shown} đầu" : "")<span class="opt"> · chạm 1 dòng xem hồ sơ trinh sát</span></small></div>
+                <div class="fm-h"><h2>Kết quả tìm kiếm</h2><small>@rows.Count cầu thủ@(rows.Count > Shown ? $" · hiện {Shown} đầu" : "") · @FmtPhysique(PhysiqueAvg.Of(rows.Select(p => (p.Height, p.Weight))))<span class="opt"> · chạm 1 dòng xem hồ sơ trinh sát</span></small></div>
                 <div class="fm-scroll">
                 <table class="table fm-squad fm-search">
                     <thead><tr>
@@ -435,6 +441,7 @@ else
     TransferWindow? window;
     List<MarketRow> market = [];
     List<SquadRow> squad = [];
+    PhysiqueAvg myPhysique = new(null, null);
     List<TransferRow> transfers = [];
     long balance, payroll;
     string tab = "tim", name = "", source = "all", sort = "ovr";
@@ -461,6 +468,7 @@ else
         market = await Q.MarketAsync(season.Id, season.HumanClubId);
         (balance, payroll, _) = await Q.FinanceAsync(season.HumanClubId);
         squad = season.HumanClubId == Guid.Empty ? [] : await Q.SquadAsync(season.Id, season.HumanClubId);
+        myPhysique = squad.Count == 0 ? new(null, null) : await Q.PhysiqueAvgAsync(season.Id, [.. squad.Select(p => p.PlayerId)]);
         transfers = await Q.TransfersAsync(season.Id, TransferTake);
         matches = season.Economy.DefaultContractMatches;
         await using var db = await Dbs.CreateDbContextAsync();
@@ -701,6 +709,14 @@ else
     long Wage(MarketRow p) => ContractRules.Wage(p.Price, season!.Economy.WagePermille);
     bool OverCap(long wages) => season!.Economy.SoftWageCap > 0 && wages > season.Economy.SoftWageCap;
     static double Change(MarketRow p) => p.BasePrice > 0 ? (double)p.Price / p.BasePrice - 1 : 0;
+    static string FmtPhysique(PhysiqueAvg a) =>
+        (a.HeightCm, a.WeightKg) switch
+        {
+            (null, null) => "– cm · – kg",
+            (null, { } w) => $"– cm · {w:0.0} kg",
+            ({ } h, null) => $"{h:0.0} cm · – kg",
+            ({ } h, { } w) => $"{h:0.0} cm · {w:0.0} kg",
+        };
 
     RenderFragment Trend(MarketRow p) => __builder =>
     {

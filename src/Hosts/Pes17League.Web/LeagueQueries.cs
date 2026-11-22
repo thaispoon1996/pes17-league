@@ -53,7 +53,8 @@ public sealed record NewsComp(Guid Id, string Name);
 public sealed record SquadRow(Guid PlayerId, string Name, Position Position, int Slot, int Shirt, int Overall, long Price,
     int? MatchesTotal, int MatchesPlayed, long? Wage, RenewalStatus? Renewal);
 /// <param name="BasePrice">Giá gốc đầu mùa (so biến động giá).</param><param name="Age">Tuổi theo chỉ số AGE mùa này.</param>
-public sealed record MarketRow(Guid PlayerId, string Name, Position Position, int? BirthYear, Guid? ClubId, int Overall, long Price, long BasePrice, int? Age);
+/// <param name="Height">Chiều cao cm (HEIGHT).</param><param name="Weight">Cân nặng kg (WEIGHT).</param>
+public sealed record MarketRow(Guid PlayerId, string Name, Position Position, int? BirthYear, Guid? ClubId, int Overall, long Price, long BasePrice, int? Age, int? Height = null, int? Weight = null);
 public sealed record VisibilityRow(Guid PlayerId, int PesPlayerId, string Name, Position Position, Guid? ClubId, int Overall, long Price, bool? Override, bool Visible);
 
 /// <summary>Truy vấn đọc cho các trang (mỗi lệnh 1 DbContext).</summary>
@@ -301,13 +302,23 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         var rows = await VisibilityAsync(seasonId);
         await using var db = await dbs.CreateDbContextAsync();
         var basePrice = await db.PlayerPrices.Where(p => p.SeasonId == seasonId).ToDictionaryAsync(p => p.PlayerId, p => p.BasePrice);
-        // Values là jsonb có converter (không dịch LINQ được) → lấy riêng khoá AGE bằng SQL thay vì tải cả snapshot ~5.500 cầu thủ.
-        var age = (await db.Database.SqlQuery<AgeRow>($"""select "PlayerId", ("Values"->>'AGE')::int as "Age" from clubs."PlayerAttributes" where "SeasonId" = {seasonId}""")
-            .ToListAsync()).ToDictionary(a => a.PlayerId, a => a.Age);
+        // Values là jsonb có converter (không dịch LINQ được) → lấy AGE/HEIGHT/WEIGHT bằng SQL thay vì tải cả snapshot.
+        var attrs = (await db.Database.SqlQuery<AttrRow>($"""
+            select "PlayerId",
+                   ("Values"->>'AGE')::int as "Age",
+                   ("Values"->>'HEIGHT')::int as "Height",
+                   ("Values"->>'WEIGHT')::int as "Weight"
+            from clubs."PlayerAttributes" where "SeasonId" = {seasonId}
+            """).ToListAsync()).ToDictionary(a => a.PlayerId);
         return [.. rows.Where(r => r.Visible && r.ClubId != excludeClubId)
-            .Select(r => new MarketRow(r.PlayerId, r.Name, r.Position, r.BirthYear, r.ClubId, r.Overall, r.Price, basePrice.GetValueOrDefault(r.PlayerId), age.GetValueOrDefault(r.PlayerId)))];
+            .Select(r =>
+            {
+                attrs.TryGetValue(r.PlayerId, out var a);
+                return new MarketRow(r.PlayerId, r.Name, r.Position, r.BirthYear, r.ClubId, r.Overall, r.Price, basePrice.GetValueOrDefault(r.PlayerId), a?.Age, a?.Height, a?.Weight);
+            })];
     }
 
+    private sealed class AttrRow { public Guid PlayerId { get; set; } public int? Age { get; set; } public int? Height { get; set; } public int? Weight { get; set; } }
     private sealed class AgeRow { public Guid PlayerId { get; set; } public int? Age { get; set; } }
 
     /// <summary>Tuổi (chỉ số AGE mùa này) của một nhóm cầu thủ (vd. đội của mình).</summary>

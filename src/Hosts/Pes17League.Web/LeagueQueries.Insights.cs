@@ -283,6 +283,36 @@ public sealed partial class LeagueQueries
                 t.ToClubId is { } to ? names.GetValueOrDefault(to) : null, t.Fee, t.Kind))]);
     }
 
+    /// <summary>Chiều cao / cân nặng TB của tập cầu thủ (snapshot mùa; chỉ giá trị &gt; 0).</summary>
+    public async Task<PhysiqueAvg> PhysiqueAvgAsync(Guid seasonId, IReadOnlyCollection<Guid> playerIds)
+    {
+        if (playerIds.Count == 0) return new(null, null);
+        await using var db = await dbs.CreateDbContextAsync();
+        var rows = await db.PlayerAttributes.AsNoTracking()
+            .Where(a => a.SeasonId == seasonId && playerIds.Contains(a.PlayerId)).ToListAsync();
+        return PhysiqueAvg.Of(rows.Select(a => (
+            a.Values.TryGetValue("HEIGHT", out var h) ? h : (int?)null,
+            a.Values.TryGetValue("WEIGHT", out var w) ? w : (int?)null)));
+    }
+
+    /// <summary>Chiều cao / cân nặng TB theo CLB (đội hình hiện tại, snapshot mùa).</summary>
+    public async Task<Dictionary<Guid, PhysiqueAvg>> ClubsPhysiqueAsync(Guid seasonId, IReadOnlyCollection<Guid> clubIds)
+    {
+        if (clubIds.Count == 0) return [];
+        await using var db = await dbs.CreateDbContextAsync();
+        var members = await db.SquadMemberships.AsNoTracking()
+            .Where(m => m.LeftAt == null && clubIds.Contains(m.ClubId))
+            .Select(m => new { m.ClubId, m.PlayerId }).ToListAsync();
+        var ids = members.Select(m => m.PlayerId).Distinct().ToList();
+        var attrs = ids.Count == 0 ? [] : await db.PlayerAttributes.AsNoTracking()
+            .Where(a => a.SeasonId == seasonId && ids.Contains(a.PlayerId)).ToListAsync();
+        var byPlayer = attrs.ToDictionary(a => a.PlayerId, a => (
+            a.Values.TryGetValue("HEIGHT", out var h) ? h : (int?)null,
+            a.Values.TryGetValue("WEIGHT", out var w) ? w : (int?)null));
+        return clubIds.ToDictionary(c => c, c => PhysiqueAvg.Of(
+            members.Where(m => m.ClubId == c).Select(m => byPlayer.GetValueOrDefault(m.PlayerId))));
+    }
+
     /// <summary>Số liệu thêm cho bảng đội hình trang CLB (<paramref name="ids"/> = cầu thủ đang trong đội); trận tính theo CLB này trong mùa.</summary>
     public async Task<Dictionary<Guid, SquadStat>> SquadStatsAsync(SeasonInfo season, Guid clubId, IReadOnlyCollection<Guid> ids)
     {
