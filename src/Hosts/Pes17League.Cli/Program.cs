@@ -22,7 +22,8 @@ using Pes17League.Clubs.Infrastructure;
 //   hide-retired                          ẩn khỏi chợ cầu thủ giải nghệ (tự do + không thuộc đội tuyển), chỉ người chưa bị admin ép
 //   set-visibility true|false|null PES... ép hiện/ẩn (null = theo luật) theo ID PES của patch mùa đang chạy
 //   end-attempt                           gỡ lần chạy kẹt Running (vd. DB sập lúc ghi kết quả) → Crashed, trận về Scheduled. Chỉ dùng khi không có trận nào đang chạy
-//   import-real-values CSV [--dry]        giá thật Transfermarkt (tools/tmvalues/match.py: player_id,value_eur,ref) → giá gốc từ mùa 2; thay toàn bộ
+//   import-real-values CSV [--dry]        giá thật Transfermarkt (tools/tmvalues/match.py: player_id,value_eur,ref) → giá gốc; thay toàn bộ
+//   apply-market-prices [--dry]           mùa đang đá: áp giá thật giữa mùa (giá, lương × tỉ lệ giá, trần mềm, bù ngân sách chỉ cộng, tài trợ), 1 lần
 var cs = Environment.GetEnvironmentVariable("PES17_DB") ?? throw new InvalidOperationException("Thiếu PES17_DB");
 var storeDir = Environment.GetEnvironmentVariable("PES17_STORE") ?? throw new InvalidOperationException("Thiếu PES17_STORE");
 var script = Environment.GetEnvironmentVariable("PESMATCH_SCRIPT") ?? Path.GetFullPath("tools/match/pesmatch.py");
@@ -109,8 +110,11 @@ switch (args.FirstOrDefault())
     case "import-real-values" when args.Length >= 2:
         await ImportRealValuesAsync(args[1], args.Contains("--dry"));
         break;
+    case "apply-market-prices":
+        await ApplyMarketPricesAsync(args.Contains("--dry"));
+        break;
     default:
-        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | setup-pes17-world WORLD_JSON [--dry] | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry] | import-real-values CSV [--dry]");
+        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | setup-pes17-world WORLD_JSON [--dry] | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry] | import-real-values CSV [--dry] | apply-market-prices [--dry]");
         return 2;
 }
 return 0;
@@ -327,6 +331,22 @@ async Task ImportRealValuesAsync(string csvPath, bool dry)
     await using var db = Db();
     var r = await new RealValueService(db, clock).ImportAsync(rows, "cli", dry);
     Console.WriteLine($"{(dry ? "[thử] " : "")}{rows.Count} dòng: đặt {r.Set}, xoá {r.Cleared}, không có cầu thủ {r.UnknownPlayers}, thiếu chỉ số {r.NoAttributes}");
+}
+
+async Task ApplyMarketPricesAsync(bool dry)
+{
+    await using var db = Db();
+    var humans = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human).Select(a => a.ClubId).ToListAsync();
+    var r = await new MarketRepriceService(db, store, clock).ApplyAsync("cli", dry);
+    static string M(long v) => MoneyText.Format(v);
+    Console.WriteLine($"{(dry ? "[thử, đã huỷ] " : "")}{r.Season}: {r.Players} cầu thủ tính lại giá, {r.Contracts} hợp đồng đổi lương");
+    Console.WriteLine($"Trần mềm {M(r.SoftCapBefore)} → {M(r.SoftCapAfter)}/khung · quỹ {M(r.FundBefore)} → {M(r.FundAfter)} · k {r.ExponentAfter}");
+    Console.WriteLine($"Bù ngân sách: {r.ToppedUpClubs} CLB, tổng {M(r.TopUpTotal)}; {r.KeptClubs} CLB giữ nguyên (lẽ ra bị bớt)");
+    Console.WriteLine($"Giá trị {M(r.Clubs.Sum(c => c.ValueBefore))} → {M(r.Clubs.Sum(c => c.ValueAfter))} · quỹ lương {M(r.Clubs.Sum(c => c.PayrollBefore))} → {M(r.Clubs.Sum(c => c.PayrollAfter))}/khung");
+    var show = r.Clubs.Select((c, i) => (c, i)).Where(x => x.i is 0 or 1 or 2 or 10 or 50 or 100 || x.i == r.Clubs.Count - 1 || humans.Contains(x.c.ClubId));
+    foreach (var (c, i) in show)
+        Console.WriteLine($"{i + 1,4} {(humans.Contains(c.ClubId) ? "*" : " ")}{c.Name,-24} giá trị {M(c.ValueBefore),7} → {M(c.ValueAfter),7} · lương {M(c.PayrollBefore),6} → {M(c.PayrollAfter),6}"
+            + $" · tài trợ {M(c.SponsorBefore),6} → {M(c.SponsorAfter),6} · bù {M(c.TopUp),7} · quỹ {M(c.BalanceAfter)}");
 }
 
 async Task SetPasswordAsync(string username, string password)

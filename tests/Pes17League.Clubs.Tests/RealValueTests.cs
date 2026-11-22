@@ -7,7 +7,7 @@ namespace Pes17League.Clubs.Tests;
 public class RealValueTests
 {
     [DbFact]
-    public async Task Real_value_sets_price_only_from_season_2()
+    public async Task Real_value_sets_price_from_season_1()
     {
         await using var t = await TestDb.CreateAsync();
         await using var db = t.Context();
@@ -32,7 +32,13 @@ public class RealValueTests
         var eco = new EconomyService(db, t.Clock);
         await eco.RecalculatePricesAsync(s1.Id);
         var p1 = await db.PlayerPrices.Where(p => p.SeasonId == s1.Id).ToDictionaryAsync(p => p.PlayerId, p => p.Price);
-        Assert.Equal(p1[other.Id], p1[star.Id]);                                     // mùa 1: công thức cũ cho cả hai
+        var m = new PriceModel(PriceModelOptions.Market);
+        Assert.Equal(180_000_000, p1[star.Id]);                                      // mùa 1 (PO 22/11): giá thật, cùng tuổi + chỉ số lúc nhập
+        Assert.Equal(m.BasePrice(90, 25), p1[other.Id]);                             // không có giá thật: đường giá mới
+        await new EconomyService(db, t.Clock, PriceModelOptions.Legacy).RecalculatePricesAsync(s1.Id);
+        p1 = await db.PlayerPrices.Where(p => p.SeasonId == s1.Id).ToDictionaryAsync(p => p.PlayerId, p => p.Price);
+        Assert.Equal(p1[other.Id], p1[star.Id]);                                     // công thức cũ (chỉ khi chọn rõ): bỏ qua giá thật
+        await eco.RecalculatePricesAsync(s1.Id);
 
         // Mùa 2: 1 tuổi + chỉ số giảm 1 → giá thật đi theo tuổi (27 → ×0,8) và đường giá.
         db.PlayerAttributes.Add(new PlayerAttributes { PlayerId = star.Id, SeasonId = s2.Id, Values = Attrs(89, 27), CapturedAt = t.Clock.GetUtcNow() });
@@ -40,7 +46,6 @@ public class RealValueTests
         await db.SaveChangesAsync();
         await eco.RecalculatePricesAsync(s2.Id);
         var p2 = await db.PlayerPrices.Where(p => p.SeasonId == s2.Id).ToDictionaryAsync(p => p.PlayerId, p => p.Price);
-        var m = new PriceModel(PriceModelOptions.Market);
         Assert.Equal((long)Math.Round(180_000_000 * 0.8 * Math.Exp(-0.2) / 1000) * 1000, p2[star.Id]);
         Assert.Equal(m.BasePrice(89, 27), p2[other.Id]);
 

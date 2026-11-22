@@ -502,7 +502,7 @@ else
         [(PositionGroup.Goalkeeper, "Thủ môn", "TM"), (PositionGroup.Defender, "Hậu vệ", "HV"), (PositionGroup.Midfielder, "Tiền vệ", "TV"), (PositionGroup.Forward, "Tiền đạo", "TĐ")];
     static readonly (string Key, string Label)[] Sorts =
         [("ovr", "OVR cao"), ("price", "Giá thấp"), ("price-hi", "Giá cao"), ("value", "OVR/giá tốt"), ("age", "Trẻ nhất"), ("tall", "Cao nhất"), ("change", "Tăng giá mạnh")];
-    static readonly long[] PriceCaps = [0, 1_000_000, 3_000_000, 5_000_000, 10_000_000, 20_000_000, 50_000_000];
+    static readonly long[] PriceCaps = [0, 1_000_000, 3_000_000, 5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000, 200_000_000];   // giá thật (PO 22/11)
 
     SeasonInfo? season;
     TransferWindow? window;

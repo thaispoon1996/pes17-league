@@ -157,7 +157,7 @@ public sealed record PriceModelOptions
         };
 
     // Sau DefaultWeights: static khởi tạo theo thứ tự trong file.
-    /// <summary>Mô hình cũ (mùa 1).</summary>
+    /// <summary>Mô hình cũ (trước 22/11). Chỉ còn dùng khi truyền tường minh (test, tính tỉ lệ đổi lương lúc áp giá thật giữa mùa).</summary>
     public static readonly PriceModelOptions Legacy = new();
 
     /// <summary>
@@ -170,8 +170,9 @@ public sealed record PriceModelOptions
         AgeFactors = [(19, 1.3), (26, 1.0), (27, 0.8), (28, 0.7), (29, 0.55), (30, 0.45), (31, 0.32), (32, 0.26), (33, 0.2), (34, 0.13), (int.MaxValue, 0.08)],
     };
 
-    /// <summary>Mùa bắt đầu dùng <see cref="Market"/> (PO 22/11: từ mùa sau, mùa 1 đang đá giữ giá cũ).</summary>
-    public const int MarketFromSeason = 2;
+    /// <summary>Mùa bắt đầu dùng <see cref="Market"/>: PO 22/11 lúc đầu chọn từ mùa 2, sau đó "áp dụng vào mùa 1 luôn"
+    /// (mùa 1 đang đá đổi giữa mùa bằng <c>MarketRepriceService</c>: giá, lương, trần mềm, bù ngân sách, tài trợ).</summary>
+    public const int MarketFromSeason = 1;
 
     public static PriceModelOptions ForSeason(int seasonNumber) => seasonNumber >= MarketFromSeason ? Market : Legacy;
 }

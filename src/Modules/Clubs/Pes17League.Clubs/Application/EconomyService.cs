@@ -97,13 +97,15 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
     /// <see cref="AllocateInitialBudgetsAsync"/>, ghi phần chênh so với InitialBudget đã có bằng dòng Adjustment (RefType = InitialBudgetTopUp),
     /// giữ nguyên dòng cũ. Mùa chưa chia hoặc đã bù rồi → trả rỗng.
     /// </summary>
-    public async Task<IReadOnlyDictionary<Guid, long>> TopUpInitialBudgetsAsync(Guid seasonId, CancellationToken ct = default)
+    /// <param name="onlyAdd">Chỉ ghi phần cộng (CLB lẽ ra bị bớt giữ nguyên, phần chênh trả về 0) — áp giá thật giữa mùa 1 (PO 22/11).</param>
+    public async Task<IReadOnlyDictionary<Guid, long>> TopUpInitialBudgetsAsync(Guid seasonId, CancellationToken ct = default, bool onlyAdd = false)
     {
         var granted = await db.Ledger.Where(e => e.Reason == LedgerReason.InitialBudget && e.RefType == nameof(SeasonEconomy) && e.RefId == seasonId)
             .GroupBy(e => e.ClubId).Select(g => new { g.Key, Sum = g.Sum(e => e.Amount) }).ToDictionaryAsync(x => x.Key, x => x.Sum, ct);
         if (granted.Count == 0 || await db.Ledger.AnyAsync(e => e.Reason == LedgerReason.Adjustment && e.RefType == InitialBudgetTopUp && e.RefId == seasonId, ct))
             return new Dictionary<Guid, long>();
         var diff = (await ComputeBudgetsAsync(seasonId, ct)).ToDictionary(b => b.Key, b => b.Value - granted.GetValueOrDefault(b.Key));
+        if (onlyAdd) foreach (var id in diff.Where(d => d.Value < 0).Select(d => d.Key).ToList()) diff[id] = 0;
         var now = clock.GetUtcNow();
         foreach (var (clubId, amount) in diff.Where(d => d.Value != 0))
             db.Ledger.Add(new ClubLedgerEntry { ClubId = clubId, Amount = amount, Reason = LedgerReason.Adjustment, RefType = InitialBudgetTopUp, RefId = seasonId, At = now });

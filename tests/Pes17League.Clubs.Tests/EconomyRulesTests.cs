@@ -44,13 +44,13 @@ public class EconomyRulesTests
     [Fact]
     public void Attribute_evolution_capped_3() => Assert.Equal((73, 67, 71), (AttributeEvolution.Clamp(70, 80), AttributeEvolution.Clamp(70, 60), AttributeEvolution.Clamp(70, 71)));
     [Fact]
-    public void Market_model_only_from_season_2_and_legacy_unchanged()
+    public void Market_model_from_season_1_and_legacy_unchanged()
     {
-        Assert.Same(PriceModelOptions.Legacy, PriceModelOptions.ForSeason(1));
+        Assert.Same(PriceModelOptions.Market, PriceModelOptions.ForSeason(1));     // PO 22/11: áp cả mùa 1
         Assert.Same(PriceModelOptions.Market, PriceModelOptions.ForSeason(2));
         var legacy = new PriceModel();
         Assert.Equal(1_000_000, legacy.BasePrice(70, 25));
-        Assert.Equal(legacy.BasePrice(80, 25), legacy.BasePrice(80, 25, new RealValue(200_000_000, 25, 80)));   // mùa cũ bỏ qua giá thật
+        Assert.Equal(legacy.BasePrice(80, 25), legacy.BasePrice(80, 25, new RealValue(200_000_000, 25, 80)));   // công thức cũ bỏ qua giá thật
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class EconomyRulesTests
     [Fact]
     public void Market_seasons_give_rich_clubs_more_budget()
     {
-        Assert.Equal((0.20, 0.5), Pes17CareerService.BudgetRule(1));
+        Assert.Equal((0.15, -0.7), Pes17CareerService.BudgetRule(1));
         Assert.Equal((0.15, -0.7), Pes17CareerService.BudgetRule(2));
         var b = BudgetAllocation.Allocate([("big", 1_000_000_000L), ("small", 10_000_000L)], 100_000_000, -0.7);
         Assert.Equal(100_000_000, b["big"] + b["small"]);
