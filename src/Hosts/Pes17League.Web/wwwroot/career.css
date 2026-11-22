@@ -3475,6 +3475,7 @@ html:has(.bx-sheet) { overflow: hidden; }
 }
 
 /* Cài đặt → Máy game (PO 22/11): độ khó máy 6 mức + đồ hoạ 3 mức, ghi game-settings.json cho bộ chạy trận. */
+.cx .st-sec, .cx .st-sec h2 { scroll-margin-top: calc(120px + env(safe-area-inset-top)); }
 .cx .st-opt { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--line); }
 .cx .st-opt:first-of-type { border-top: 0; }
 .cx .st-opt > b { font-size: 14.5px; font-weight: 600; color: var(--text); }

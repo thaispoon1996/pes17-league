@@ -5,6 +5,8 @@
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject MatchJobService Jobs
 @inject GameSettingsStore Game
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Cài đặt</PageTitle>
 
@@ -110,6 +112,15 @@
             who = await Me.NameAsync();
             profile = "nguoi-choi/" + await Me.UsernameAsync();
         }
+        loaded = true;
+    }
+
+    // Mở từ menu "Máy game" (cai-dat#st-pes): cuộn lại sau khi trang đủ dữ liệu — lần cuộn sẵn của Blazor có thể lố vì phần trên hiện muộn.
+    bool loaded, jumped;
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (loaded && !jumped && (jumped = true) && new Uri(Nav.Uri).Fragment is { Length: > 1 } f)
+            try { await JS.InvokeVoidAsync("cxScrollTo", f); } catch (JSException) { }
     }
 
     void Set(GameSettingsStore.Settings s)
