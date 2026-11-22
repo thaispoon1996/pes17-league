@@ -184,9 +184,9 @@
                                         <span class="o">@s.Value(p)</span><span class="mk-ps sm @Fmt.Group(p.Position)">@p.Position</span>
                                         <span class="mk-face"><Face Id="@p.PlayerId" Name="@p.Name" Size="md" /></span>
                                         <span class="nm">@p.Name</span>
-                                        <span class="meta">@ClubTag(p.ClubId, "Tự do")<span class="age">· @(p.Age?.ToString() ?? "–")t</span></span>
-                                        <span class="meta">OVR @Ovr(p) · @Fmt.Body(p.Height, p.Weight)</span>
-                                        <span class="meta">@Fmt.Style(p.Style)</span>
+                                        <span class="meta cl">@ClubTag(p.ClubId, "Tự do")</span>
+                                        <span class="meta">OVR @Ovr(p) · @(p.Age?.ToString() ?? "–") tuổi · @Fmt.Body(p.Height, p.Weight)</span>
+                                        @if (p.Style > 0) { <span class="sty">@Fmt.Style(p.Style)</span> }
                                         <span class="pr"><b class="@(can ? null : "no")">@Fmt.Money(p.Price)</b>@if (!can) { <small>thiếu @Fmt.Money(p.Price - balance)</small> }</span>
                                     </button>
                                 }
@@ -201,6 +201,15 @@
                 }
                 @(Rail("Sao trẻ ≤ 21 tuổi", "Còn nhiều mùa để lên giá", market.Where(p => p.Age <= 21).OrderByDescending(Seen).ThenBy(p => p.Price).Take(RailSize).ToList(), () => maxAge = 21))
                 @(Rail("Cầu thủ tự do", "Chỉ số thật, không cần trinh sát", market.Where(p => p.ClubId is null && p.Position != Position.GK).OrderByDescending(p => p.Overall).ThenBy(p => p.Price).Take(RailSize).ToList(), () => source = "free"))
+                @* Mỗi phong cách cầu thủ PES 2017 một hàng (PO 22/11): giỏi nhất trước, cùng mức thì rẻ hơn trước; "Xem hết" lọc theo phong cách. *@
+                @for (var st = 1; st <= 21; st++)
+                {
+                    var sv = st;
+                    var all = market.Where(p => p.Style == sv).ToList();
+                    if (all.Count == 0) continue;
+                    var aff = all.Count(p => p.Price <= balance);
+                    @(Rail(Fmt.Style(sv), $"{all.Count.ToString("N0", Vi)} cầu thủ · {aff.ToString("N0", Vi)} vừa túi tiền", all.OrderByDescending(Seen).ThenBy(p => p.Price).Take(RailSize).ToList(), () => play = sv))
+                }
             }
 
             <div class="mk-list-h" id="mk-list">
@@ -684,8 +693,9 @@ else
                         <span class="o">@Ovr(p)</span><span class="mk-ps sm @Fmt.Group(p.Position)">@p.Position</span>
                         <span class="mk-face"><Face Id="@p.PlayerId" Name="@p.Name" Size="md" /></span>
                         <span class="nm">@p.Name</span>
-                        <span class="meta">@ClubTag(p.ClubId, "Tự do")<span class="age">· @(p.Age?.ToString() ?? "–")t</span></span>
-                        <span class="meta">@Fmt.Body(p.Height, p.Weight) · @Fmt.Style(p.Style)</span>
+                        <span class="meta cl">@ClubTag(p.ClubId, "Tự do")</span>
+                        <span class="meta">@(p.Age?.ToString() ?? "–") tuổi · @Fmt.Body(p.Height, p.Weight)</span>
+                        @if (p.Style > 0) { <span class="sty">@Fmt.Style(p.Style)</span> }
                         <span class="pr"><b class="@(can ? null : "no")">@Fmt.Money(p.Price)</b>@if (!can) { <small>thiếu @Fmt.Money(p.Price - balance)</small> }</span>
                     </button>
                 }

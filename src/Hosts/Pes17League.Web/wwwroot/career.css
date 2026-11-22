@@ -3578,3 +3578,16 @@ html:has(.bx-sheet) { overflow: hidden; }
   .cx .fp-leads > .fp-lead { transition: none; transform: none; }
   .cx .fp-dots button.on i::after { animation: none; transform: scaleX(1); }
 }
+
+/* ===== Chợ career: thẻ cầu thủ trong các hàng hiện đủ chữ (PO 22/11) — tên/CLB/thông số xuống dòng thay vì "…", phong cách thành thẻ cam, giá luôn ở đáy thẻ ===== */
+.cx .mk-card { width: 144px; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; text-align: left; }
+.cx .mk-card .nm { white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 1.02; }
+.cx .mk-card .meta { white-space: normal; overflow: visible; flex-wrap: wrap; line-height: 1.3; }
+.cx .mk-card .meta.cl { color: var(--text); }
+.cx .mk-card .meta.cl .mk-club { align-items: flex-start; }
+.cx .mk-card .meta.cl .mk-club .crest { margin-top: 1px; }
+.cx .mk-card .meta.cl .mk-club > span { white-space: normal; overflow: visible; }
+.cx .mk-card .sty { align-self: flex-start; margin-top: 6px; padding: 3px 7px; border-radius: 6px; border: 1px solid rgba(255,185,95,.35); background: rgba(255,185,95,.1);
+  color: var(--cyan); font: 800 11.5px/1.15 var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
+.cx .mk-card > :nth-last-child(2) { margin-bottom: 8px; }
+.cx .mk-card .pr { margin-top: auto; }
