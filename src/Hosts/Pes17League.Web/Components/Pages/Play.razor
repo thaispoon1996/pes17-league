@@ -8,7 +8,132 @@
 @inject IJSRuntime JS
 
 @* Màn chờ trận của PO (PO duyệt 03/11): game khởi động + tự đi menu; tới lúc tải trận thì tự mở stream để vào đá luôn.
-   Hết giờ (PO 04/11): stream tự quay về đây → "đang đọc kết quả" rồi tỷ số, bàn thắng, điểm cầu thủ đội mình. *@
+   Hết giờ (PO 04/11): stream tự quay về đây → "đang đọc kết quả" rồi tỷ số, bàn thắng, điểm cầu thủ đội mình.
+   Career (PO 22/11): trang nằm trong khung career (Routes.CareerPages) → skin "Nocturnal Apex" bên dưới; giải online giữ giao diện cũ. *@
+@if (Shell is not null)
+{
+    var mine = Jobs.Title == "Trận của tôi";
+    @if (!mine && result is null)
+    {
+        <section class="cx-card cx-vt-empty">
+            <i class="ms" aria-hidden="true">sports_soccer</i>
+            <h1>Chưa có trận nào đang vào</h1>
+            <p>Vào trận từ trang chuẩn bị trận của vòng tới.</p>
+            <a class="cx-btn gold" href="su-nghiep">Về sự nghiệp</a>
+        </section>
+    }
+    else if (Jobs.Stage == "fulltime" || result is not null)
+    {
+        @if (result is not { } rs)
+        {
+            <section class="cx-card cx-vt-wait">
+                @if (Jobs.Running) { <span class="cx-spin" aria-hidden="true"></span> }
+                <p>@(Jobs.Running ? "Hết trận — đang đọc kết quả và điểm cầu thủ…" : "Chưa ghi được kết quả trận.")</p>
+            </section>
+        }
+        else
+        {
+            var diff = (rs.HomeGoals - rs.AwayGoals) * (rs.Side == MatchSide.Home ? 1 : -1);
+            if (diff == 0 && rs.HomePenalties is { } p1 && rs.AwayPenalties is { } p2) diff = (p1 - p2) * (rs.Side == MatchSide.Home ? 1 : -1);
+            <section class="cx-card cx-vt-res @(diff > 0 ? "win" : diff < 0 ? "loss" : "draw")">
+                <div class="cx-eyebrow">@(head?.Competition ?? "Trận của bạn") · Hết giờ</div>
+                <div class="cx-score">
+                    <span class="t @(rs.Side == MatchSide.Home ? "me" : "")"><Crest Name="@rs.Home" Logo="@rs.HomeLogo" Large="true" /><b>@rs.Home</b></span>
+                    <span class="n"><b data-count="@rs.HomeGoals">@rs.HomeGoals</b><i>–</i><b data-count="@rs.AwayGoals">@rs.AwayGoals</b></span>
+                    <span class="t @(rs.Side == MatchSide.Away ? "me" : "")"><Crest Name="@rs.Away" Logo="@rs.AwayLogo" Large="true" /><b>@rs.Away</b></span>
+                </div>
+                @if (rs.HomePenalties is { } hp) { <p class="cx-pens">Luân lưu @hp–@rs.AwayPenalties</p> }
+                <span class="cx-verdict">@(diff > 0 ? "Thắng" : diff < 0 ? "Thua" : "Hoà")</span>
+                @if (rs.Goals.Count > 0)
+                {
+                    <div class="cx-scorers">
+                        <p>@string.Join(", ", rs.Goals.Where(g => g.Home).Select(g => g.Text))</p>
+                        <i class="ms" aria-hidden="true">sports_soccer</i>
+                        <p>@string.Join(", ", rs.Goals.Where(g => !g.Home).Select(g => g.Text))</p>
+                    </div>
+                }
+            </section>
+            <h3 class="cx-h3">Điểm cầu thủ<small>≥ 7,5 tăng · ≤ 5,0 giảm chỉ số</small></h3>
+            <section class="cx-card cx-vt-rt">
+                @if (rs.Ratings.Count > 0)
+                {
+                    @foreach (var r in rs.Ratings)
+                    {
+                        <div class="row">
+                            <b>@r.Name</b>
+                            <small class="@(r.Change > 0 ? "cx-up" : r.Change < 0 ? "cx-down" : "")">@(r.Change switch { > 0 => $"▲ {r.Change} chỉ số", < 0 => $"▼ {-r.Change} chỉ số", _ => "" })</small>
+                            <span class="rt @(r.Rating >= 7.5m ? "hi" : r.Rating <= 5.0m ? "lo" : "")">@(r.Rating?.ToString("0.0") ?? "–")</span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="cx-vt-note">Không đọc được điểm cầu thủ trận này.</p>
+                }
+            </section>
+            <p class="cx-vt-note">Giá và chỉ số cập nhật khi chốt vòng (đủ các trận).</p>
+            <div class="cx-acts">
+                <a class="cx-btn ghost" href="tran/@rs.FixtureId">Xem trận</a>
+                <a class="cx-btn gold" href="su-nghiep">Tiếp tục</a>
+            </div>
+        }
+    }
+    else
+    {
+        var at = Math.Max(0, Index(Jobs.Stage));
+        <section class="cx-vt @(Jobs.Running ? "dock" : "")">
+            @if (head is { } h)
+            {
+                <div class="cx-comp"><i class="ms fill" aria-hidden="true">emoji_events</i>@h.Competition</div>
+                <div class="cx-vs">
+                    <span class="t @(h.Side == MatchSide.Home ? "me" : "")"><Crest Name="@h.Home" Logo="@h.HomeLogo" Large="true" /><b>@h.Home</b><small>@(h.Side == MatchSide.Home ? "Bạn" : "")</small></span>
+                    <span class="x">VS</span>
+                    <span class="t @(h.Side == MatchSide.Away ? "me" : "")"><Crest Name="@h.Away" Logo="@h.AwayLogo" Large="true" /><b>@h.Away</b><small>@(h.Side == MatchSide.Away ? "Bạn" : "")</small></span>
+                </div>
+            }
+            @* Vòng tiến trình = số bước đã qua / 5 (số thật từ máy game); số giữa = đếm ngược ước lượng tới giao bóng. *@
+            <div class="cx-vt-clock @(Jobs.Running ? "" : "off")" style="--p:@((double)at / Steps.Length)">
+                <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="52" /><circle class="arc glow" cx="60" cy="60" r="52" pathLength="100" /><circle class="arc" cx="60" cy="60" r="52" pathLength="100" /></svg>
+                @if (!Jobs.Running) { <i class="ms" aria-hidden="true">error</i> }
+                else if (Jobs.SecondsToKickoff is { } left && left > 0) { <span class="num"><b>@left</b><small>giây</small></span> }
+                else { <i class="ms fill" aria-hidden="true">sports_soccer</i> }
+            </div>
+            <h1>@(Jobs.Running ? Jobs.SecondsToKickoff is > 0 ? "Đang vào trận" : "Sắp giao bóng" : "Không vào được trận")</h1>
+            <ol class="cx-vt-steps">
+                @foreach (var (key, text) in Steps)
+                {
+                    var state = Index(key) < Index(Jobs.Stage) ? "done" : key == Jobs.Stage && Jobs.Running ? "now" : "";
+                    <li class="@state"><i class="ms" aria-hidden="true">@(state == "done" ? "check" : "")</i><span>@text</span></li>
+                }
+            </ol>
+            @if (Jobs.Running)
+            {
+                @* Nút nổi trên thanh dưới như trang chủ career: điện thoại nhỏ vẫn thấy ngay. *@
+                <div class="cx-cta-dock">
+                    <a class="cx-cta" href="@Jobs.PlayLink" data-stream>
+                        <span><b>Mở màn hình game</b><small>Tải xong sẽ tự mở, nhớ xoay ngang điện thoại</small></span>
+                        <i class="ms fill" aria-hidden="true">live_tv</i>
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="cx-acts">
+                    <a class="cx-btn ghost" href="su-nghiep">Về sự nghiệp</a>
+                    @if (Jobs.HumanFixture is { } hf) { <a class="cx-btn gold" href="chuan-bi/@hf.FixtureId">Chuẩn bị lại</a> }
+                </div>
+            }
+            @if (Jobs.Log.Count > 0)
+            {
+                <details class="cx-card cx-vt-log">
+                    <summary>Nhật ký máy game</summary>
+                    <p>@string.Join("\n", Jobs.Log.Reverse().Take(6))</p>
+                </details>
+            }
+        </section>
+    }
+    return;
+}
 <section class="hero">
     <span class="pill">Trận của tôi</span>
     <h1>@(result is not null ? "Kết quả trận" : Jobs.Title != "Trận của tôi" ? "Chưa vào trận" : Jobs.Stage == "fulltime" ? "Kết quả trận" : "Đang vào trận")</h1>
@@ -37,7 +162,7 @@
             <div class="side"><Crest Name="@result.Away" Logo="@result.AwayLogo" Large="true" /><b>@result.Away</b></div>
             @if (result.Goals.Count > 0)
             {
-                <p class="goals"><span class="ms ic" aria-hidden="true">sports_soccer</span>@string.Join(" · ", result.Goals)</p>
+                <p class="goals"><span class="ms ic" aria-hidden="true">sports_soccer</span>@string.Join(" · ", result.Goals.Select(g => g.Text))</p>
             }
         </section>
         <div class="grid">
@@ -115,10 +240,15 @@ else
     bool left;
     Timer? tick;
     Result? result;
+    Head? head;
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
 
     sealed record RatingRow(string Name, decimal? Rating, int Change);
-    sealed record Result(Guid FixtureId, string Home, string Away, int HomeGoals, int AwayGoals, List<string> Goals, List<RatingRow> Ratings,
-        int? HomePenalties, int? AwayPenalties, string? HomeLogo, string? AwayLogo);
+    sealed record GoalRow(bool Home, string Text);
+    sealed record Result(Guid FixtureId, string Home, string Away, int HomeGoals, int AwayGoals, List<GoalRow> Goals, List<RatingRow> Ratings,
+        int? HomePenalties, int? AwayPenalties, string? HomeLogo, string? AwayLogo, MatchSide Side);
+    /// <summary>Đầu trang career: giải + 2 đội của trận đang vào (đọc 1 lần mỗi trận).</summary>
+    sealed record Head(Guid FixtureId, string Competition, string Home, string Away, string? HomeLogo, string? AwayLogo, MatchSide Side);
 
     protected override async Task OnInitializedAsync()
     {
@@ -141,6 +271,17 @@ else
     {
         if (Jobs.HumanFixture is not { } hf) return;
         if (result?.FixtureId != hf.FixtureId) result = null;
+        if (Shell is not null && head?.FixtureId != hf.FixtureId)
+        {
+            await using var hdb = await Dbs.CreateDbContextAsync();
+            var hx = await hdb.Fixtures.Where(x => x.Id == hf.FixtureId).Select(x => new
+            {
+                Comp = (from e in hdb.Editions join c in hdb.Competitions on e.CompetitionId equals c.Id where e.Id == x.CompetitionEditionId select c.Name).FirstOrDefault(),
+                Home = hdb.Clubs.Where(c => c.Id == x.HomeClubId).Select(c => new { c.Name, c.LogoPath }).First(),
+                Away = hdb.Clubs.Where(c => c.Id == x.AwayClubId).Select(c => new { c.Name, c.LogoPath }).First(),
+            }).SingleOrDefaultAsync();
+            head = hx is null ? null : new(hf.FixtureId, hx.Comp ?? "Giao hữu", hx.Home.Name, hx.Away.Name, hx.Home.LogoPath, hx.Away.LogoPath, hf.Side);
+        }
         // Trận của tôi đang chạy → chờ hết giờ (đọc lại mỗi lần đổi để có điểm cầu thủ). Máy đã sang việc khác (career tự mô phỏng tiếp
         // sau trận, PO 20/11) → vẫn hiện kết quả trận vừa đá, đọc 1 lần.
         if (Jobs.Title == "Trận của tôi" ? Jobs.Stage != "fulltime" : result is not null) return;
@@ -163,9 +304,9 @@ else
                              orderby r.Slot
                              select new { r.PlayerId, p.Name, r.Rating }).ToListAsync();
         result = new(f.Id, names[f.HomeClubId], names[f.AwayClubId], f.HomeGoals ?? 0, f.AwayGoals ?? 0,
-            goals.Select(g => $"{g.Scorer ?? names[g.ClubId]} {g.Minute}'").ToList(),
+            goals.Select(g => new GoalRow(g.ClubId == f.HomeClubId, $"{g.Scorer ?? names[g.ClubId]} {g.Minute}'")).ToList(),
             ratings.Select(r => new RatingRow(r.Name, r.Rating, changes.GetValueOrDefault(r.PlayerId))).ToList(), f.HomePenalties, f.AwayPenalties,
-            clubs.Single(c => c.Id == f.HomeClubId).LogoPath, clubs.Single(c => c.Id == f.AwayClubId).LogoPath);
+            clubs.Single(c => c.Id == f.HomeClubId).LogoPath, clubs.Single(c => c.Id == f.AwayClubId).LogoPath, hf.Side);
     }
 
     void OnJob() => InvokeAsync(async () => { await LoadResultAsync(); StateHasChanged(); });
