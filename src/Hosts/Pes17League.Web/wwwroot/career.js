@@ -44,7 +44,7 @@
     const resize = () => { w = canvas.width = innerWidth; h = canvas.height = innerHeight; };
     resize(); addEventListener('resize', resize);
     const ps = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .3, v: Math.random() * .00025 + .00006, a: Math.random() * Math.PI * 2,
-      c: Math.random() < .2 ? '255,201,74' : Math.random() < .5 ? '54,227,255' : '220,230,255' }));
+      c: Math.random() < .2 ? '0,255,135' : Math.random() < .5 ? '255,185,95' : '220,230,255' }));
     const sprites = {};   // hạt có quầng sáng vẽ sẵn 1 lần → mỗi khung chỉ drawImage
     for (const p of ps) if (!sprites[p.c]) {
       const c = document.createElement('canvas'); c.width = c.height = 24; const g = c.getContext('2d');
@@ -77,7 +77,7 @@
     if (fired.has(canvas) || reduce) return;
     fired.add(canvas);
     const ctx = canvas.getContext('2d'), w = canvas.width = innerWidth, h = canvas.height = innerHeight;
-    const cols = ['#FFC94A', '#FF9F1C', '#36E3FF', '#3DFFA2', '#B04DFF', '#ffffff'];
+    const cols = ['#00ff87', '#00e478', '#ffb95f', '#9dffcc', '#ff4d5e', '#ffffff'];   // tông xanh giải (PO 22/11)
     const ps = Array.from({ length: 180 }, (_, i) => ({ x: w / 2 + (Math.random() - .5) * 80, y: h * .42, vx: (Math.random() - .5) * 16, vy: -Math.random() * 16 - 5,
       s: Math.random() * 7 + 4, r: Math.random() * 6, vr: (Math.random() - .5) * .3, c: cols[i % cols.length] }));
     const t0 = performance.now() + 1050;   // nổ cùng lúc dấu "Thắng" đóng xuống

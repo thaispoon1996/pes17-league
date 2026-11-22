@@ -22,33 +22,78 @@ else if (P is null && !(onboarding && OnCareerHome))
 else
 {
     <div class="cx @(P is null ? "cx-solo" : "")" data-music="@(MusicOn ? "on" : "off")">
-        <div class="cx-sky" aria-hidden="true"><i class="beam b1"></i><i class="beam b2"></i><i class="beam b3"></i><canvas class="cx-dust"></canvas></div>
-        <header class="cx-top">
-            @if (P is { } p)
-            {
-                <a class="cx-club" href="su-nghiep">
-                    <Crest Name="@p.ClubName" Logo="@p.ClubLogo" />
-                    <span><b>@p.ClubName</b><small>@p.SeasonName · @(p.Finished ? "hết mùa" : $"Khung {Math.Max(p.Slot, 1)}/{p.Slots}")</small></span>
-                </a>
-                <span class="cx-coin" title="Quỹ CLB"><i class="ms fill" aria-hidden="true">paid</i><b data-count="@p.Budget" data-fmt="money">@Fmt.Money(p.Budget)</b></span>
-            }
-            else
-            {
-                @* Chưa cầm CLB (tạo HLV, tìm việc, thất nghiệp): đầu trang gọn *@
-                <a class="cx-club" href="su-nghiep">
-                    <i class="ms fill" aria-hidden="true" style="font-size:30px;color:var(--gold)">sports</i>
-                    <span><b>Sự nghiệp HLV</b><small>@(coach switch { null => "Chưa có hồ sơ", CoachStatus.Creating => "Đang tạo hồ sơ", _ => "Chưa có CLB" })</small></span>
-                </a>
-            }
-            @if (MusicOn) { <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button> }
+        @{ var zones = Zones().ToList(); var here = ZoneOf(zones); var home = Path == "su-nghiep"; }
+        @* PO 22/11: gộp 2 UI → khung career dùng đầu trang xanh "Pro Pitch Broadcast" của giải online. Máy tính: dải trên (CLB, quỹ, tìm kiếm, tài khoản)
+           + menu chính (Trang chủ + mỗi khu là 1 menu thả xuống, ui.js đóng khi bấm ra ngoài). Điện thoại: dải trên gọn + thanh dưới 7 ô (.cx-dock) mở bảng mục con. *@
+        <header class="site-header cxh">
+            <div class="top-nav">
+                <div class="in">
+                    @if (P is { } p)
+                    {
+                        <a class="cxh-club" href="su-nghiep">
+                            <Crest Name="@p.ClubName" Logo="@p.ClubLogo" />
+                            <span><b>@p.ClubName</b><small>@p.SeasonName · @(p.Finished ? "hết mùa" : $"Khung {Math.Max(p.Slot, 1)}/{p.Slots}")</small></span>
+                        </a>
+                        <span class="cxh-coin" title="Quỹ CLB"><i class="ms" aria-hidden="true">payments</i><b data-count="@p.Budget" data-fmt="money">@Fmt.Money(p.Budget)</b></span>
+                    }
+                    else
+                    {
+                        @* Chưa cầm CLB (tạo HLV, tìm việc, thất nghiệp) *@
+                        <a class="cxh-club" href="su-nghiep">
+                            <i class="ms fill" aria-hidden="true">sports</i>
+                            <span><b>Sự nghiệp HLV</b><small>@(coach switch { null => "Chưa có hồ sơ", CoachStatus.Creating => "Đang tạo hồ sơ", _ => "Chưa có CLB" })</small></span>
+                        </a>
+                    }
+                    <a class="cxh-link" href="tim-kiem" aria-label="Tìm kiếm"><i class="ms" aria-hidden="true">search</i><span>Tìm kiếm</span></a>
+                    @if (MusicOn) { <button type="button" class="cx-ibtn snd" data-snd="music" aria-label="Bật/tắt nhạc" title="Nhạc nền (tự sáng tác)"><i class="ms" aria-hidden="true">music_note</i></button> }
+                    @if (admin) { <a class="cxh-link wide" href="admin"><i class="ms" aria-hidden="true">settings</i><span>Quản trị</span></a> }
+                    @if (who is not null)
+                    {
+                        <form class="cxh-who" method="post" action="/logout" data-enhance="false">@if (profile is not null) { <a class="who" href="@profile">@who</a> } else { <small class="who">@who</small> }<button class="link">Thoát</button></form>
+                    }
+                </div>
+            </div>
+            <div class="main-nav">
+                <div class="in">
+                    <a class="brand" href="su-nghiep" aria-label="PES 17 League">
+                        <svg class="shield" viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--primary)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="#0a0e18"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--primary)"/></svg>
+                        <span>PES 17<b>League</b></span></a>
+                    <nav class="cxh-nav" aria-label="Điều hướng">
+                        <a href="su-nghiep" class="@(home ? "active" : null)" aria-current="@(home ? "page" : null)">Trang chủ</a>
+                        @foreach (var z in zones)
+                        {
+                            <details @key="z.Id" class="nav-more cxh-dd @(here?.Id == z.Id ? "on" : null)">
+                                <summary class="no-busy" @onclick="OpenMenuAsync">@z.Short @if (z.Badge > 0) { <span class="badge">@z.Badge</span> } else if (z.Items.Any(i => i.Fresh)) { <i class="cx-dot" aria-label="mới"></i> }</summary>
+                                <div class="nav-more__menu">
+                                    @if (z.Stat is { } zs) { <p class="cxh-stat @z.Tone">@zs</p> }
+                                    @foreach (var it in z.Items)
+                                    {
+                                        @if (it.Lock is { } why)
+                                        {
+                                            <span class="cxh-it lock" aria-disabled="true"><i class="ms" aria-hidden="true">lock</i><span>@it.Label<small>@why</small></span></span>
+                                        }
+                                        else
+                                        {
+                                            <a class="cxh-it @(it.Href is { } ih && !it.Hard && Bare(ih) == Path ? "active" : null)" href="@it.Href" data-enhance-nav="@(it.Hard ? "false" : null)">
+                                                <i class="ms" aria-hidden="true">@it.Icon</i><span>@it.Label@if (it.Note is { } nt) { <small>@nt</small> }</span>
+                                                @if (it.Badge > 0) { <span class="badge">@it.Badge</span> }
+                                                else if (it.Fresh) { <i class="cx-dot" aria-label="mới"></i> }
+                                            </a>
+                                        }
+                                    }
+                                </div>
+                            </details>
+                        }
+                    </nav>
+                </div>
+            </div>
         </header>
-        @{ var zones = Zones().ToList(); var here = ZoneOf(zones); }
         @if (P is not null && here is { Id: not "life" } hz)
         {
             var subs = hz.Items.Where(i => i.Lock is null && !i.Hard && i.Href is { } h && h.IndexOfAny(['?', '#']) < 0).ToList();
             @if (subs.Count > 1)
             {
-                <nav class="cx-sub" aria-label="@hz.Title">
+                <nav class="cx-sub @(Wide ? "wide" : null)" aria-label="@hz.Title">
                     @foreach (var s in subs)
                     {
                         @* So theo đường dẫn bỏ ?query (vd thu-hlv?thu=… từ trang chủ vẫn sáng "Thư HLV") *@
@@ -58,7 +103,7 @@ else
             }
         }
         <CascadingValue Value="this" IsFixed="true">
-            <main class="cx-page">@Body</main>
+            <main class="cx-page @(Wide ? "wide" : null)">@Body</main>
         </CascadingValue>
         @* Thanh dưới (PO 20/11, phương án A): Trang chủ + các khu (Văn phòng, Thay đồ, Chuyển nhượng, Giải đấu, Hòm thư & thông báo, Cá nhân & cài đặt).
            Bấm ô khu → bảng mục con trượt lên ngay trên thanh; mở/đóng ở career.js (data-sheet, data-open) để bấm là mở ngay, Blazor chỉ nạp số liệu khu. *@
@@ -109,7 +154,6 @@ else
             }
         </div>
         <nav class="cx-dock" aria-label="Điều hướng sự nghiệp">
-            @{ var home = Path == "su-nghiep"; }
             <a class="@(home ? "on" : null)" href="su-nghiep" aria-current="@(home ? "page" : null)"><i class="ms @(home ? "fill" : null)" aria-hidden="true">stadium</i><span>Trang chủ</span></a>
             @foreach (var z in zones)
             {
@@ -117,7 +161,7 @@ else
                 <button type="button" class="no-busy @(on ? "on" : null) @(fresh.Contains(z.Id) ? "fly" : null)" data-sheet="@z.Id" aria-controls="cxs-@z.Id" @onclick="OpenMenuAsync">
                     @if (z.Badge > 0) { <em>@z.Badge</em> }
                     else if (z.Items.Any(i => i.Fresh)) { <span class="cx-new">MỚI</span> }
-                    <i class="ms @(on ? "fill" : null)" aria-hidden="true">@z.Icon</i><span>@z.Short</span>
+                    <i class="ms @(on ? "fill" : null)" aria-hidden="true">@z.Icon</i><span>@(z.Id == "transfer" ? "Chuyển nh." : z.Short)</span>
                 </button>
             }
         </nav>
@@ -218,7 +262,12 @@ else
     string? intro;
     HashSet<string> fresh = [];   // khu vừa có mục mở khoá → ô khu nảy trên thanh dưới
 
-    string Path => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+    /// <summary>Đường dẫn tương đối không ?query; "" (trang gốc, PO 22/11 = trang chủ career) coi như "su-nghiep".</summary>
+    /// <summary>Trang chủ và các trang giải (tin, mùa, vinh danh…, vốn dựng cho khung rộng) dùng khung 1180px; trang career giữ khung hẹp.</summary>
+    bool Wide => Path == "su-nghiep" || !NarrowRoots.Contains(Path.Split('/')[0]);
+    static readonly HashSet<string> NarrowRoots = ["clb", "chuyen-nhuong", "de-nghi", "tai-chinh", "ban-lanh-dao", "tap-luyen", "hoc-vien", "bxh", "lich", "thong-ke",
+        "thu", "hop-thu", "tran", "vao-tran", "cau-thu", "chuan-bi", "hlv", "thu-hlv", "phong-thay-do", "cuoc-song", "cai-dat", "dieu-khien", "truyen-thong"];
+    string Path => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/') is { Length: > 0 } x ? x : "su-nghiep";
     /// <summary>Trang dùng khung career cả khi chưa cầm CLB: trang chủ career + hồ sơ / việc làm / thư HLV (PO 19/11).</summary>
     bool OnCareerHome => Path is "su-nghiep" or "hlv" or "hlv/viec-lam" or "thu-hlv" or "cuoc-song" or "cai-dat" or "dieu-khien";
 
@@ -402,7 +451,7 @@ else
         if (p is not null)
         {
             // Phòng thay đồ
-            yield return new("locker", "Phòng thay đồ", "Thay đồ", "checkroom", m?.Morale is { } mo ? $"Tinh thần {mo}" : null, m?.Morale is { } mt ? Tone(mt, 35, 60) : "",
+            yield return new("locker", "Đội bóng", "Đội bóng", "groups", m?.Morale is { } mo ? $"Tinh thần {mo}" : null, m?.Morale is { } mt ? Tone(mt, 35, 60) : "",
             [
                 new("Đội hình", "groups", "clb"),
                 new("Tinh thần & trò chuyện", "forum", "phong-thay-do", Short: "Tinh thần", Note: m is { Injured: > 0 } ? $"{m.Injured} chấn thương" : null),
@@ -425,6 +474,10 @@ else
                 new("Bảng xếp hạng", "leaderboard", "bxh", Short: "BXH"),
                 new("Lịch thi đấu", "calendar_month", "lich", Short: "Lịch"),
                 F("Thống kê", "query_stats", "thong-ke", CareerUnlocks.Stats),
+                new("Tin tức", "newspaper", "tin", Group: "Xem thêm"),
+                new("Bàn thắng & highlight", "movie", "ban-thang", Short: "Bàn thắng", Group: "Xem thêm"),
+                new("Vinh danh", "military_tech", "vinh-danh", Group: "Xem thêm"),
+                new("Các mùa", "folder_open", "mua", Group: "Xem thêm"),
             ]);
         }
 
@@ -453,7 +506,6 @@ else
             new("Điều khiển game", "sports_esports", "dieu-khien", Group: Set),
         };
         if (profile is not null) life.Add(new("Trang người chơi", "person", profile, Group: Set));
-        life.Add(new("Trang giải đấu đầy đủ", "public", "", Hard: true, Group: Set));
         if (admin) life.Add(new("Quản trị", "admin_panel_settings", "admin", Group: Set));
         yield return new("life", "Cá nhân & cài đặt", "Cá nhân", "account_circle", m?.Wallet is { } w ? "Ví " + Fmt.Money(w) : null, m?.Wallet < 0 ? "bad" : "gold", life);
     }

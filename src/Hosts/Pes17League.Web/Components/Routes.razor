@@ -1,7 +1,8 @@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
         @* PO 16/11: trang quản trị (Admin*.razor, Ẩn/hiện) dùng khu riêng AdminLayout.
-           PO 19/11 (UI career đợt 1): trang của chế độ sự nghiệp dùng CareerLayout (người chơi chưa cầm CLB → tự quay về MainLayout). *@
+           PO 19/11 (UI career đợt 1): trang của chế độ sự nghiệp dùng CareerLayout (người chơi chưa cầm CLB → tự quay về MainLayout).
+           PO 22/11 (gộp 2 UI, chỉ còn career): MỌI trang người chơi dùng CareerLayout để chung 1 đầu trang/menu; chưa cầm CLB vẫn tự về MainLayout. *@
         <RouteView RouteData="routeData" DefaultLayout="@LayoutFor(routeData.PageType)" />
     </Found>
     <NotFound>
@@ -12,16 +13,7 @@
 </Router>
 
 @code {
-    static readonly HashSet<Type> CareerPages =
-    [
-        typeof(Pages.Career), typeof(Pages.Club), typeof(Pages.Market), typeof(Pages.Offers), typeof(Pages.Finance), typeof(Pages.Board),
-        typeof(Pages.Training), typeof(Pages.Academy), typeof(Pages.Standings), typeof(Pages.Schedule), typeof(Pages.Stats), typeof(Pages.Mail),
-        typeof(Pages.Inbox), typeof(Pages.Match), typeof(Pages.Play), typeof(Pages.Player), typeof(Pages.Prepare), typeof(Pages.CoachHome), typeof(Pages.CoachJobs), typeof(Pages.CoachMail),
-        typeof(Pages.LockerRoom), typeof(Pages.CoachLife), typeof(Pages.Settings), typeof(Pages.Controls), typeof(Pages.Media),   // PO 20/11: menu career theo khu
-    ];
-
     static Type LayoutFor(Type page) =>
         page.Name.StartsWith("Admin") || page == typeof(Pages.Visibility) ? typeof(AdminLayout)
-        : CareerPages.Contains(page) ? typeof(CareerLayout)
-        : typeof(MainLayout);
+        : typeof(CareerLayout);
 }

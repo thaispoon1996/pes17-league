@@ -32,32 +32,22 @@
                 <svg class="shield" viewBox="0 0 32 36" aria-hidden="true"><path d="M16 1 30 6v11c0 9-6 15-14 18C8 32 2 26 2 17V6z" fill="var(--accent)"/><path d="M16 5 26 8.6V17c0 6.6-4.2 11.2-10 13.6C10.2 28.2 6 23.6 6 17V8.6z" fill="var(--brand)"/><path d="m16 10 1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="var(--accent)"/></svg>
                 <span>PES 17<b>League</b></span></a>
             <nav>
-                <NavLink href="" Match="NavLinkMatch.All">Vòng đấu</NavLink>
-                <NavLink href="truc-tiep">Trực tiếp</NavLink>
+                @* PO 22/11: tập trung career, tạm hoãn chế độ online → ẩn Vòng đấu, Trực tiếp, Giao hữu, Đăng ký giải, Kỷ luật (trang vẫn còn, chỉ bỏ khỏi menu). *@
+                <NavLink href="" Match="NavLinkMatch.All">Trang chủ</NavLink>
                 <NavLink href="tin">Tin tức</NavLink>
                 <NavLink href="lich">Lịch</NavLink>
                 <NavLink href="giai">Giải đấu</NavLink>
                 <NavLink href="bxh">BXH</NavLink>
-                @if (player) { <NavLink href="su-nghiep">Sự nghiệp</NavLink> }
-                @if (coach)
-                {
-                    <NavLink href="clb">CLB của tôi</NavLink>
-                    <NavLink href="hop-thu">Quản lý</NavLink>
-                    <NavLink href="chuyen-nhuong">Chuyển nhượng</NavLink>
-                }
-                <NavLink href="giao-huu">Giao hữu</NavLink>
+                <NavLink href="thong-ke">Thống kê</NavLink>
                 <details class="nav-more">
                     <summary>Thêm</summary>
                     <div class="nav-more__menu">
-                        <NavLink href="thong-ke">Thống kê</NavLink>
                         @if (player) { <NavLink href="dieu-khien">Điều khiển</NavLink> }
                         <NavLink href="tong-ket">Tổng kết vòng</NavLink>
                         <NavLink href="thi-truong">Thị trường</NavLink>
                         <NavLink href="vinh-danh">Vinh danh</NavLink>
                         <NavLink href="ban-thang">Bàn thắng</NavLink>
                         <NavLink href="so-sanh">So sánh cầu thủ</NavLink>
-                        @if (player) { <NavLink href="dang-ky-giai">Đăng ký đá giải</NavLink> }
-                        <NavLink href="ky-luat">Thưởng &amp; kỷ luật</NavLink>
                         <NavLink href="vai-tro">Vai trò &amp; quyền</NavLink>
                     </div>
                 </details>
@@ -72,7 +62,7 @@
                         @if (guest) { <div class="m-menu__auth"><a class="btn primary" href="login">Đăng nhập</a><a class="btn" href="dang-ky">Đăng ký</a></div> }
                         else { <div class="m-menu__who">@if (profile is not null) { <a href="@profile"><span class="ms ic" aria-hidden="true">person</span>@who</a> } else { <span><span class="ms ic" aria-hidden="true">person</span>@who</span> }</div> }
                         <p>Giải đấu</p>
-                        @if (!guest) { <NavLink href="truc-tiep"><span class="ms ic" aria-hidden="true">radio_button_checked</span>Trực tiếp</NavLink><NavLink href="bxh"><span class="ms ic" aria-hidden="true">trophy</span>Bảng xếp hạng</NavLink> }
+                        @if (!guest) { <NavLink href="bxh"><span class="ms ic" aria-hidden="true">trophy</span>Bảng xếp hạng</NavLink> }
                         <NavLink href="tin"><span class="ms ic" aria-hidden="true">newspaper</span>Tin tức</NavLink>
                         <NavLink href="giai"><span class="ms ic" aria-hidden="true">stadium</span>Giải đấu</NavLink>
                         <NavLink href="thong-ke"><span class="ms ic" aria-hidden="true">bar_chart</span>Thống kê</NavLink>
@@ -82,19 +72,15 @@
                         <NavLink href="mua"><span class="ms ic" aria-hidden="true">folder_open</span>Các mùa</NavLink>
                         <NavLink href="thi-truong"><span class="ms ic" aria-hidden="true">monitoring</span>Thị trường</NavLink>
                         <NavLink href="so-sanh"><span class="ms ic" aria-hidden="true">balance</span>So sánh cầu thủ</NavLink>
-                        <NavLink href="giao-huu"><span class="ms ic" aria-hidden="true">sports_soccer</span>Giao hữu</NavLink>
                         @if (!guest)
                         {
                             <p>Của tôi</p>
                             <NavLink href="thu"><span class="ms ic" aria-hidden="true">mail</span>Hòm thư @if (unread > 0) { <span class="badge">@unread</span> }</NavLink>
                             @if (player)
                             {
-                                @if (coach) { <NavLink href="chuyen-nhuong"><span class="ms ic" aria-hidden="true">swap_horiz</span>Chuyển nhượng</NavLink> }
                                 <NavLink href="dieu-khien"><span class="ms ic" aria-hidden="true">sports_esports</span>Điều khiển</NavLink>
-                                <NavLink href="dang-ky-giai"><span class="ms ic" aria-hidden="true">how_to_reg</span>Đăng ký đá giải</NavLink>
                             }
                         }
-                        <NavLink href="ky-luat"><span class="ms ic" aria-hidden="true">style</span>Thưởng &amp; kỷ luật</NavLink>
                         <NavLink href="vai-tro">ℹ️ Vai trò &amp; quyền</NavLink>
                         @if (admin) { <a class="m-menu__admin" href="admin"><span class="ms ic" aria-hidden="true">settings</span>Quản trị</a> }
                         @if (!guest) { <form method="post" action="/logout" data-enhance="false"><button class="link">Đăng xuất</button></form> }
@@ -103,15 +89,13 @@
             </div>
         </div>
     </div>
-    <ScoreTicker />
-    <ContinueBar />
 </header>
 <main>@Body</main>
 <nav class="bottom-nav" aria-label="Điều hướng nhanh">
     <NavLink href="" Match="NavLinkMatch.All"><i class="ms">home</i>Trang chủ</NavLink>
     @if (guest)
     {
-        <NavLink href="truc-tiep"><i class="ms">sensors</i>Trực tiếp</NavLink>
+        <NavLink href="tin"><i class="ms">newspaper</i>Tin tức</NavLink>
         <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
         <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
         <a href="login"><i class="ms">person</i>Đăng nhập</a>
@@ -119,28 +103,18 @@
     else if (admin)
     {
         @* PO 17/11: admin = Ban tổ chức, không có CLB/giao hữu để chơi *@
-        <NavLink href="truc-tiep"><i class="ms">sensors</i>Trực tiếp</NavLink>
+        <NavLink href="tin"><i class="ms">newspaper</i>Tin tức</NavLink>
         <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
         <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
         <a href="admin"><i class="ms">settings</i>Quản trị</a>
     }
     else
     {
-        @* PO 17/11: tối đa 5 mục cho dễ bấm; Trực tiếp/BXH/Thư lên đầu trang + menu ☰ *@
-        @if (coach)
-        {
-            <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
-            <NavLink href="hop-thu"><i class="ms">assignment</i>Quản lý</NavLink>
-            <NavLink href="clb"><i class="ms">shield</i>CLB</NavLink>
-        }
-        else
-        {
-            @* PO 17/11: chưa có CLB → ẩn Quản lý/CLB (không có quyền), thay bằng mục xem được *@
-            <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
-            <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
-            <NavLink href="dang-ky-giai"><i class="ms">how_to_reg</i>Đá giải</NavLink>
-        }
-        <NavLink href="giao-huu"><i class="ms">sports_soccer</i>Giao hữu</NavLink>
+        @* PO 22/11: chỉ còn career → chưa cầm CLB thì lối chính là Sự nghiệp (bắt đầu/tìm việc) *@
+        <NavLink href="su-nghiep"><i class="ms">sports</i>Sự nghiệp</NavLink>
+        <NavLink href="tin"><i class="ms">newspaper</i>Tin tức</NavLink>
+        <NavLink href="lich"><i class="ms">calendar_month</i>Lịch</NavLink>
+        <NavLink href="bxh"><i class="ms">leaderboard</i>BXH</NavLink>
     }
 </nav>
 <div id="blazor-error-ui">Có lỗi xảy ra. <a href="" class="reload">Tải lại</a></div>

@@ -21,7 +21,7 @@
       return { r, g: gg, b, w: e.n * (.35 + (mx ? (mx - mn) / mx : 0)) };
     }).sort((a, b) => b.w - a.w);
     const hex = c => '#' + [c.r, c.g, c.b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
-    if (!cols.length) return ['#22306e', '#ffc94a'];
+    if (!cols.length) return ['#22306e', '#00ff87'];
     const a = cols[0], b = cols.find(c => Math.hypot(c.r - a.r, c.g - a.g, c.b - a.b) > 90) || { r: 233, g: 237, b: 247 };
     return [hex(a), hex(b)];
   }
@@ -31,7 +31,7 @@
     if (!logo) return null;
     if (clubs.has(logo)) return clubs.get(logo);
     const img = await loadImg(logo); if (!img) return null;
-    let a = '#22306e', b = '#ffc94a'; try { [a, b] = logoColors(img); } catch { }
+    let a = '#22306e', b = '#00ff87'; try { [a, b] = logoColors(img); } catch { }
     const v = { a, b, img }; clubs.set(logo, v); return v;
   }
 
@@ -151,7 +151,7 @@
   // ---------- ký hợp đồng ----------
   function pad(c) {
     if (!c || c.dataset.ready) return; c.dataset.ready = '1'; c.dataset.ink = '0';
-    const x = c.getContext('2d'), fit = () => { const r = c.getBoundingClientRect(); c.width = r.width * 2; c.height = r.height * 2; x.lineWidth = 5; x.lineCap = 'round'; x.strokeStyle = '#FFC94A'; };
+    const x = c.getContext('2d'), fit = () => { const r = c.getBoundingClientRect(); c.width = r.width * 2; c.height = r.height * 2; x.lineWidth = 5; x.lineCap = 'round'; x.strokeStyle = '#00ff87'; };
     fit(); let p = null;
     c.addEventListener('pointerdown', e => { const r = c.getBoundingClientRect(); p = [(e.clientX - r.left) * 2, (e.clientY - r.top) * 2]; c.setPointerCapture(e.pointerId); });
     c.addEventListener('pointermove', e => {
@@ -177,7 +177,7 @@
       else { x.fillStyle = 'rgba(255,201,74,.12)'; x.fillRect(px + 40, py + 20, 30, 30); }
     }
     const v = x.createRadialGradient(320, 330, 60, 320, 380, 460); v.addColorStop(0, 'rgba(5,8,22,0)'); v.addColorStop(1, 'rgba(5,8,22,.8)'); x.fillStyle = v; x.fillRect(0, 0, 640, 800);
-    const cols = [cl?.a || '#22306e', cl?.b || '#ffc94a'];
+    const cols = [cl?.a || '#22306e', cl?.b || '#00ff87'];
     const scarf = (cx, cy, w) => {
       x.save(); x.translate(cx, cy); x.rotate(-.04);
       for (let i = 0; i < 9; i++) { x.fillStyle = cols[i % 2]; x.fillRect(-w / 2 + i * w / 9, -18, w / 9 + 1, 36); }
@@ -199,12 +199,12 @@
       if (face) { const s = Math.max(fw / face.width, fh / face.height); x.drawImage(face, fx + fw / 2 - face.width * s / 2, fy + fh / 2 - face.height * s / 2, face.width * s, face.height * s); }
       else { x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.arc(320, 230, 70, 0, 7); x.fill(); x.beginPath(); x.ellipse(320, 470, 150, 150, 0, Math.PI, 0); x.fill(); }
       x.restore();
-      rr(); x.lineWidth = 6; x.strokeStyle = '#FFC94A'; x.stroke();
+      rr(); x.lineWidth = 6; x.strokeStyle = '#00ff87'; x.stroke();
       if (!o.press) scarf(320, fy + fh - 34, 400);
     }
     if (o.press) podium(x, cl, cols, o.press);
     const gr = x.createLinearGradient(0, 600, 0, 800); gr.addColorStop(0, 'rgba(7,11,26,0)'); gr.addColorStop(.4, 'rgba(7,11,26,.92)'); x.fillStyle = gr; x.fillRect(0, 600, 640, 200);
-    x.fillStyle = '#FFC94A'; x.fillRect(40, 690, 6, 74);
+    x.fillStyle = '#00ff87'; x.fillRect(40, 690, 6, 74);
     x.fillStyle = '#ffffff'; x.font = 'italic 800 46px "Barlow Condensed", sans-serif'; x.fillText((o.name || '').toUpperCase(), 60, 728);
     x.fillStyle = '#9aa3c4'; x.font = '500 22px "Be Vietnam Pro", sans-serif'; x.fillText(o.caption || '', 60, 760);
     if (cl?.img) x.drawImage(cl.img, 540, 690, 64, 64);
@@ -218,7 +218,7 @@
     x.fillStyle = g; x.fillRect(70, 572, 500, 108);
     x.fillStyle = cols[1]; x.fillRect(70, 568, 500, 5);
     if (cl?.img) x.drawImage(cl.img, 290, 592, 60, 60);
-    for (const [mx, col] of [[200, '#e8364f'], [262, '#36E3FF'], [378, '#FFC94A'], [440, '#3DFFA2']]) {
+    for (const [mx, col] of [[200, '#e8364f'], [262, '#ffb95f'], [378, '#00ff87'], [440, '#00ff87']]) {
       x.fillStyle = '#1b1f2b'; x.beginPath(); if (x.roundRect) x.roundRect(mx - 9, 500, 18, 72, 9); else x.rect(mx - 9, 500, 18, 72); x.fill();
       x.fillStyle = col; x.fillRect(mx - 16, 528, 32, 16);
     }
@@ -227,8 +227,8 @@
       x.fillStyle = 'rgba(7,11,26,.78)'; x.fillRect(lx, py, w, 40); x.strokeStyle = fg; x.lineWidth = 2; x.strokeRect(lx, py, w, 40);
       x.fillStyle = fg; x.fillText(t, lx + 14, py + 29);
     };
-    if (p.tag) chip(String(p.tag).toUpperCase(), 24, 24, '#FFC94A');
-    if (p.score) chip(String(p.score).toUpperCase(), 616, 24, p.win > 0 ? '#3DFFA2' : p.win < 0 ? '#FF4D6A' : '#FFC94A', true);
+    if (p.tag) chip(String(p.tag).toUpperCase(), 24, 24, '#00ff87');
+    if (p.score) chip(String(p.score).toUpperCase(), 616, 24, p.win > 0 ? '#00ff87' : p.win < 0 ? '#ff4d5e' : '#00ff87', true);
   }
 
   /** Tô màu theo logo CLB (PO 21/11, đồ hoạ trận ở Truyền thông): [data-tint-h]/[data-tint-a] = logo đội nhà/khách → --th1,--th2 / --ta1,--ta2. */

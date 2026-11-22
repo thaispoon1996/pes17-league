@@ -9,7 +9,7 @@
 
 @* Màn chờ trận của PO (PO duyệt 03/11): game khởi động + tự đi menu; tới lúc tải trận thì tự mở stream để vào đá luôn.
    Hết giờ (PO 04/11): stream tự quay về đây → "đang đọc kết quả" rồi tỷ số, bàn thắng, điểm cầu thủ đội mình.
-   Career (PO 22/11): trang nằm trong khung career (Routes.CareerPages) → skin "Nocturnal Apex" bên dưới; giải online giữ giao diện cũ. *@
+   Career (PO 22/11): trang nằm trong khung career (Shell != null) → bản career bên dưới; giải online giữ giao diện cũ. *@
 @if (Shell is not null)
 {
     var mine = Jobs.Title == "Trận của tôi";
@@ -19,7 +19,7 @@
             <i class="ms" aria-hidden="true">sports_soccer</i>
             <h1>Chưa có trận nào đang vào</h1>
             <p>Vào trận từ trang chuẩn bị trận của vòng tới.</p>
-            <a class="cx-btn gold" href="su-nghiep">Về sự nghiệp</a>
+            <a class="cx-btn gold" href="su-nghiep">Về trang chủ</a>
         </section>
     }
     else if (Jobs.Stage == "fulltime" || result is not null)
@@ -119,7 +119,7 @@
             else
             {
                 <div class="cx-acts">
-                    <a class="cx-btn ghost" href="su-nghiep">Về sự nghiệp</a>
+                    <a class="cx-btn ghost" href="su-nghiep">Về trang chủ</a>
                     @if (Jobs.HumanFixture is { } hf) { <a class="cx-btn gold" href="chuan-bi/@hf.FixtureId">Chuẩn bị lại</a> }
                 </div>
             }
@@ -142,7 +142,7 @@
 {
     <section class="panel">
         <p class="muted">Chưa có trận nào đang vào.</p>
-        <a class="btn" href="">← Vòng đấu</a>
+        <a class="btn" href="">← Trang chủ</a>
     </section>
     return;
 }
@@ -223,7 +223,7 @@ else
             else
             {
                 <p>Không vào được trận.</p>
-                <a class="btn" href="">← Vòng đấu</a>
+                <a class="btn" href="">← Trang chủ</a>
             }
         </section>
         <aside class="panel">
