@@ -1,6 +1,6 @@
 @* Truyền thông career — "Tờ báo buổi sáng" (PO 21/11, mockup claude.ai/artifact/WFoRcc2mJPsMU5AkctCoYD; khối đầu 5mK12BQskUVcNsd4zyL5za).
    Trang chủ: tin nóng tự chạy (họp báo, bài báo trận của đội, trận nổi bật thế giới, vụ chuyển nhượng lớn) → dải kết quả khung vừa đá → ChildContent
-   (trận tiếp theo, chỉ số, việc cần làm) → Nhịp sống (Đội nhà / Giải đấu / Thế giới / Chuyển nhượng / Cuộc sống) → album.
+   (trận tiếp theo, chỉ số, việc cần làm). Nhịp sống (Đội nhà / Giải đấu / Thế giới / Chuyển nhượng / Cuộc sống) + album: chỉ ở Full (PO 22/11 bỏ khỏi trang chủ).
    Full = /truyen-thong: thêm thẻ họp báo, thẻ bài báo (đọc bài), album dạng lưới. Chỉ dữ liệu thật; bài trận mô phỏng = TemplateArticleWriter (không AI). *@
 @using Microsoft.EntityFrameworkCore
 @using Pes17League.Clubs.Infrastructure
@@ -68,7 +68,8 @@
     }
 }
 @ChildContent
-@if (data is { } dd)
+@* Nhịp sống (cột tin + album) chỉ còn ở /truyen-thong: PO 22/11 bỏ khỏi trang chủ. *@
+@if (Full && data is { } dd)
 {
     var cols = Cols.Where(c => dd.Desk.Any(x => x.Col == c.Key)).ToList();
     var tabs = new List<(string Key, string Label, int N)> { ("all", "Tất cả", 0) };
