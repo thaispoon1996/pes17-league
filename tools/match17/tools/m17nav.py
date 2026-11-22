@@ -18,6 +18,7 @@ from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[1]
 TPL = ROOT / "templates"
+CLUBS = TPL / "clubs.json"
 SCREENS = ROOT / "screens"
 X = {"home": 120, "away": 696}
 Y, W, H = 270, 470, 50
@@ -130,11 +131,24 @@ def iou(a: Image.Image, b: Image.Image, shift: int = 4) -> float:
     return max(_iou1(a, ImageChops.offset(b, dx, 0)) for dx in range(-shift, shift + 1))
 
 
+_TPL_CACHE: dict[str, tuple[tuple, dict]] = {}
+
+
 def templates(kind: str) -> dict[str, Image.Image]:
-    return {p.stem: mask(Image.open(p)) for p in sorted((TPL / kind).glob("*.png"))}
+    """Mặt nạ mẫu (nhớ đệm theo danh sách file + mtime: thêm/sửa mẫu là tự nạp lại)."""
+    files = sorted((TPL / kind).glob("*.png"))
+    key = tuple((p.name, p.stat().st_mtime_ns) for p in files)
+    hit = _TPL_CACHE.get(kind)
+    if hit is None or hit[0] != key:
+        hit = (key, {p.stem: mask(Image.open(p)) for p in files})
+        _TPL_CACHE[kind] = hit
+    return dict(hit[1])
 
 
 def best(m: Image.Image, tpls: dict[str, Image.Image]) -> tuple[str | None, float]:
+    if len(tpls) > 24:   # nhiều mẫu (403 đội): lọc nhanh không dịch ngang, chỉ so kỹ 8 mẫu gần nhất (~2 s → ~0,3 s)
+        near = sorted(tpls, key=lambda k: _iou1(m, tpls[k]), reverse=True)[:8]
+        tpls = {k: tpls[k] for k in near}
     top, score = None, 0.0
     for k, t in tpls.items():
         s = iou(m, t)
@@ -163,6 +177,11 @@ def seek(side: str, kind: str, target: str, max_steps: int = 60, step_wait: floa
     tpls = templates(kind)
     if target not in tpls:
         return {"ok": False, "why": f"thiếu mẫu {kind}/{target}"}
+    if kind == "teams":   # danh sách trong game chỉ có đội cùng giải → chỉ so mẫu giải đó (403 mẫu: ~2 s/lần so, 1 giải ~0,1 s)
+        import json
+        d = json.loads(CLUBS.read_text())
+        lg = d.get(target, {}).get("league")
+        tpls = {k: v for k, v in tpls.items() if d.get(k, {}).get("league") == lg} or tpls
     seen, prev = [], None
     keys = ("Down", "Up")
     cur, cur_s = best(mask(crop(shot(f"seek_{side}"), side)), tpls)
@@ -221,7 +240,6 @@ def learn(side: str, name: str, step_wait: float = 0.7, max_steps: int = 60) -> 
     print(len(crops), out / "sheet.png")
 
 
-CLUBS = TPL / "clubs.json"
 
 
 def pick_side(side: str, club: int) -> dict:
