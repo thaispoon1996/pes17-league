@@ -98,7 +98,7 @@
             <div>
                 <small>Cá nhân</small>
                 <b>@(p.Info.TryGetValue("AGE", out var age) ? $"{age} tuổi" : "–")@(p.BirthYear is { } by ? $" ({by})" : "")</b>
-                <span>@(p.Info.TryGetValue("HEIGHT", out var h) ? $"{h} cm" : "–") · @(p.Info.TryGetValue("WEIGHT", out var wt) ? $"{wt} kg" : "–")@(p.Nationality is { Length: > 0 } nat ? $" · {nat}" : "")</span>
+                <span>@(p.Info.TryGetValue("HEIGHT", out var h) ? $"{h} cm" : "–") · @(p.Info.TryGetValue("WEIGHT", out var wt) ? $"{wt} kg" : "–") · @Fmt.Style(p.Info.GetValueOrDefault("PES17_STYLE"))@(p.Nationality is { Length: > 0 } nat ? $" · {nat}" : "")</span>
             </div>
             <div>
                 <small>Giá trị</small>

@@ -113,6 +113,7 @@ POSITIONS = ("GK", "CB", "LB", "RB", "DMF", "CMF", "LMF", "RMF", "AMF", "LWF", "
 STATS = {
     "height": (114, 7, 132), "weight": (121, 7, 30), "age": (280, 5, 15),
     "position": (297, 4, 0), "form": (301, 3, 1), "leftFoot": (374, 1, 0),
+    "playingStyle": (288, 5, 0),  # 0 không có … 17 thủ môn phòng ngự (PES 2017); 18–21 HANO thêm (cắt vào, tạt, nhạc trưởng, hậu vệ dứt điểm)
     "setPieceTaking": (135, 6, 40), "lowPass": (141, 6, 40), "clearing": (147, 6, 40),
     "defensiveProwess": (153, 6, 40), "ballControl": (160, 6, 40), "header": (166, 6, 40),
     "jump": (172, 6, 40), "catching": (178, 6, 40), "coverage": (184, 6, 40),
@@ -122,7 +123,7 @@ STATS = {
     "kickingPower": (248, 6, 40), "attackingProwess": (256, 6, 40), "bodyControl": (262, 6, 40),
     "physicalContact": (268, 6, 40), "loftedPass": (274, 6, 40),
 }
-# Chưa chắc (dữ liệu mẫu ít biến thiên): chân không thuận, chống chấn thương, kỹ năng, vị trí phụ.
+# Chưa chắc: chân không thuận, chống chấn thương, kỹ năng đặc biệt (cờ rải bit 304–388, chưa khớp thứ tự 28 thẻ), vị trí phụ.
 
 
 def stats(r: bytes) -> dict:

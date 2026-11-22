@@ -167,6 +167,7 @@ public sealed class Pes17ImportService(ClubsDbContext db, IOptionFileStore store
             var pos = e.GetProperty("position").GetString() ?? "";
             values["PES17_POSITION"] = Array.IndexOf(Pes17Positions, pos);
             values["PES17_LEFT_FOOT"] = e.GetProperty("leftFoot").GetBoolean() ? 1 : 0;
+            if (e.TryGetProperty("playingStyle", out var style)) values["PES17_STYLE"] = style.GetInt32();
             var mapped = MapPosition(pos);
             values["REGISTERED POSITION"] = (int)mapped;
             var id = e.GetProperty("id").GetInt32();

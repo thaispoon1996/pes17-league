@@ -54,7 +54,7 @@ public sealed record SquadRow(Guid PlayerId, string Name, Position Position, int
     int? MatchesTotal, int MatchesPlayed, long? Wage, RenewalStatus? Renewal, int? Height = null, int? Weight = null);
 /// <param name="BasePrice">Giá gốc đầu mùa (so biến động giá).</param><param name="Age">Tuổi theo chỉ số AGE mùa này.</param>
 /// <param name="Height">Chiều cao cm (HEIGHT).</param><param name="Weight">Cân nặng kg (WEIGHT).</param>
-public sealed record MarketRow(Guid PlayerId, string Name, Position Position, int? BirthYear, Guid? ClubId, int Overall, long Price, long BasePrice, int? Age, int? Height = null, int? Weight = null, int Speed = 0, int Dribble = 0, int Shot = 0, int Power = 0, int Pass = 0, int Freekick = 0, int Heading = 0, int Keeping = 0);
+public sealed record MarketRow(Guid PlayerId, string Name, Position Position, int? BirthYear, Guid? ClubId, int Overall, long Price, long BasePrice, int? Age, int? Height = null, int? Weight = null, int Speed = 0, int Dribble = 0, int Shot = 0, int Power = 0, int Pass = 0, int Freekick = 0, int Heading = 0, int Keeping = 0, int Style = 0);
 public sealed record VisibilityRow(Guid PlayerId, int PesPlayerId, string Name, Position Position, Guid? ClubId, int Overall, long Price, bool? Override, bool Visible);
 
 /// <summary>Truy vấn đọc cho các trang (mỗi lệnh 1 DbContext).</summary>
@@ -323,7 +323,8 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
                    ("Values"->>'SHORT PASS ACCURACY')::int as "Pass",
                    ("Values"->>'FREE KICK ACCURACY')::int as "Freekick",
                    ("Values"->>'HEADING')::int as "Heading",
-                   ("Values"->>'GOAL KEEPING')::int as "Keeping"
+                   ("Values"->>'GOAL KEEPING')::int as "Keeping",
+                   ("Values"->>'PES17_STYLE')::int as "Style"
             from clubs."PlayerAttributes" where "SeasonId" = {seasonId}
             """).ToListAsync()).ToDictionary(a => a.PlayerId);
         return [.. rows.Where(r => r.Visible && r.ClubId != excludeClubId)
@@ -331,7 +332,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
             {
                 attrs.TryGetValue(r.PlayerId, out var a);
                 return new MarketRow(r.PlayerId, r.Name, r.Position, r.BirthYear, r.ClubId, r.Overall, r.Price, basePrice.GetValueOrDefault(r.PlayerId), a?.Age, a?.Height, a?.Weight,
-                    a?.Speed ?? 0, a?.Dribble ?? 0, a?.Shot ?? 0, a?.Power ?? 0, a?.Pass ?? 0, a?.Freekick ?? 0, a?.Heading ?? 0, a?.Keeping ?? 0);
+                    a?.Speed ?? 0, a?.Dribble ?? 0, a?.Shot ?? 0, a?.Power ?? 0, a?.Pass ?? 0, a?.Freekick ?? 0, a?.Heading ?? 0, a?.Keeping ?? 0, a?.Style ?? 0);
             })];
     }
 
@@ -349,6 +350,7 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         public int? Freekick { get; set; }
         public int? Heading { get; set; }
         public int? Keeping { get; set; }
+        public int? Style { get; set; }
     }
     private sealed class AgeRow { public Guid PlayerId { get; set; } public int? Age { get; set; } }
 
@@ -464,6 +466,34 @@ public static class Fmt
     /// <summary>Chiều cao · cân nặng trên thẻ cầu thủ. Thiếu số → "–".</summary>
     public static string Body(int? height, int? weight) =>
         $"{(height is > 0 ? $"{height} cm" : "–")} · {(weight is > 0 ? $"{weight} kg" : "–")}";
+
+    /// <summary>Phong cách cầu PES 2017 (bit 288, 5 bit). 18–21 là kiểu HANO thêm sau danh sách gốc.</summary>
+    public static string Style(int id) => id switch
+    {
+        0 => "Không phong cách",
+        1 => "Săn bàn",
+        2 => "Thu hút",
+        3 => "Cáo trong cấm",
+        4 => "Tiền đạo cánh",
+        5 => "Số 10 cổ điển",
+        6 => "Chạy chỗ",
+        7 => "Hộp đến hộp",
+        8 => "Mỏ neo",
+        9 => "Kẻ phá đám",
+        10 => "Đá lên",
+        11 => "Hậu vệ biên tấn công",
+        12 => "Hậu vệ biên phòng ngự",
+        13 => "Đầu tàu",
+        14 => "Kiến tạo",
+        15 => "Dựng trò",
+        16 => "Thủ môn tấn công",
+        17 => "Thủ môn phòng ngự",
+        18 => "Cắt vào",
+        19 => "Chuyên gia tạt",
+        20 => "Nhạc trưởng",
+        21 => "Hậu vệ biên dứt điểm",
+        _ => "Phong cách " + id,
+    };
 
     public static string Country(string? code) => code switch
     {
