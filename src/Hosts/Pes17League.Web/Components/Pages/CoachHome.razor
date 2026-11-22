@@ -29,7 +29,22 @@
 <div class="hx" data-t="@card">
     @if (msg is not null) { <p class="cx-msg @(ok ? null : "neg")" role="status">@msg</p> }
 
+    @if (editFace)
+    {
+        <section class="hlv-panel hx-facepanel" id="doi-anh" aria-labelledby="hx-fp">
+            <h2 id="hx-fp"><i class="ms" aria-hidden="true">photo_camera</i>Đổi ảnh HLV</h2>
+            <p class="hlv-note">Tải ảnh chân dung nhìn thẳng, kéo và phóng cho mặt nằm gọn trong khung rồi bấm Lưu ảnh. Ảnh mới dùng ngay trên thẻ HLV, họp báo, ảnh lưu niệm và tin tức.</p>
+            <div class="hlv-facegrid">
+                <CoachFacePicker C="c" ManagerId="me" Changed="FaceChanged">
+                    <button class="cx-btn ghost" @onclick="() => editFace = false"><i class="ms" aria-hidden="true">close</i>Xong</button>
+                </CoachFacePicker>
+                <div class="hlv-cardwrap"><CoachCard C="c" /></div>
+            </div>
+        </section>
+    }
+
     <header class="hx-hero">
+        @if (!editFace) { <button class="cx-btn ghost sm hx-photo" @onclick="OpenFace"><i class="ms" aria-hidden="true">photo_camera</i>Đổi ảnh</button> }
         <div class="hx-stage" aria-hidden="true">
             <b class="hx-num">@c.Reputation</b>
             <i class="hx-beam"></i><i class="hx-pitch"></i><i class="hx-ring"></i>
@@ -221,8 +236,9 @@
 @code {
     [CascadingParameter] public CareerLayout? Shell { get; set; }
     [SupplyParameterFromQuery(Name = "ra-mat")] public int? Launch { get; set; }
+    [SupplyParameterFromQuery(Name = "doi-anh")] public int? EditFace { get; set; }
 
-    bool loaded, busy, ok, press, bio;
+    bool loaded, busy, ok, press, bio, editFace;
     int skill;
     Guid me;
     CoachProfile? pf;
@@ -265,6 +281,17 @@
 
     Task Spend(CoachSkill s) => Run(x => x.SpendPointAsync(me, s), $"Đã cộng 1 điểm {CoachRules.SkillDefs[(int)s].Name}.");
     Task Course() => Run(x => x.StartCourseAsync(me), "Đã ghi danh khoá học.");
+
+    protected override void OnParametersSet() { if (EditFace == 1) editFace = true; }
+
+    // Đổi ảnh HLV sau khi đã tạo hồ sơ (PO 22/11)
+    void OpenFace() { editFace = true; msg = null; }
+
+    async Task FaceChanged(Coach _)
+    {
+        await Load();
+        if (Shell is not null) await Shell.RefreshAsync();
+    }
 
     async Task PressDone() { press = false; await Load(); Nav.NavigateTo("su-nghiep"); }
 }

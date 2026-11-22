@@ -1,0 +1,132 @@
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+@* Khung chọn ảnh mặt HLV (tải ảnh, kéo/phóng, tách nền, lưu/xoá). Dùng ở bước 1 tạo hồ sơ (CoachMaker) và nút "Đổi ảnh" ở /hlv (PO 22/11). *@
+
+<div @ref="host">
+    <div class="cx-crop">
+        <canvas data-crop width="400" height="400"></canvas>
+        <span class="hlv-cutting" aria-live="polite"><i class="ms" aria-hidden="true">auto_fix_high</i>Đang tách nền…</span>
+        <svg viewBox="0 0 400 400" aria-hidden="true">
+            <path d="M0 0H400V400H0Z M80 188a120 156 0 1 0 240 0a120 156 0 1 0-240 0Z" fill="rgba(7,11,26,.55)" fill-rule="evenodd" />
+            <ellipse cx="200" cy="188" rx="120" ry="156" fill="none" stroke="#ffb95f" stroke-width="2" stroke-dasharray="6 6" />
+            <line x1="120" y1="153" x2="280" y2="153" stroke="#00ff87" stroke-width="1.5" stroke-dasharray="4 4" />
+        </svg>
+    </div>
+    <div class="hlv-tools">
+        <label class="cx-btn ghost sm"><i class="ms" aria-hidden="true">add_photo_alternate</i>Tải ảnh<input type="file" accept="image/*" data-file hidden /></label>
+        <i class="ms" aria-hidden="true" style="color:var(--muted)">zoom_in</i>
+        <input type="range" min="1" max="3" step="0.01" value="1" data-zoom aria-label="Phóng to ảnh" />
+        <button class="hlv-chip @(cutOn ? "on" : null)" aria-pressed="@cutOn" disabled="@cutBusy" @onclick="ToggleCut"><i class="ms" aria-hidden="true" style="font-size:16px;vertical-align:-3px">@(cutOn ? "auto_fix_high" : "auto_fix_off")</i> Tách nền</button>
+    </div>
+    <div class="hlv-acts" style="margin-top:10px">
+        <button class="cx-btn gold" disabled="@busy" @onclick="Save"><i class="ms" aria-hidden="true">save</i>@(busy ? "Đang lưu…" : "Lưu ảnh")</button>
+        @if (C.Face is not null) { <button class="cx-btn ghost" disabled="@busy" data-confirm="Xoá ảnh mặt khỏi hồ sơ?" @onclick="Remove"><i class="ms" aria-hidden="true">delete</i>Xoá ảnh</button> }
+        @ChildContent
+    </div>
+    @if (err is not null) { <p class="cx-msg neg" role="alert" style="margin:8px 0 0;white-space:normal;overflow-wrap:anywhere">@err</p> }
+    @if (note is not null) { <p class="hlv-note">@note</p> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Coach C { get; set; } = default!;
+    [Parameter] public Guid ManagerId { get; set; }
+    /// <summary>Sau khi lưu hoặc xoá ảnh thành công — nhận hồ sơ mới.</summary>
+    [Parameter] public EventCallback<Coach> Changed { get; set; }
+    /// <summary>Nút thêm cạnh Lưu ảnh (vd "Xong").</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    ElementReference host;
+    bool busy, cutOn = true, cutBusy;
+    string? note, err;
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!first) return;
+        try
+        {
+            cutOn = C.Face is null || CoachUi.FaceCut(C);
+            await JS.InvokeVoidAsync("CoachFace.crop", host, CoachUi.FaceUrl(C), CoachUi.FaceCut(C));
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    /// <summary>Có ảnh mới chưa lưu thì lưu (CoachMaker gọi khi bấm Tiếp). Trả false nếu lưu lỗi.</summary>
+    public async Task<bool> SaveIfDirty()
+    {
+        var pending = false;
+        try { pending = await JS.InvokeAsync<bool>("CoachFace.dirty"); } catch (JSException) { }
+        return !pending || await Save();
+    }
+
+    /// <summary>Lưu ảnh đã căn trong khung (400×400; PNG trong suốt nếu tách nền).</summary>
+    public async Task<bool> Save()
+    {
+        busy = true; note = null; err = null;
+        StateHasChanged();
+        try
+        {
+            var bytes = await Bytes();
+            if (bytes is null) { err = "Chưa có ảnh. Bấm Tải ảnh, căn mặt vào khung rồi Lưu ảnh. Không có ảnh vẫn dùng hình mặc định."; return false; }
+            return await Apply(bytes, "Đã lưu ảnh vào hồ sơ.");
+        }
+        catch (JSException) { err = "Không đọc được ảnh. Thử ảnh khác hoặc tải lại trang."; return false; }
+        catch (JSDisconnectedException) { return false; }
+        finally { busy = false; }
+    }
+
+    async Task Remove()
+    {
+        if (await Apply(null, "Đã xoá ảnh, dùng hình mặc định."))
+            try { await JS.InvokeVoidAsync("CoachFace.clearFace"); } catch (JSException) { } catch (JSDisconnectedException) { }
+    }
+
+    async Task<bool> Apply(byte[]? bytes, string done)
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var svc = new CoachService(db, Clock);
+        err = await svc.SetFaceAsync(ManagerId, bytes, null);
+        if (err is not null) return false;
+        note = done;
+        if (await svc.GetAsync(ManagerId) is { } got) { C = got; await Changed.InvokeAsync(got); }
+        return true;
+    }
+
+    /// <summary>Bật / tắt tách nền (ảnh gốc giữ trong trình duyệt, đổi qua lại không mất).</summary>
+    async Task ToggleCut()
+    {
+        cutBusy = true; err = null; note = null;
+        StateHasChanged();
+        try
+        {
+            var r = await JS.InvokeAsync<string>("CoachFace.cut", !cutOn);
+            switch (r)
+            {
+                case "ok": cutOn = true; note = "Đã tách nền. Bấm Lưu ảnh để dùng."; break;
+                case "off": cutOn = false; note = "Giữ nền gốc. Bấm Lưu ảnh để dùng."; break;
+                case "noimg": cutOn = !cutOn; note = cutOn ? "Ảnh tải lên sẽ được tách nền." : "Ảnh tải lên sẽ giữ nền gốc."; break;
+                case "fail": cutOn = true; err = "Không tách được nền ảnh này (máy hoặc mạng không tải được bộ tách nền). Ảnh giữ nền gốc."; break;
+            }
+        }
+        catch (JSException) { err = "Không tách được nền trên thiết bị này. Ảnh giữ nền gốc."; }
+        catch (JSDisconnectedException) { }
+        finally { cutBusy = false; }
+    }
+
+    async Task<byte[]?> Bytes()
+    {
+        var r = await JS.InvokeAsync<IJSStreamReference?>("CoachFace.faceBytes");
+        if (r is null) return null;
+        await using (r)
+        {
+            await using var s = await r.OpenReadStreamAsync(CoachService.MaxFaceBytes);
+            using var ms = new MemoryStream();
+            await s.CopyToAsync(ms);
+            return ms.ToArray();
+        }
+    }
+}
