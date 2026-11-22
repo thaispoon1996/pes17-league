@@ -47,9 +47,11 @@
         <button disabled="@busy" @onclick="Expand">Mở rộng +@FinanceRules.ExpandSeats.ToString("N0") chỗ (@Fmt.Money(FinanceRules.ExpandCost))</button>
     </section>
 
+    @* Máy tính (khung 1180px, PO 22/11): tổng theo khoản và các vòng đứng cạnh nhau. *@
+    <div class="fin-cols">
     <section>
         <h2>Tổng mùa theo khoản</h2>
-        <table class="table">
+        <table class="table fin-tot">
             <tbody>
                 @foreach (var (r, v) in report.Totals.OrderByDescending(x => x.Value))
                 {
@@ -82,6 +84,7 @@
             </tbody>
         </table>
     </section>
+    </div>
 </div>
 
 @code {

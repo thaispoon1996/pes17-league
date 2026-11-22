@@ -93,7 +93,7 @@ else
             var subs = hz.Items.Where(i => i.Lock is null && !i.Hard && i.Href is { } h && h.IndexOfAny(['?', '#']) < 0).ToList();
             @if (subs.Count > 1)
             {
-                <nav class="cx-sub @(Wide ? "wide" : null)" aria-label="@hz.Title">
+                <nav class="cx-sub" aria-label="@hz.Title">
                     @foreach (var s in subs)
                     {
                         @* So theo đường dẫn bỏ ?query (vd thu-hlv?thu=… từ trang chủ vẫn sáng "Thư HLV") *@
@@ -103,7 +103,7 @@ else
             }
         }
         <CascadingValue Value="this" IsFixed="true">
-            <main class="cx-page @(Wide ? "wide" : null)">@Body</main>
+            <main class="cx-page">@Body</main>
         </CascadingValue>
         @* Thanh dưới (PO 20/11, phương án A): Trang chủ + các khu (Văn phòng, Thay đồ, Chuyển nhượng, Giải đấu, Hòm thư & thông báo, Cá nhân & cài đặt).
            Bấm ô khu → bảng mục con trượt lên ngay trên thanh; mở/đóng ở career.js (data-sheet, data-open) để bấm là mở ngay, Blazor chỉ nạp số liệu khu. *@
@@ -263,10 +263,6 @@ else
     HashSet<string> fresh = [];   // khu vừa có mục mở khoá → ô khu nảy trên thanh dưới
 
     /// <summary>Đường dẫn tương đối không ?query; "" (trang gốc, PO 22/11 = trang chủ career) coi như "su-nghiep".</summary>
-    /// <summary>Trang chủ và các trang giải (tin, mùa, vinh danh…, vốn dựng cho khung rộng) dùng khung 1180px; trang career giữ khung hẹp.</summary>
-    bool Wide => Path == "su-nghiep" || !NarrowRoots.Contains(Path.Split('/')[0]);
-    static readonly HashSet<string> NarrowRoots = ["clb", "chuyen-nhuong", "de-nghi", "tai-chinh", "ban-lanh-dao", "tap-luyen", "hoc-vien", "bxh", "lich", "thong-ke",
-        "thu", "hop-thu", "tran", "vao-tran", "cau-thu", "chuan-bi", "hlv", "thu-hlv", "phong-thay-do", "cuoc-song", "cai-dat", "dieu-khien", "truyen-thong"];
     string Path => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/') is { Length: > 0 } x ? x : "su-nghiep";
     /// <summary>Trang dùng khung career cả khi chưa cầm CLB: trang chủ career + hồ sơ / việc làm / thư HLV (PO 19/11).</summary>
     bool OnCareerHome => Path is "su-nghiep" or "hlv" or "hlv/viec-lam" or "thu-hlv" or "cuoc-song" or "cai-dat" or "dieu-khien";

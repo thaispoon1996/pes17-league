@@ -43,8 +43,8 @@ public static class CoachUi
             sb.Append($"<polygon points=\"{Poly(_ => R * k)}\" fill=\"none\" stroke=\"rgba(255,255,255,{(k == 1 ? ".22" : ".08")})\"/>");
         for (var i = 0; i < n; i++) { var (x, y) = P(i, R); sb.Append($"<line x1=\"0\" y1=\"0\" x2=\"{F(x)}\" y2=\"{F(y)}\" stroke=\"rgba(255,255,255,.08)\"/>"); }
         if (baseSkills is { Length: > 0 } && !baseSkills.SequenceEqual(skills))
-            sb.Append($"<polygon points=\"{Poly(i => R * Math.Clamp(baseSkills[i], 0, 20) / 20.0)}\" fill=\"rgba(54,227,255,.08)\" stroke=\"#36E3FF\" stroke-dasharray=\"3 3\"/>");
-        sb.Append($"<polygon points=\"{Poly(i => R * Math.Clamp(skills[i], 0, 20) / 20.0)}\" fill=\"rgba(255,201,74,.28)\" stroke=\"#FFC94A\" stroke-width=\"2\" stroke-linejoin=\"round\"/>");
+            sb.Append($"<polygon points=\"{Poly(i => R * Math.Clamp(baseSkills[i], 0, 20) / 20.0)}\" fill=\"rgba(255,185,95,.08)\" stroke=\"#ffb95f\" stroke-dasharray=\"3 3\"/>");
+        sb.Append($"<polygon points=\"{Poly(i => R * Math.Clamp(skills[i], 0, 20) / 20.0)}\" fill=\"rgba(0,255,135,.22)\" stroke=\"#00ff87\" stroke-width=\"2\" stroke-linejoin=\"round\"/>");
         for (var i = 0; i < n; i++)
         {
             var (x, y) = P(i, R * 1.28);
