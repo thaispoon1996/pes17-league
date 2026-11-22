@@ -8,7 +8,7 @@ public sealed record NameLogo(string Name, string? Logo);
 /// <summary>Cúp mùa này của CLB trong giải: cúp quốc gia cùng nước + cúp châu lục. <see cref="Entrants"/> = CLB của giải này có suất.</summary>
 public sealed record CareerLeagueCup(string Name, string? Logo, CompetitionType Type, int Teams, CompetitionRules Rules, IReadOnlyList<NameLogo> Entrants);
 /// <summary>Ngôi sao của giải: OVR cao nhất, mỗi tuyến (thủ môn/hậu vệ/tiền vệ/tiền đạo) tối đa 1 người.</summary>
-public sealed record CareerLeaguePlayer(Guid Id, string Name, Position Position, int Ovr, long Price, NameLogo Club);
+public sealed record CareerLeaguePlayer(Guid Id, string Name, Position Position, int Ovr, long Price, NameLogo Club, int? Height = null, int? Weight = null);
 /// <summary>1 mùa đã xong của giải: vô địch, vua phá lưới (bàn trong giải), CLB xuống hạng (= đá giải hạng dưới ở mùa kế).</summary>
 public sealed record CareerLeagueSeason(int Number, string Season, NameLogo? Champion, string? Scorer, NameLogo? ScorerClub, int Goals, IReadOnlyList<NameLogo> Relegated);
 /// <summary>Bảng chi tiết giải ở bước 1 career (PO 19/11 "chọn A": chỉ dữ liệu thật trong DB, lịch sử = các mùa đã đá trong career).</summary>
@@ -21,7 +21,7 @@ public sealed record CareerLeagueInfo(string Name, string? Logo, string? Country
 }
 
 /// <summary>Cầu thủ trong bảng chi tiết CLB (bước 2 career). <see cref="Wage"/> = lương/trận (hợp đồng, chưa có thì giá × ‰ career như lúc bắt đầu).</summary>
-public sealed record CareerClubPlayer(Guid Id, string Name, Position Position, int Shirt, bool Starter, int? Age, int Ovr, long Price, long Wage, int? ContractLeft);
+public sealed record CareerClubPlayer(Guid Id, string Name, Position Position, int Shirt, bool Starter, int? Age, int Ovr, long Price, long Wage, int? ContractLeft, int? Height = null, int? Weight = null);
 /// <summary>OVR TB người đá chính (11 ô đầu đội hình — đúng 11 người mô phỏng dùng) của 1 tuyến: CLB so với TB các CLB cùng giải.</summary>
 public sealed record CareerClubLine(PositionGroup Group, int Count, double Club, double League);
 /// <summary>1 mùa career đã xong của CLB: giải VĐQG, hạng cuối, danh hiệu.</summary>
@@ -68,6 +68,11 @@ public sealed partial class LeagueQueries
                          select new { p.Id, p.Name, p.Position, pr.Overall, pr.Price, m.ClubId }).Take(60).AsNoTracking().ToListAsync();
         // OVR thủ môn PES17 cao hơn hẳn → mỗi tuyến 1 người, không thì top 3 toàn thủ môn.
         top = [.. top.GroupBy(t => t.Position.Group()).Select(g => g.First()).OrderByDescending(t => t.Overall).ThenByDescending(t => t.Price).Take(3)];
+        var starIds = top.Select(t => t.Id).ToList();
+        var starBody = (await db.PlayerAttributes.AsNoTracking().Where(a => starIds.Contains(a.PlayerId) && a.SeasonId == seasonId).ToListAsync())
+            .ToDictionary(a => a.PlayerId, a => (
+                Height: a.Values.TryGetValue("HEIGHT", out var h) && h > 0 ? (int?)h : null,
+                Weight: a.Values.TryGetValue("WEIGHT", out var w) && w > 0 ? (int?)w : null));
 
         // Lịch sử: các mùa đã xong có giải này (mùa chờ bắt đầu là mùa sau cùng → mọi mùa trước đã Finished).
         var past = await (from e in db.Editions join s in db.Seasons on e.SeasonId equals s.Id
@@ -96,7 +101,11 @@ public sealed partial class LeagueQueries
         NameLogo? Continental(int tier) => editions.FirstOrDefault(e => e.Type == CompetitionType.ContinentalCup && e.Tier == tier) is { } c ? new(c.Name, c.Logo) : null;
         return new CareerLeagueInfo(comp.Name, comp.LogoPath, comp.Country, mine.Count, ed.Rules,
             comp.RelegatesToId is { } r ? links.GetValueOrDefault(r) : null, comp.PromotesToId is { } u ? links.GetValueOrDefault(u) : null,
-            Continental(1), Continental(2), cups, [.. top.Select(t => new CareerLeaguePlayer(t.Id, t.Name, t.Position, t.Overall, t.Price, clubs[t.ClubId]))], history);
+            Continental(1), Continental(2), cups, [.. top.Select(t =>
+            {
+                starBody.TryGetValue(t.Id, out var b);
+                return new CareerLeaguePlayer(t.Id, t.Name, t.Position, t.Overall, t.Price, clubs[t.ClubId], b.Height, b.Weight);
+            })], history);
     }
 
     public async Task<CareerClubInfo?> CareerClubAsync(Guid seasonId, Guid clubId, IOptionFileStore store, TimeProvider clock)
@@ -129,7 +138,8 @@ public sealed partial class LeagueQueries
         var attrs = await new EconomyService(db, clock).CurrentAttributesAsync(seasonId, ids);
         List<CareerClubPlayer> players = [.. squad.Select(r => new CareerClubPlayer(r.PlayerId, r.Name, r.Position, r.Shirt, r.Slot < 11,
             attrs.TryGetValue(r.PlayerId, out var v) && v.TryGetValue("AGE", out var age) ? age : null, r.Overall, r.Price,
-            r.Wage ?? ContractRules.Wage(r.Price, Pes17CareerService.WagePermille), r.MatchesTotal is { } t ? t - r.MatchesPlayed : null))];
+            r.Wage ?? ContractRules.Wage(r.Price, Pes17CareerService.WagePermille), r.MatchesTotal is { } t ? t - r.MatchesPlayed : null,
+            r.Height, r.Weight))];
 
         // Sân + tài trợ: như FinanceService (uy tín = hạng giá trị đội hình trong mọi CLB đang hoạt động)
         var values = await db.Clubs.Where(c => c.Status == ClubStatus.Active).Select(c => new

@@ -52,6 +52,7 @@
                 <span class="ps">@star.Position #@star.Shirt</span>
                 <div class="cx-pc tier-@tier"><Face Id="@star.PlayerId" Name="@star.Name" Size="md" /><span class="o">@star.Overall</span></div>
                 <b>@star.Name</b>
+                <small>@Fmt.Body(star.Height, star.Weight)</small>
                 <small>@(tf.TopScorer is { } t2 && t2.Id == star.PlayerId ? $"{t2.Value} bàn mùa này" : "OVR cao nhất đội")</small>
             </a>
         }

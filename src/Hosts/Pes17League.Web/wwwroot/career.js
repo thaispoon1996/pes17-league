@@ -152,7 +152,36 @@
     hashScroll();
     syncSheet(root);
     railCenter(root);
+    skillRails(root);
     enter();
+  }
+  // Chợ: dải kỹ năng tự chạy từng thẻ, hết dải thì sang nhóm kế. Dừng khi rê chuột, đang chạm, hoặc giảm chuyển động.
+  function skillRails(root) {
+    const stage = root.querySelector('.mk-skill-stage');
+    if (!stage || stage.dataset.mkLive) return;
+    stage.dataset.mkLive = '1';
+    if (reduce) return;
+    let i = 0;
+    const show = () => {
+      const runs = [...stage.querySelectorAll('.mk-run')];
+      if (!runs.length) return;
+      i %= runs.length;
+      runs.forEach((r, k) => r.classList.toggle('on', k === i));
+    };
+    show();
+    stage.addEventListener('pointerdown', () => { stage._hold = performance.now() + 8000; });
+    const timer = setInterval(() => {
+      if (!stage.isConnected) { clearInterval(timer); return; }
+      if (stage.matches(':hover') || document.hidden || stage._hold > performance.now()) return;
+      const runs = [...stage.querySelectorAll('.mk-run')];
+      if (!runs.length) return;
+      const rail = runs[i % runs.length].querySelector('.mk-cards');
+      if (!rail) return;
+      const w = (rail.querySelector('.mk-card')?.offsetWidth || 124) + 10;
+      const max = rail.scrollWidth - rail.clientWidth;
+      if (max > 8 && rail.scrollLeft + w < max - 2) rail.scrollTo({ left: rail.scrollLeft + w, behavior: 'smooth' });
+      else { rail.scrollLeft = 0; i = (i + 1) % runs.length; show(); }
+    }, 2600);
   }
   // Link có #mục (vd. hlv#hop-dong từ menu): trang nạp dữ liệu xong mới có mục → cuộn tới khi mục xuất hiện, mỗi địa chỉ 1 lần.
   let hashDone = '';

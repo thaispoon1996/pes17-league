@@ -23,8 +23,8 @@ public sealed record Upset(FixtureView Fixture, Guid Winner, double WinnerOvr, d
 public sealed record RoundRecap(int Number, IReadOnlyList<int> Rounds, IReadOnlyList<FixtureView> Fixtures, IReadOnlyList<PlayerLine> Team, PlayerLine? Best,
     IReadOnlyList<Upset> Upsets, FixtureView? Biggest, FixtureView? Wildest, int Played, int Goals, int HomeWins, int Draws, int AwayWins);
 public sealed record AttrView(string Group, string Label, int Value, int Delta, int Max, string Field);
-/// <summary>Cột thêm của bảng đội hình trang CLB: tuổi (chỉ số AGE mùa), số trận/bàn/điểm TB/xuất sắc trận cho CLB trong mùa.</summary>
-public sealed record SquadStat(int? Age, int Apps, int Goals, decimal? Rating, int Motm);
+/// <summary>Cột thêm của bảng đội hình trang CLB: tuổi/cao/nặng (snapshot mùa), số trận/bàn/điểm TB/xuất sắc trận cho CLB trong mùa.</summary>
+public sealed record SquadStat(int? Age, int Apps, int Goals, decimal? Rating, int Motm, int? Height = null, int? Weight = null);
 public sealed record PlayerGame(PlayerLine Line, FixtureView Fixture, bool Motm);
 public sealed record TransferView(DateTimeOffset At, string? From, string? To, long Fee, TransferKind Kind);
 /// <summary>Hồ sơ công khai <c>/cau-thu/{id}</c>: CLB hiện tại, giá, hợp đồng, chỉ số hiện tại (snapshot mùa + thay đổi), trận đã đá trong mùa.</summary>
@@ -317,8 +317,11 @@ public sealed partial class LeagueQueries
     public async Task<Dictionary<Guid, SquadStat>> SquadStatsAsync(SeasonInfo season, Guid clubId, IReadOnlyCollection<Guid> ids)
     {
         await using var db = await dbs.CreateDbContextAsync();
-        var age = (await db.PlayerAttributes.AsNoTracking().Where(a => ids.Contains(a.PlayerId) && a.SeasonId == season.Id).ToListAsync())
-            .ToDictionary(a => a.PlayerId, a => a.Values.TryGetValue("AGE", out var v) ? v : (int?)null);
+        var attrs = (await db.PlayerAttributes.AsNoTracking().Where(a => ids.Contains(a.PlayerId) && a.SeasonId == season.Id).ToListAsync())
+            .ToDictionary(a => a.PlayerId, a => (
+                Age: a.Values.TryGetValue("AGE", out var age) ? (int?)age : null,
+                Height: a.Values.TryGetValue("HEIGHT", out var h) && h > 0 ? (int?)h : null,
+                Weight: a.Values.TryGetValue("WEIGHT", out var w) && w > 0 ? (int?)w : null));
         var lines = (await LinesAsync(db, season.Id, clubId: clubId)).Where(l => ids.Contains(l.PlayerId)).ToList();
         var motm = Insight.Motm(await LinesAsync(db, season.Id, fixtureIds: [.. lines.Select(l => l.FixtureId).Distinct()]));
         var by = lines.ToLookup(l => l.PlayerId);
@@ -326,8 +329,10 @@ public sealed partial class LeagueQueries
         {
             var mine = by[id].ToList();
             var rated = mine.Where(l => l.Rating is not null).ToList();
-            return new SquadStat(age.GetValueOrDefault(id), mine.Count, mine.Sum(l => l.Goals),
-                rated.Count == 0 ? null : Math.Round(rated.Average(l => l.Rating!.Value), 2), mine.Count(l => motm.TryGetValue(l.FixtureId, out var b) && b.PlayerId == id));
+            var info = attrs.GetValueOrDefault(id);
+            return new SquadStat(info.Age, mine.Count, mine.Sum(l => l.Goals),
+                rated.Count == 0 ? null : Math.Round(rated.Average(l => l.Rating!.Value), 2), mine.Count(l => motm.TryGetValue(l.FixtureId, out var b) && b.PlayerId == id),
+                info.Height, info.Weight);
         });
     }
 

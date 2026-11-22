@@ -51,10 +51,10 @@ public sealed record NewsPhoto(string File, string Caption);
 public sealed record NewsPost(NewsCard Card, SeasonInfo Season, string Body, bool ByAi, IReadOnlyList<NewsPhoto> Photos);
 public sealed record NewsComp(Guid Id, string Name);
 public sealed record SquadRow(Guid PlayerId, string Name, Position Position, int Slot, int Shirt, int Overall, long Price,
-    int? MatchesTotal, int MatchesPlayed, long? Wage, RenewalStatus? Renewal);
+    int? MatchesTotal, int MatchesPlayed, long? Wage, RenewalStatus? Renewal, int? Height = null, int? Weight = null);
 /// <param name="BasePrice">Giá gốc đầu mùa (so biến động giá).</param><param name="Age">Tuổi theo chỉ số AGE mùa này.</param>
 /// <param name="Height">Chiều cao cm (HEIGHT).</param><param name="Weight">Cân nặng kg (WEIGHT).</param>
-public sealed record MarketRow(Guid PlayerId, string Name, Position Position, int? BirthYear, Guid? ClubId, int Overall, long Price, long BasePrice, int? Age, int? Height = null, int? Weight = null);
+public sealed record MarketRow(Guid PlayerId, string Name, Position Position, int? BirthYear, Guid? ClubId, int Overall, long Price, long BasePrice, int? Age, int? Height = null, int? Weight = null, int Speed = 0, int Dribble = 0, int Shot = 0, int Power = 0, int Pass = 0, int Freekick = 0, int Heading = 0, int Keeping = 0);
 public sealed record VisibilityRow(Guid PlayerId, int PesPlayerId, string Name, Position Position, Guid? ClubId, int Overall, long Price, bool? Override, bool Visible);
 
 /// <summary>Truy vấn đọc cho các trang (mỗi lệnh 1 DbContext).</summary>
@@ -267,8 +267,16 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
         var ids = rows.Select(r => r.Id).ToList();
         var renewals = (await db.ContractRenewals.Where(r => ids.Contains(r.PlayerId) && r.SeasonId == seasonId).ToListAsync())
             .GroupBy(r => r.PlayerId).ToDictionary(g => g.Key, g => g.MaxBy(r => r.RequestedAt)!.Status);
-        return [.. rows.Select(r => new SquadRow(r.Id, r.Name, r.Position, r.SlotOrder, r.ShirtNumber, r.Overall, r.Price, r.Total, r.Played, r.Wage,
-            renewals.TryGetValue(r.Id, out var st) ? st : null))];
+        var body = (await db.PlayerAttributes.AsNoTracking().Where(a => ids.Contains(a.PlayerId) && a.SeasonId == seasonId).ToListAsync())
+            .ToDictionary(a => a.PlayerId, a => (
+                Height: a.Values.TryGetValue("HEIGHT", out var h) && h > 0 ? (int?)h : null,
+                Weight: a.Values.TryGetValue("WEIGHT", out var w) && w > 0 ? (int?)w : null));
+        return [.. rows.Select(r =>
+        {
+            body.TryGetValue(r.Id, out var b);
+            return new SquadRow(r.Id, r.Name, r.Position, r.SlotOrder, r.ShirtNumber, r.Overall, r.Price, r.Total, r.Played, r.Wage,
+                renewals.TryGetValue(r.Id, out var st) ? st : null, b.Height, b.Weight);
+        })];
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int), FormationLayout> PatchLayouts = new();
@@ -307,18 +315,41 @@ public sealed partial class LeagueQueries(IDbContextFactory<ClubsDbContext> dbs,
             select "PlayerId",
                    ("Values"->>'AGE')::int as "Age",
                    ("Values"->>'HEIGHT')::int as "Height",
-                   ("Values"->>'WEIGHT')::int as "Weight"
+                   ("Values"->>'WEIGHT')::int as "Weight",
+                   ("Values"->>'TOP SPEED')::int as "Speed",
+                   ("Values"->>'DRIBBLE ACCURACY')::int as "Dribble",
+                   ("Values"->>'SHOT ACCURACY')::int as "Shot",
+                   ("Values"->>'SHOT POWER')::int as "Power",
+                   ("Values"->>'SHORT PASS ACCURACY')::int as "Pass",
+                   ("Values"->>'FREE KICK ACCURACY')::int as "Freekick",
+                   ("Values"->>'HEADING')::int as "Heading",
+                   ("Values"->>'GOAL KEEPING')::int as "Keeping"
             from clubs."PlayerAttributes" where "SeasonId" = {seasonId}
             """).ToListAsync()).ToDictionary(a => a.PlayerId);
         return [.. rows.Where(r => r.Visible && r.ClubId != excludeClubId)
             .Select(r =>
             {
                 attrs.TryGetValue(r.PlayerId, out var a);
-                return new MarketRow(r.PlayerId, r.Name, r.Position, r.BirthYear, r.ClubId, r.Overall, r.Price, basePrice.GetValueOrDefault(r.PlayerId), a?.Age, a?.Height, a?.Weight);
+                return new MarketRow(r.PlayerId, r.Name, r.Position, r.BirthYear, r.ClubId, r.Overall, r.Price, basePrice.GetValueOrDefault(r.PlayerId), a?.Age, a?.Height, a?.Weight,
+                    a?.Speed ?? 0, a?.Dribble ?? 0, a?.Shot ?? 0, a?.Power ?? 0, a?.Pass ?? 0, a?.Freekick ?? 0, a?.Heading ?? 0, a?.Keeping ?? 0);
             })];
     }
 
-    private sealed class AttrRow { public Guid PlayerId { get; set; } public int? Age { get; set; } public int? Height { get; set; } public int? Weight { get; set; } }
+    private sealed class AttrRow
+    {
+        public Guid PlayerId { get; set; }
+        public int? Age { get; set; }
+        public int? Height { get; set; }
+        public int? Weight { get; set; }
+        public int? Speed { get; set; }
+        public int? Dribble { get; set; }
+        public int? Shot { get; set; }
+        public int? Power { get; set; }
+        public int? Pass { get; set; }
+        public int? Freekick { get; set; }
+        public int? Heading { get; set; }
+        public int? Keeping { get; set; }
+    }
     private sealed class AgeRow { public Guid PlayerId { get; set; } public int? Age { get; set; } }
 
     /// <summary>Tuổi (chỉ số AGE mùa này) của một nhóm cầu thủ (vd. đội của mình).</summary>
@@ -429,6 +460,10 @@ public static class Fmt
 {
     /// <summary>Tên mùa có thể đã gồm chữ "Mùa" ("Mùa 1") → không lặp "Mùa Mùa 1".</summary>
     public static string Season(string name) => name.StartsWith("Mùa", StringComparison.OrdinalIgnoreCase) ? name : "Mùa " + name;
+
+    /// <summary>Chiều cao · cân nặng trên thẻ cầu thủ. Thiếu số → "–".</summary>
+    public static string Body(int? height, int? weight) =>
+        $"{(height is > 0 ? $"{height} cm" : "–")} · {(weight is > 0 ? $"{weight} kg" : "–")}";
 
     public static string Country(string? code) => code switch
     {

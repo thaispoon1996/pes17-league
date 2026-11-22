@@ -81,7 +81,7 @@
             @foreach (var p in squad.Where(x => x.Slot > 10))
             {
                 <div class="pl @(picked == p.PlayerId ? "picked" : "")" data-pid="@p.PlayerId" @onclick="() => Tap(p)">
-                    <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall</small>
+                    <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall · @Fmt.Body(p.Height, p.Weight)</small>
                 </div>
             }
         </div>

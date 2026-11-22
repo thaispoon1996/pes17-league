@@ -82,14 +82,15 @@ else
                 <div class="panel-head"><h2>Thể hình</h2></div>
                 <p class="muted note">Trung bình đội hình hiện tại · xếp theo chiều cao</p>
                 <table class="table static">
-                    <thead><tr><th class="left">CLB</th><th>Cao</th><th>Nặng</th></tr></thead>
+                    <thead><tr><th class="left" style="width:100%">CLB</th><th>Cao</th><th>Nặng</th></tr></thead>
                     <tbody>
                         @foreach (var (club, avg) in physique)
                         {
+                            var cn = season.Clubs.GetValueOrDefault(club, "?");
                             <tr>
-                                <td class="left"><a href="@season.Url($"clb/{club}")"><Crest Name="@season.Clubs.GetValueOrDefault(club, "?")" Logo="@season.Logo(club)" />@season.Clubs.GetValueOrDefault(club, "?")</a></td>
-                                <td>@(avg.HeightCm is { } h ? $"{h:0.0}" : "–")</td>
-                                <td>@(avg.WeightKg is { } w ? $"{w:0.0}" : "–")</td>
+                                <td class="left"><a href="@season.Url($"clb/{club}")" style="display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%"><Crest Name="@cn" Logo="@season.Logo(club)" /><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@cn</span></a></td>
+                                <td style="white-space:nowrap">@(avg.HeightCm is { } h ? $"{h:0.0}" : "–")</td>
+                                <td style="white-space:nowrap">@(avg.WeightKg is { } w ? $"{w:0.0}" : "–")</td>
                             </tr>
                         }
                     </tbody>

@@ -28,6 +28,8 @@
                 <div><b>@(glance?.Rank is { } rk ? $"#{rk}" : "–")</b><span>@(glance?.Points is { } pt ? $"{pt} điểm" : "Hạng")</span></div>
                 <div><b>@Avg(squad.Where(p => p.Slot <= 10).Select(p => p.Overall))</b><span>OVR đá chính</span></div>
                 <div><b>@Fmt.Money(squad.Sum(p => p.Price))</b><span>Giá trị</span></div>
+                <div><b>@(physique.HeightCm is { } cm ? $"{cm:0.0}" : "–")</b><span>Cao TB</span></div>
+                <div><b>@(physique.WeightKg is { } kg ? $"{kg:0.0}" : "–")</b><span>Nặng TB</span></div>
             </div>
         </section>
     }
@@ -91,6 +93,7 @@
                                 <span class="o">@(hide ? ScoutRules.Mask(p.Overall) : p.Overall.ToString())</span><span class="ps @Fmt.Group(p.Position)">@p.Position</span>
                                 <Face Id="@p.PlayerId" Name="@p.Name" Size="md" />
                                 <a class="nm" href="@season.Url($"cau-thu/{p.PlayerId}")" @onclick:stopPropagation="true">@p.Name</a>
+                                <small>@(st?.Height is { } ht ? $"{ht} cm" : "–") · @(st?.Weight is { } wt ? $"{wt} kg" : "–")</small>
                                 <small>@(st?.Apps ?? 0) trận · @(st?.Goals ?? 0) bàn · @(st?.Rating?.ToString("0.0") ?? "–")</small>
                                 <em title="Hợp đồng đã đá/tổng trận">HĐ @p.MatchesPlayed/@(p.MatchesTotal?.ToString() ?? "∞")</em>
                             </div>

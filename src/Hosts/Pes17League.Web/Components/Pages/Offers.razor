@@ -149,6 +149,7 @@
                     <span class="stamp"><i class="ms fill" aria-hidden="true">sell</i>@(sd.Loan ? "Đã cho mượn" : "Đã bán")</span>
                 </div>
                 <h2>@sd.Name</h2>
+                <p>@Fmt.Body(sd.Height, sd.Weight)</p>
                 <p>@season.Clubs.GetValueOrDefault(me, "") → @sd.Buyer</p>
                 <div class="cx-facts">
                     <div><b>+@Fmt.Money(sd.Fee)</b><span>@(sd.Loan ? "Phí mượn" : "Tiền bán")</span></div>
@@ -213,7 +214,7 @@ else
     [SupplyParameterFromQuery(Name = "cau-thu")] public Guid? PlayerParam { get; set; }
 
     sealed record MyPlayer(Guid PlayerId, string Name, long Price, long? Clause, bool OnLoan);
-    sealed record Sold(Guid PlayerId, string Name, Position Position, int Overall, string Buyer, long Fee, long? Wage, bool Loan);
+    sealed record Sold(Guid PlayerId, string Name, Position Position, int Overall, string Buyer, long Fee, long? Wage, bool Loan, int? Height, int? Weight);
 
     SeasonInfo? season;
     TransferWindow? window;
@@ -348,6 +349,7 @@ else
                         {
                             <div class="meta">
                                 @if (ages.GetValueOrDefault(p.PlayerId) is { } age) { <span>@age tuổi</span> }
+                                <span>@Fmt.Body(p.Height, p.Weight)</span>
                                 <span class="@(p.Slot < 11 ? "of-xi" : null)">@(p.Slot < 11 ? "Đá chính" : "Dự bị")</span>
                             </div>
                             @if (p.MatchesTotal is { } mt) { <div class="meta"><span>@($"HĐ còn {mt - p.MatchesPlayed} trận" + (p.Wage is { } w ? $" · lương {Fmt.Money(w)}/vòng" : ""))</span></div> }
@@ -621,7 +623,7 @@ else
         // Career: bán xong → màn "Đã bán" (thẻ cầu thủ + tiền về) thay cho dòng thông báo.
         if (Shell is not null && r.Error is null && r.Status == OfferStatus.Completed && sq.FirstOrDefault(s => s.PlayerId == o.PlayerId) is { } p)
         {
-            sold = new(o.PlayerId, o.Player, p.Position, p.Overall, o.Buyer, fee ?? o.Fee, p.Wage, o.Kind == OfferKind.Loan);
+            sold = new(o.PlayerId, o.Player, p.Position, p.Overall, o.Buyer, fee ?? o.Fee, p.Wage, o.Kind == OfferKind.Loan, p.Height, p.Weight);
             message = null;
         }
     });

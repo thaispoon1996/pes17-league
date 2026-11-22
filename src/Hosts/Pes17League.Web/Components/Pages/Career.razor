@@ -356,6 +356,7 @@
                                     <span class="o">@p.Ovr</span><span class="ps">@p.Position</span>
                                     <Face Id="p.Id" Name="@p.Name" Size="md" />
                                     <b>@p.Name</b>
+                                    <small>@Fmt.Body(p.Height, p.Weight)</small>
                                     <small><Crest Name="@p.Club.Name" Logo="@p.Club.Logo" />@p.Club.Name</small>
                                     <small class="price">@Fmt.Money(p.Price)</small>
                                 </div>
@@ -485,7 +486,7 @@
                                 <span class="o">@p.Ovr</span><span class="ps">@p.Position</span>
                                 <Face Id="p.Id" Name="@p.Name" Size="md" />
                                 <b>@p.Name</b>
-                                <small>@(p.Age is { } a ? $"{a} tuổi" : "")</small>
+                                <small>@(p.Age is { } a ? $"{a} tuổi · " : "")@Fmt.Body(p.Height, p.Weight)</small>
                                 <small class="price">@Fmt.Money(p.Price)</small>
                             </div>
                         }
@@ -493,7 +494,7 @@
                     @if (youth is not null)
                     {
                         <div class="youth"><i class="ms fill" aria-hidden="true">auto_awesome</i><span><small>Trẻ đáng chú ý</small><b>@youth.Name</b></span>
-                            <span class="meta">@youth.Position · @youth.Age tuổi</span><span class="cx-ovr">@youth.Ovr</span></div>
+                            <span class="meta">@youth.Position · @youth.Age tuổi · @Fmt.Body(youth.Height, youth.Weight)</span><span class="cx-ovr">@youth.Ovr</span></div>
                     }
 
                     <h3>Đội hình (@cd.Players.Count)</h3>
@@ -506,7 +507,7 @@
                             {
                                 <li class="@(p.Starter ? "st" : "")">
                                     <span class="ps">@p.Position</span>
-                                    <span class="who"><b>@p.Name</b><small>@(p.Age is { } a ? $"{a} tuổi · " : "")số @p.Shirt@(p.ContractLeft is { } cl ? $" · HĐ {cl} trận" : "")</small></span>
+                                    <span class="who"><b>@p.Name</b><small>@(p.Age is { } a ? $"{a} tuổi · " : "")@Fmt.Body(p.Height, p.Weight) · số @p.Shirt@(p.ContractLeft is { } cl ? $" · HĐ {cl} trận" : "")</small></span>
                                     <span class="cx-ovr tier-@(CardTier(p.Ovr))">@p.Ovr</span>
                                     <span class="money"><b>@Fmt.Money(p.Price)</b><small>lương @Fmt.Money(p.Wage)</small></span>
                                 </li>

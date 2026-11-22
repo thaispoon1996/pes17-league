@@ -139,11 +139,12 @@
                         <h2>Thể hình <small>TB đội hình · xếp theo cao</small></h2>
                         @foreach (var (club, avg, i) in physique.Select((x, i) => (x.Club, x.Avg, i)))
                         {
-                            <a class="pl @(i == 0 ? "first" : null) @(club == me ? "my" : null)" href="@season.Url($"clb/{club}")">
+                            var cn = season.Clubs.GetValueOrDefault(club, "?");
+                            <a class="pl @(club == me ? "my" : null)" href="@season.Url($"clb/{club}")">
                                 <span class="r">@(i + 1)</span>
-                                <span class="nm"><b>@season.Clubs.GetValueOrDefault(club, "?")</b><span><Crest Name="@season.Clubs.GetValueOrDefault(club, "?")" Logo="@season.Logo(club)" /></span></span>
-                                <span class="v"><b>@(avg.HeightCm is { } h ? $"{h:0.0}" : "–")</b><small>cm</small></span>
-                                <span class="v"><b>@(avg.WeightKg is { } w ? $"{w:0.0}" : "–")</b><small>kg</small></span>
+                                <span class="face" style="display:grid;place-items:center"><Crest Name="@cn" Logo="@season.Logo(club)" /></span>
+                                <span class="nm"><b>@cn</b></span>
+                                <span class="v"><b>@(avg.HeightCm is { } h ? $"{h:0.0}" : "–")</b><small>@(avg.WeightKg is { } w ? $"{w:0.0} kg" : "– kg")</small></span>
                             </a>
                         }
                     </section>

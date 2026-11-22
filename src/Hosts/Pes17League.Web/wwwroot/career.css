@@ -3496,3 +3496,13 @@ html:has(.bx-sheet) { overflow: hidden; }
 .cx .st-tip { color: var(--muted); }
 .cx .st-tip:hover b { color: var(--text); }
 @media (max-width: 420px) { .cx .st-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cx .st-chips.st-gfx { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Tổng quan CLB: thêm cao/nặng TB — 5 ô một hàng, điện thoại xuống 3. */
+.cx-clubhero .cx-facts { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 720px) { .cx-clubhero .cx-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Chợ: một nhóm kỹ năng hiện tại; JS tự chạy thẻ rồi đổi nhóm. Giảm chuyển động thì hiện hết. */
+.cx .mk-skill-stage { margin-top: 18px; }
+.cx .mk-skill-stage .mk-run { display: none; }
+.cx .mk-skill-stage .mk-run.on { display: block; }
+@media (prefers-reduced-motion: reduce) { .cx .mk-skill-stage .mk-run { display: block; } }
