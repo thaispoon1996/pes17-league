@@ -47,17 +47,23 @@
   poll();
 })();
 
-// Nút Toàn màn hình + Giảm giật giữa mép trên khung game (PO 22/11; góc trên trái là bảng tỉ số, góc phải là logo giải). Nằm cùng khối cha với canvas → vẫn thấy khi toàn màn hình;
+// Nút Toàn màn hình + Giảm giật + Tiếng giữa mép trên khung game (PO 22/11, Tiếng 23/11; góc trên trái là bảng tỉ số, góc phải là logo giải). Nằm cùng khối cha với canvas → vẫn thấy khi toàn màn hình;
 // tự mờ sau 3 giây không đụng chuột/chạm. Toàn màn hình: nhờ Selkies (postMessage requestFullscreen = phóng khối cha canvas).
 // iPhone không có API toàn màn hình cho trang → báo cách xoay ngang / thêm vào màn hình chính.
 // Giảm giật: stream chạy bitrate cố định (CBR) → hạ bitrate 18→8 Mbps (giữ 60 khung/giây: 45 lệch nhịp màn 60 Hz lại giật).
 // Máy cho khoảng 8–18 (docker-compose SELKIES_VIDEO_BITRATE), mặc định máy chủ là 8 → trang luôn gửi mức đang chọn sau khi nối.
 // Cả 2 người cùng xem 1 luồng mã hoá: ai bật cũng áp cho cả hai.
+// Tiếng (23/11): game đã có âm thanh (Selkies gửi Opus). Nút bật/tắt tiếng chỉ đổi âm lượng ở máy người xem (postMessage setVolume 0/1), nhớ theo trình duyệt.
 (() => {
-  const LOWLAG = { video_bitrate: 8 }, NORMAL = { video_bitrate: 18 };
-  const KEY = 'pes_lowlag';
+  // h264_streaming_mode: mã hoá cả khung thay vì theo dải — đo 23/11 lúc đang đá (Chrome, 30 s/lần): cả khung đều 60 khung/s,
+  // theo dải 53–58 khung/s và có lúc khựng 0,7 s; bitrate như nhau. VAAPI (card AMD) thử thì mất hình → giữ mã hoá CPU.
+  const LOWLAG = { video_bitrate: 8, h264_streaming_mode: true }, NORMAL = { video_bitrate: 18, h264_streaming_mode: true };
+  const KEY = 'pes_lowlag', MUTE = 'pes_mute';
   const get = () => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } };
   const put = v => { try { localStorage.setItem(KEY, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
+  const muted = () => { try { return localStorage.getItem(MUTE) === '1'; } catch { return false; } };
+  const putMuted = v => { try { localStorage.setItem(MUTE, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
+  const sendVol = () => window.postMessage({ type: 'setVolume', value: muted() ? 0 : 1 }, window.location.origin);
   const send = v => window.postMessage({ type: 'settings', settings: v ? LOWLAG : NORMAL }, window.location.origin);
   const fsOk = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -81,15 +87,18 @@
   const FS_IN = 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z';
   const FS_OUT = 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z';
   const BOLT = 'M7 2v11h3v9l7-12h-4l4-8z';
+  const VOL_ON = 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54z';
+  const VOL_OFF = 'M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12a9 9 0 0 0-7-8.77v2.06A7 7 0 0 1 19 12zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z';
 
   const bar = document.createElement('div');
   bar.id = 'pes-bar';
   bar.innerHTML = `<button type="button" id="pes-fs" title="Toàn màn hình" aria-label="Toàn màn hình">${svg(FS_IN)}</button>`
-    + `<button type="button" id="pes-lag" title="Giảm giật: giảm dung lượng hình (8 Mbps) cho mạng yếu" aria-label="Giảm giật">${svg(BOLT)}</button>`;
+    + `<button type="button" id="pes-lag" title="Giảm giật: giảm dung lượng hình (8 Mbps) cho mạng yếu" aria-label="Giảm giật">${svg(BOLT)}</button>`
+    + `<button type="button" id="pes-snd" aria-label="Tiếng game">${svg(VOL_ON)}</button>`;
   const toast = document.createElement('div');
   toast.id = 'pes-toast';
   toast.setAttribute('role', 'status');
-  const fsBtn = bar.querySelector('#pes-fs'), lagBtn = bar.querySelector('#pes-lag');
+  const fsBtn = bar.querySelector('#pes-fs'), lagBtn = bar.querySelector('#pes-lag'), sndBtn = bar.querySelector('#pes-snd');
 
   let tt;
   const say = msg => {
@@ -116,6 +125,9 @@
     fsBtn.title = f ? 'Thoát toàn màn hình' : 'Toàn màn hình';
     fsBtn.setAttribute('aria-label', fsBtn.title);
     lagBtn.setAttribute('aria-pressed', String(get()));
+    sndBtn.setAttribute('aria-pressed', String(!muted()));
+    sndBtn.innerHTML = svg(muted() ? VOL_OFF : VOL_ON);
+    sndBtn.title = muted() ? 'Bật tiếng game' : 'Tắt tiếng game';
     place();
   };
 
@@ -131,6 +143,12 @@
     say(v ? 'Giảm giật: BẬT — hình nhẹ hơn (8 Mbps), hợp mạng yếu' : 'Giảm giật: TẮT — hình nét nhất (18 Mbps)');
   });
 
+  sndBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    putMuted(!muted()); sendVol(); sync();
+    say(muted() ? 'Tiếng game: TẮT' : 'Tiếng game: BẬT');
+  });
+
   let idle;
   const wake = () => { bar.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => bar.classList.add('idle'), 3000); };
   ['mousemove', 'touchstart', 'keydown'].forEach(ev => document.addEventListener(ev, wake, { passive: true }));
@@ -139,6 +157,6 @@
   window.addEventListener('resize', place);
   setInterval(place, 1000);
   // Gửi mức đang chọn sau khi nối máy (mặc định máy chủ 8 Mbps); gửi 2 lần cho chắc khi mạng chậm.
-  [3000, 8000].forEach(t => setTimeout(() => send(get()), t));
+  [3000, 8000].forEach(t => setTimeout(() => { send(get()); sendVol(); }, t));
   sync(); wake();
 })();

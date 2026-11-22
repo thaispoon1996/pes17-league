@@ -21,7 +21,9 @@
   error{reason}. Bàn thắng in ngay trước "end", đã khớp tỷ số cuối (ghi kết quả nguồn Memory đòi khớp).
   ratings{home:[{shirt,rating}],away:[...]} đọc từ bảng Player Rankings ở menu hết trận (11 người đầu mỗi bên).
   PESMATCH_LOGO=FILE (trận giải, PO 22/11): logo giải góc phải trên trang chơi Selkies từ lúc giao bóng tới hết trận (overlay(), tools/bench/pes-overlay.js).
-  AFK (trận 2 người): xem AFK_STALL / Presence (tools/afk17.py). Chưa có: ghi hình (PESMATCH_REC), hiệp phụ/penalty (PESMATCH_EXTRA_TIME), người ghi bàn.
+  AFK (trận 2 người): xem AFK_STALL / Presence (tools/afk17.py). Chưa có: hiệp phụ/penalty (PESMATCH_EXTRA_TIME), người ghi bàn.
+  Ghi hình PESMATCH_REC=FILE.mkv (+ PESMATCH_LIVE=FILE.m3u8 xem trực tiếp), 23/11: chỉ khi $DATA/pes17-deploy/record-mode = bot|all
+  (mặc định tắt, tools/rec17.py). Ghi từ lúc bấm Kickoff tới hết trận; sự kiện recording{path} / live{path}; khi ghi, "wall" = giây trong video.
 """
 from __future__ import annotations
 
@@ -33,6 +35,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import m17nav as nav   # noqa: E402
 import loop            # noqa: E402
 import m17ocr as ocr   # noqa: E402
+import rec17           # noqa: E402
 from PIL import Image, ImageChops, ImageStat   # noqa: E402
 
 REPO = ROOT.parents[1]
@@ -42,12 +45,14 @@ LOCK = Path(os.environ.get("PESMATCH_LOCK") or OUT / "match.lock")   # web truy�
 WAIT_GO = os.environ.get("PESMATCH_WAIT_GO") == "1"
 WARM = os.environ.get("PESMATCH_WARM") == "1"
 BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
+REC = os.environ.get("PESMATCH_REC")     # web luôn truyền; chỉ ghi khi record-mode cho phép (rec17.wanted)
 LOGO = os.environ.get("PESMATCH_LOGO")   # logo giải của trận (web, PO 22/11) → góc phải trên màn hình chơi, từ lúc giao bóng tới hết trận
 OVERLAY = "/bench/overlay"                # trong pes17-bench; trang Selkies đọc ở pes/overlay.json (tools/bench/pes-overlay.js)
 BOOT_TIMEOUT = 300        # từ lúc mở game tới màn chọn đội
 NO_PITCH_TIMEOUT = 600    # quá 10 phút không thấy HUD trận → treo
 HUMAN_PREMATCH_TIMEOUT = 1800
 HUMAN_HALFTIME_TIMEOUT = 600   # trận có người: nghỉ giữa hiệp quá 10 phút → máy bấm 2nd Half
+GOAL_LAG = 1.5   # mốc bàn = lần cuối thấy tỷ số cũ + 1,5 s (1 nhịp đọc HUD ~3 s; Match.old_seen)
 # Luật AFK (giống PES6, PO 17/11; PES17 18/11): trận 2 người, chưa giao bóng hoặc đồng hồ đứng quá 5 phút (không tính nghỉ giữa hiệp)
 # → bên không bấm gì ≥ 4 phút là vắng: đúng 1 bên → error afk_home|afk_away (bên đó xử thua 0-3), cả hai/không rõ → afk (huỷ).
 AFK_STALL = int(os.environ.get("PESMATCH_AFK_STALL", 300))   # biến môi trường chỉ để thử
@@ -363,8 +368,9 @@ class Match:
     bảng số Half Time/Time Up → A; menu nghỉ (đồng hồ 45:00) → A (ô 2nd Half chọn sẵn); menu hết trận → tỷ số cuối.
     Replay/cận cảnh tự qua, máy không bấm gì khi đang đá (cả trận BOT lẫn trận có người)."""
 
-    def __init__(self, human: str | None, presence: "Presence | None" = None):
+    def __init__(self, human: str | None, presence: "Presence | None" = None, t0: float | None = None):
         self.human = human
+        self.t0 = t0               # mốc 0 của bản ghi hình (rec17.start): có → "wall" = giây trong video, không thì tính từ giao bóng
         self.presence = presence   # trận 2 người: đo AFK
         self.halftime = None
         self.half = 0
@@ -373,9 +379,13 @@ class Match:
         self.pending, self.seen = None, 0
         self.goals: list[dict] = []    # {side, half, minute, wall}
         self.minute = 0
+        # Lần cuối HUD còn hiện tỷ số cũ: bóng vào lưới là game cắt sang ăn mừng + chiếu lại (HUD ẩn ~75 s), HUD hiện tỷ số mới
+        # khi giao bóng lại → mốc bàn = lần cuối thấy tỷ số cũ + nửa nhịp đọc (đo 23/11 trên bản ghi: bàn ~287 s, thấy tỷ số mới 379 s).
+        self.old_seen: float | None = None
 
     def wall(self) -> float:
-        return round(time.monotonic() - self.kick, 1) if self.kick else 0.0
+        base = self.t0 or self.kick
+        return round(time.monotonic() - base, 1) if base else 0.0
 
     def on_hud(self, h: dict) -> None:
         if h["minute"] is not None:
@@ -383,6 +393,7 @@ class Match:
         cur = (h["home"], h["away"])
         if cur == self.hud:
             self.pending, self.seen = None, 0
+            self.old_seen = self.wall()
             return
         if any(c - o > 2 for c, o in zip(cur, self.hud)):   # +3 bàn trong 1 nhịp = đọc sai (vd "1-0" → "10-0"), bỏ hẳn
             return
@@ -398,7 +409,8 @@ class Match:
         for i, side in enumerate(("home", "away")):
             for _ in range(step[i]):
                 minute = max(1, min(self.minute or (45 * self.half + 45), 90 if self.half else 45))
-                self.goals.append({"side": side, "half": self.half, "minute": minute, "wall": self.wall()})
+                wall = min(self.wall(), self.old_seen + GOAL_LAG) if self.old_seen is not None else self.wall()
+                self.goals.append({"side": side, "half": self.half, "minute": minute, "wall": wall})
                 log(f"bàn {side} phút {minute} → {cur}")
             for _ in range(-step[i]):   # sửa đọc sai: bỏ bàn ghi sau cùng của bên đó
                 ks = [k for k, g in enumerate(self.goals) if g["side"] == side]
@@ -407,6 +419,7 @@ class Match:
                 j = ks[-1]
                 log(f"bỏ bàn {side} phút {self.goals.pop(j)['minute']} → {cur}")
         self.hud, self.pending, self.seen = cur, None, 0
+        self.old_seen = self.wall()
 
     def final_goals(self, hg: int, ag: int) -> list[dict]:
         """Bàn HUD bắt được, cắt/bù cho khớp tỷ số cuối (bàn bù: phút 90)."""
@@ -671,9 +684,11 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         log(f"container {container}: bộ chạy PES17 chỉ dùng pes17-bench")
     OUT.mkdir(parents=True, exist_ok=True)
     LOCK.write_text(f"{os.getpid()} {home}-{away}\n")
+    recording, t_rec = None, None
     try:
         emit(event="stage", stage="boot")
         overlay(None)   # bỏ logo sót của trận trước (bộ chạy bị dừng ngang)
+        rec17.stop(f"pesrec-{container}")   # bản ghi sót của lần chạy bị dừng ngang → đóng file gọn
         if WAIT_GO or WARM:
             threading.Thread(target=read_cmds, daemon=True).start()
         gs = game_settings()
@@ -699,19 +714,23 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             if WAIT_GO or WARM:
                 self_started = wait_go(squads, home, away, setup)
         emit(event="stage", stage="loading")
+        if REC and rec17.wanted(OUT, human):
+            recording, t_rec = rec17.start(container, REC, os.environ.get("PESMATCH_LIVE"), emit)
         if not self_started:
             nav.pad("A w:2")   # Kickoff
         pres = Presence() if both else None
         try:
             if both:
                 wait_pitch()
-            m = Match(human, pres)
+            m = Match(human, pres, t_rec)
             hg, ag = m.run()
         except NavError as e:
             if str(e).startswith("afk"):
                 leave_match()   # huỷ/xử thua vì AFK: bỏ trận đang dở để trận sau vào được màn chọn đội
             raise
         finally:
+            rec17.stop(recording)   # trước "end": web dừng bộ chạy ngay sau "end"
+            recording = None
             if pres:
                 pres.close()
             if LOGO:
@@ -735,6 +754,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         emit(event="error", reason=f"{type(e).__name__}: {e}")
         return 1
     finally:
+        rec17.stop(recording)   # lỗi trước khi vào trận (đã bắt đầu ghi)
         LOCK.unlink(missing_ok=True)
 
 

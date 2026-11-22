@@ -21,6 +21,7 @@ services:
       SELKIES_ENCODER: x264enc
       SELKIES_VIDEO_BITRATE: "8-18"   # khoảng: trang chơi (pes-overlay.js) tự đặt 18, nút "Giảm giật" hạ 8 (PO 22/11)
       SELKIES_FRAMERATE: "60"
+      SELKIES_H264_STREAMING_MODE: "true"   # mã hoá cả khung: đều 60 khung/s (đo 23/11), theo dải 53–58 + khựng; pes-overlay.js cũng gửi
       SELKIES_ENABLE_RATE_CONTROL: "true"
       SELKIES_RATE_CONTROL_MODE: cbr
       SELKIES_MANUAL_WIDTH: "1280"
