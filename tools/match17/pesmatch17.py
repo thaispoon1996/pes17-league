@@ -38,7 +38,7 @@ from PIL import Image, ImageChops, ImageStat   # noqa: E402
 REPO = ROOT.parents[1]
 DATA = Path(os.environ.get("PES17_DATA") or (Path(os.environ["PES17_STORE"]).parent if os.environ.get("PES17_STORE") else Path.home() / "pes17league-data"))
 OUT = DATA / "pes17-deploy"
-LOCK = OUT / "match.lock"
+LOCK = Path(os.environ.get("PESMATCH_LOCK") or OUT / "match.lock")   # web truyền đường dẫn để tự xoá khi dừng bộ chạy ngang (PO 22/11)
 WAIT_GO = os.environ.get("PESMATCH_WAIT_GO") == "1"
 WARM = os.environ.get("PESMATCH_WARM") == "1"
 BENCH = os.environ.get("PES17_BENCH", "pes17-bench")

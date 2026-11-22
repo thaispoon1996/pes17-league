@@ -28,10 +28,14 @@ b.Services.AddDbContextFactory<ClubsDbContext>(o => o.UseNpgsql(cs, x => x.Migra
 b.Services.AddSingleton<IOptionFileStore>(new FileSystemOptionFileStore(storeDir));
 b.Services.AddSingleton(new Pes17GameFormations(Path.GetFullPath(Path.Combine(storeDir, "..", "pesdb", "formations.json"))));   // sơ đồ game PES17 (PO 21/11)
 b.Services.AddSingleton(TimeProvider.System);
+// Khoá "đang đá" của bộ chạy trận (tools/match17/pesmatch17.py, sync.sh đọc). Bộ chạy là tiến trình con của web → web vừa khởi động
+// thì khoá còn sót là khoá chết (restart giữa trận), xoá luôn (PO 22/11).
+var matchLock = Path.GetFullPath(Path.Combine(storeDir, "..", "pes17-deploy", "match.lock"));
+if (File.Exists(matchLock)) { Console.WriteLine($"Xoá khoá trận sót: {File.ReadAllText(matchLock).Trim()}"); File.Delete(matchLock); }
 b.Services.AddSingleton(new MatchJobOptions(
     Path.GetFullPath(b.Configuration["Match:Script"]!), Path.Combine(storeDir, "..", "run"), b.Configuration["Match:StreamUrl"]!,
     Path.Combine(storeDir, "..", "recordings"), Path.Combine(storeDir, "..", "highlights"), b.Configuration.GetValue("Match:MinFreeDiskGb", 20),
-    Path.Combine(storeDir, "..", "stats"), Path.Combine(storeDir, "..", "live"), Path.Combine(storeDir, "..", "logos")));
+    Path.Combine(storeDir, "..", "stats"), Path.Combine(storeDir, "..", "live"), Path.Combine(storeDir, "..", "logos"), matchLock));
 b.Services.AddSingleton(new HighlightStore(Path.GetFullPath(Path.Combine(storeDir, "..", "highlights"))));
 b.Services.AddSingleton(new RoundReelStore(Path.GetFullPath(Path.Combine(storeDir, "..", "reels"))));
 b.Services.AddSingleton(new LiveStore(Path.GetFullPath(Path.Combine(storeDir, "..", "live"))));

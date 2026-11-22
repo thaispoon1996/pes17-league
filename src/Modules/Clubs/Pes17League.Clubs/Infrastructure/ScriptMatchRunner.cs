@@ -20,9 +20,11 @@ namespace Pes17League.Clubs.Infrastructure;
 /// <paramref name="liveDir"/>: có (cùng ghi hình) → thêm HLS xem trực tiếp (PESMATCH_LIVE) {liveDir}/{fixture}.m3u8, sự kiện "live" khi bắt đầu ghi.
 /// <paramref name="logoDir"/>: thư mục logo tải lên (LogoStore) — trận có <see cref="MatchRunRequest.CompetitionLogo"/> và file có thật
 /// → PESMATCH_LOGO = đường dẫn file (bộ chạy PES17 đặt logo lên màn hình chơi).
+/// <paramref name="lockFile"/>: khoá "đang đá" của bộ chạy (PESMATCH_LOCK, nội dung "PID trận"). Bộ chạy bị dừng ngang (web dừng ngay sau "end",
+/// huỷ, lỗi) không kịp tự xoá → xoá hộ khi khoá còn ghi PID của nó, kẻo sync.sh tưởng vẫn đang đá (PO 22/11).
 /// </summary>
 public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<MatchRunRequest, JsonElement>? onEvent = null, string? recordingDir = null,
-    string? liveDir = null, TimeSpan? syncQuiet = null, string? logoDir = null)
+    string? liveDir = null, TimeSpan? syncQuiet = null, string? logoDir = null, string? lockFile = null)
     : IMatchRunner
 {
     /// <summary>Gom thay đổi đội hình: HLV thường chỉnh liền nhiều lần, mỗi lần cài lại PES17 phải khởi động lại game (~1,5–2 phút).</summary>
@@ -45,8 +47,10 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         if (liveDir is not null) psi.Environment["PESMATCH_LIVE"] = Path.Combine(Path.GetFullPath(liveDir), $"{r.FixtureId:N}.m3u8");
         if (logoDir is not null && r.CompetitionLogo is { Length: > 0 } logo && Path.Combine(Path.GetFullPath(logoDir), Path.GetFileName(logo)) is var lf && File.Exists(lf))
             psi.Environment["PESMATCH_LOGO"] = lf;
+        if (lockFile is not null) psi.Environment["PESMATCH_LOCK"] = Path.GetFullPath(lockFile);
 
         using var p = Process.Start(psi)!;
+        var pid = p.Id;
         var stdin = new SemaphoreSlim(1, 1);
         async Task Send(string line)
         {
@@ -149,10 +153,21 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         {
             running.Cancel();
             if (!p.HasExited) p.Kill(entireProcessTree: true);
+            DropLock(pid);
             File.Delete(of);
             foreach (var f in Directory.EnumerateFiles(workDir, $"{r.FixtureId:N}.*.of"))
                 try { File.Delete(f); } catch (IOException) { }
         }
+    }
+
+    private void DropLock(int pid)
+    {
+        if (lockFile is null) return;
+        try
+        {
+            if (File.Exists(lockFile) && File.ReadAllText(lockFile).StartsWith($"{pid} ", StringComparison.Ordinal)) File.Delete(lockFile);
+        }
+        catch (IOException) { }   // khoá là phụ: lỗi đọc/xoá không làm hỏng kết quả trận
     }
 
     /// <summary>Dòng memory: player (ID PES), slot, rating|null; dòng chụp màn: shirt, rating.</summary>

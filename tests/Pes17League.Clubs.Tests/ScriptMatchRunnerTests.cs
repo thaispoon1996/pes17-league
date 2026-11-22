@@ -60,4 +60,34 @@ public sealed class ScriptMatchRunnerTests : IDisposable
         Assert.Equal(["sync v1", "go v2"], File.ReadAllLines(Path.Combine(dir, $"{req.FixtureId:N}.of.stdin")));
         Assert.Empty(Directory.GetFiles(dir, "*.of"));                          // OF + bản sync/go đã dọn
     }
+
+    // bộ chạy giả giữ khoá như pesmatch17: ghi "PID trận", báo hết trận rồi còn đi menu (web dừng ngang → không tự xoá được)
+    private const string Locker = """
+        import os, sys, json, time
+        open(os.environ["PESMATCH_LOCK"], "w").write(f"{os.getpid()} 1-2\n")
+        print(json.dumps({"event": "end", "home": 0, "away": 1}), flush=True)
+        time.sleep(60)
+        os.unlink(os.environ["PESMATCH_LOCK"])
+        """;
+
+    [PythonFact]
+    public async Task Runner_stopped_after_end_drops_its_lock_but_not_a_newer_one()
+    {
+        var script = Path.Combine(dir, "locker.py");
+        File.WriteAllText(script, Locker);
+        var lockFile = Path.Combine(dir, "deploy", "match.lock");
+        Directory.CreateDirectory(Path.GetDirectoryName(lockFile)!);
+        var runner = new ScriptMatchRunner(script, dir, lockFile: lockFile);
+        var req = new MatchRunRequest(Guid.NewGuid(), "pes17-bench", "v0"u8.ToArray(), 1, 2, MatchSide.Away);
+
+        var outcome = await runner.RunAsync(req, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.True(outcome.Finished);
+        Assert.False(File.Exists(lockFile));
+
+        // khoá của bộ chạy khác (PID khác) thì giữ nguyên
+        File.WriteAllText(lockFile, "999999 3-4\n");
+        File.WriteAllText(script, Locker.Replace("open(os.environ", "0 and open(os.environ"));
+        await runner.RunAsync(req with { FixtureId = Guid.NewGuid() }, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.Equal("999999 3-4\n", File.ReadAllText(lockFile));
+    }
 }
