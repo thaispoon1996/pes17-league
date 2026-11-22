@@ -54,6 +54,14 @@ public class FootballPlayer
     public Guid? OriginClubId { get; set; }
     /// <summary>Hiện trên thị trường: null = theo luật (cầu thủ tự do thuộc dải ẩn/ML thì ẩn); true/false = admin ép.</summary>
     public bool? MarketVisibility { get; set; }
+    /// <summary>Giá thị trường thật (Transfermarkt, €; PO 22/11 phương án C) làm giá gốc từ mùa <see cref="PriceModelOptions.MarketFromSeason"/>.
+    /// Null = không ghép được → giá theo công thức. <see cref="RealValueAge"/>/<see cref="RealValueOverall"/> = tuổi/chỉ số tổng lúc nhập, để giá về sau
+    /// đi theo tuổi và chỉ số.</summary>
+    public long? RealValue { get; set; }
+    public int? RealValueAge { get; set; }
+    public int? RealValueOverall { get; set; }
+    /// <summary>Nguồn ghép, ví dụ "tm:418560".</summary>
+    public string? RealValueRef { get; set; }
 }
 
 /// <summary>Snapshot chỉ số mỗi mùa, nhập từ OF đầu mùa. Khoá = tên trường (theo PlayerField.Name của module OF).</summary>

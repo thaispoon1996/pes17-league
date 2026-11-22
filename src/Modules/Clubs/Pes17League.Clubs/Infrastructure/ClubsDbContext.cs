@@ -103,6 +103,7 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.Position).HasConversion<string>().HasMaxLength(5);
             e.Property(x => x.Nationality).HasMaxLength(50);
+            e.Property(x => x.RealValueRef).HasMaxLength(40);
             e.HasOne<Club>().WithMany().HasForeignKey(x => x.OriginClubId);
         });
 

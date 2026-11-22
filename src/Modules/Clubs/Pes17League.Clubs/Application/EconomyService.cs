@@ -46,7 +46,7 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
 
     public async Task SetParametersAsync(Guid seasonId, SeasonEconomyChange change, CancellationToken ct = default)
     {
-        if (change.SoftWageCap < 0 || change.WagePermille < 0 || change.InitialBudgetFund < 0 || change.BudgetExponent < 0)
+        if (change.SoftWageCap < 0 || change.WagePermille < 0 || change.InitialBudgetFund < 0 || change.BudgetExponent < -1)
             throw new ArgumentOutOfRangeException(nameof(change), "Tham số kinh tế không được âm");
         if (change.DefaultContractMatches is { } m && !ContractRules.IsValidLength(m))
             throw new ArgumentOutOfRangeException(nameof(change), "DefaultContractMatches ngoài 10–60");
@@ -311,10 +311,11 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
     public async Task<int> RecalculatePricesAsync(Guid seasonId, CancellationToken ct = default, IReadOnlyCollection<Guid>? playerIds = null)
     {
         var now = clock.GetUtcNow();
+        var model = await ModelForSeasonAsync(db, seasonId, priceOptions, ct);
         var rows = await (from a in db.PlayerAttributes
                           join p in db.Players on a.PlayerId equals p.Id
                           where a.SeasonId == seasonId && (playerIds == null || playerIds.Contains(a.PlayerId))
-                          select new { a.PlayerId, p.Position }).ToListAsync(ct);
+                          select new { a.PlayerId, p.Position, p.RealValue, p.RealValueAge, p.RealValueOverall }).ToListAsync(ct);
         var current = await CurrentAttributesAsync(seasonId, playerIds, ct);
         var prices = await db.PlayerPrices.Where(x => x.SeasonId == seasonId && (playerIds == null || playerIds.Contains(x.PlayerId)))
             .ToDictionaryAsync(x => x.PlayerId, ct);
@@ -323,13 +324,21 @@ public sealed class EconomyService(ClubsDbContext db, TimeProvider clock, PriceM
             var values = current[r.PlayerId];
             if (!prices.TryGetValue(r.PlayerId, out var pp))
                 db.PlayerPrices.Add(pp = new PlayerPrice { PlayerId = r.PlayerId, SeasonId = seasonId });
-            pp.Overall = _price.Overall(r.Position, values);
-            pp.BasePrice = _price.BasePrice(pp.Overall, values.GetValueOrDefault("AGE", 27));
-            pp.Price = _price.Price(pp.BasePrice, pp.FormMultiplier);
+            pp.Overall = model.Overall(r.Position, values);
+            pp.BasePrice = model.BasePrice(pp.Overall, values.GetValueOrDefault("AGE", 27), RealValue.Of(r.RealValue, r.RealValueAge, r.RealValueOverall));
+            pp.Price = model.Price(pp.BasePrice, pp.FormMultiplier);
             pp.UpdatedAt = now;
         }
         await db.SaveChangesAsync(ct);
         return rows.Count;
+    }
+
+    /// <summary>Mô hình giá của mùa: tham số truyền vào (test/admin) hoặc theo số mùa (<see cref="PriceModelOptions.ForSeason"/>).</summary>
+    internal static async Task<PriceModel> ModelForSeasonAsync(ClubsDbContext db, Guid seasonId, PriceModelOptions? options, CancellationToken ct)
+    {
+        if (options is not null) return new PriceModel(options);
+        var number = await db.Seasons.Where(s => s.Id == seasonId).Select(s => (int?)s.Number).SingleOrDefaultAsync(ct) ?? 1;
+        return new PriceModel(PriceModelOptions.ForSeason(number));
     }
 
     /// <summary>Sau mỗi vòng: chỉnh giá theo phong độ (form ∈ [-1, 1] mỗi cầu thủ; nguồn form chờ module trận).</summary>

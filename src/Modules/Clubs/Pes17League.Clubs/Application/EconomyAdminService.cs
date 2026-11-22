@@ -139,14 +139,15 @@ public sealed class EconomyAdminService(ClubsDbContext db, TimeProvider clock, P
     {
         var stored = await db.PlayerPrices.AsNoTracking().Where(p => p.SeasonId == seasonId).ToDictionaryAsync(p => p.PlayerId, ct);
         var rows = await (from a in db.PlayerAttributes join p in db.Players on a.PlayerId equals p.Id
-                          where a.SeasonId == seasonId select new { a.PlayerId, p.Position }).ToListAsync(ct);
+                          where a.SeasonId == seasonId select new { a.PlayerId, p.Position, p.RealValue, p.RealValueAge, p.RealValueOverall }).ToListAsync(ct);
         var current = await new EconomyService(db, clock, priceOptions).CurrentAttributesAsync(seasonId, null, ct);
-        var model = new PriceModel(priceOptions);
+        var model = await EconomyService.ModelForSeasonAsync(db, seasonId, priceOptions, ct);
         var prices = stored.ToDictionary(x => x.Key, x => x.Value.Price);
         foreach (var r in rows)
         {
             var values = current[r.PlayerId];
-            var basePrice = model.BasePrice(model.Overall(r.Position, values), values.GetValueOrDefault("AGE", 27));
+            var basePrice = model.BasePrice(model.Overall(r.Position, values), values.GetValueOrDefault("AGE", 27),
+                RealValue.Of(r.RealValue, r.RealValueAge, r.RealValueOverall));
             prices[r.PlayerId] = model.Price(basePrice, stored.TryGetValue(r.PlayerId, out var pp) ? pp.FormMultiplier : 1);
         }
         return prices;
@@ -176,8 +177,10 @@ public sealed class EconomyAdminService(ClubsDbContext db, TimeProvider clock, P
     private static void Validate(SeasonEconomyChange? c)
     {
         if (c is null) return;
-        if (c.SoftWageCap < 0 || c.WagePermille < 0 || c.InitialBudgetFund < 0 || c.BudgetExponent < 0 || c.BudgetExponent is { } k && !double.IsFinite(k))
+        if (c.SoftWageCap < 0 || c.WagePermille < 0 || c.InitialBudgetFund < 0)
             throw new AdminRuleException("Tham số kinh tế phải là số không âm");
+        if (c.BudgetExponent is { } k && (!double.IsFinite(k) || k < -1))
+            throw new AdminRuleException("k chia ngân sách phải ≥ −1 (âm = CLB giá trị cao nhận nhiều hơn)");
     }
 
     private static SeasonEconomy Merge(SeasonEconomy e, SeasonEconomyChange? c) => new()

@@ -38,7 +38,7 @@
             {
                 <label>= <input type="number" min="0" step="1" style="width: 80px" @bind="fundPct" @bind:after="PctChanged" disabled="@(busy || !FundEditable)" /> % tổng giá trị squad</label>
             }
-            <label>k <input type="number" min="0" step="0.1" style="width: 80px" @bind="exponent" @bind:after="PreviewAsync" disabled="@(busy || !FundEditable)" /></label>
+            <label>k <input type="number" min="-1" step="0.1" style="width: 80px" @bind="exponent" @bind:after="PreviewAsync" disabled="@(busy || !FundEditable)" /></label>
         </div>
         <p class="muted">Hợp đồng nhập / gia hạn mặc định @v.Economy.DefaultContractMatches trận.
             @if (previous is { } p) { <span>@previousName: quỹ @Fmt.Money(p.InitialBudgetFund) · trần mềm @Fmt.Money(p.SoftWageCap)/khung · @(p.WagePermille)‰ · k @p.BudgetExponent.ToString("0.##").</span> }</p>

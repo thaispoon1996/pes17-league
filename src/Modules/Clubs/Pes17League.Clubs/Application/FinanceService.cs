@@ -70,18 +70,24 @@ public sealed class FinanceService(ClubsDbContext db, TimeProvider clock)
                      select (long?)p.Price).Sum() ?? 0,
         }).OrderByDescending(c => c.Value).ThenBy(c => c.Id).ToListAsync(ct);
         var now = clock.GetUtcNow();
+        var byValue = await SponsorByValueAsync(seasonId, ct);
         for (var i = 0; i < clubs.Count; i++)
         {
             if (existing.ContainsKey(clubs[i].Id)) continue;
             var rep = FinanceRules.Reputation(i, clubs.Count);
             var cap = FinanceRules.DefaultCapacity(rep);
-            var f = new ClubFinance { ClubId = clubs[i].Id, Capacity = cap, Fans = cap * 9 / 10, SponsorPerRound = FinanceRules.Sponsor(rep), UpdatedAt = now };
+            var sponsor = byValue ? FinanceRules.Sponsor(rep, clubs[i].Value) : FinanceRules.Sponsor(rep);
+            var f = new ClubFinance { ClubId = clubs[i].Id, Capacity = cap, Fans = cap * 9 / 10, SponsorPerRound = sponsor, UpdatedAt = now };
             db.ClubFinances.Add(f);
             existing[f.ClubId] = f;
         }
         var active = clubs.Select(c => c.Id).ToHashSet();
         return existing.Where(e => active.Contains(e.Key)).ToDictionary();
     }
+
+    /// <summary>Tài trợ theo giá trị squad chỉ từ mùa giá thật (<see cref="PriceModelOptions.MarketFromSeason"/>).</summary>
+    private async Task<bool> SponsorByValueAsync(Guid seasonId, CancellationToken ct) =>
+        await db.Seasons.AnyAsync(s => s.Id == seasonId && s.Number >= PriceModelOptions.MarketFromSeason, ct);
 
     /// <summary>Đầu mùa (career): tính lại tài trợ mọi CLB theo uy tín mới (hạng giá trị squad) và mức <see cref="FinanceRules.SponsorBase"/> hiện hành.</summary>
     public async Task<int> RefreshSponsorsAsync(Guid seasonId, CancellationToken ct = default)
@@ -94,12 +100,14 @@ public sealed class FinanceService(ClubsDbContext db, TimeProvider clock)
                      join p in db.PlayerPrices on new { m.PlayerId, SeasonId = seasonId } equals new { p.PlayerId, p.SeasonId }
                      where m.ClubId == c.Id && m.LeftAt == null
                      select (long?)p.Price).Sum() ?? 0,
-        }).OrderByDescending(c => c.Value).ThenBy(c => c.Id).Select(c => c.Id).ToListAsync(ct);
+        }).OrderByDescending(c => c.Value).ThenBy(c => c.Id).ToListAsync(ct);
         var now = clock.GetUtcNow();
+        var byValue = await SponsorByValueAsync(seasonId, ct);
         for (var i = 0; i < ranked.Count; i++)
-            if (finances.TryGetValue(ranked[i], out var f))
+            if (finances.TryGetValue(ranked[i].Id, out var f))
             {
-                f.SponsorPerRound = FinanceRules.Sponsor(FinanceRules.Reputation(i, ranked.Count));
+                var rep = FinanceRules.Reputation(i, ranked.Count);
+                f.SponsorPerRound = byValue ? FinanceRules.Sponsor(rep, ranked[i].Value) : FinanceRules.Sponsor(rep);
                 f.UpdatedAt = now;
             }
         await db.SaveChangesAsync(ct);

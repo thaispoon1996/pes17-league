@@ -111,7 +111,7 @@ public class PlayerAdminTests
             var current = (await new EconomyService(check, t.Clock).CurrentAttributesAsync(season, [p.Id]))[p.Id];
             Assert.Equal((target + 1, age), (current[field], current[PlayerField.Age.Name]));
             var price = await check.PlayerPrices.SingleAsync(x => x.SeasonId == season && x.PlayerId == p.Id);
-            var model = new PriceModel();
+            var model = new PriceModel(PriceModelOptions.ForSeason(2));   // mùa thử Number = 2 → mô hình giá thật (không có giá thật → công thức mới)
             Assert.Equal((model.Overall(p.Position, current), t.Clock.GetUtcNow()), (price.Overall, price.UpdatedAt));
             Assert.Equal(model.BasePrice(price.Overall, age), price.BasePrice);
         }

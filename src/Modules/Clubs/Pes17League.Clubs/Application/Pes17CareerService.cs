@@ -12,13 +12,19 @@ public sealed record CareerStartResult(string Season, string Club, int Slots, in
 /// <summary>
 /// Career PES17 (PO 19/11/2026: "chế độ tự chọn, gói gọn thành game"): mùa đã dựng thế giới (<see cref="Pes17WorldService"/>) nhưng chưa
 /// bắt đầu → người chơi chọn CLB → một bước: kinh tế đầu mùa, ghi lịch, bắt đầu mùa, mở chợ hè, giao CLB cho người chơi.
-/// Kinh tế: quỹ ngân sách = 20% giá trị đội hình các CLB dự mùa, k = 0,5, lương 2‰/khung (PO 19/11: mùa 69 khung, 4‰ quá nặng),
+/// Kinh tế: quỹ ngân sách = 20% giá trị đội hình các CLB dự mùa, k = 0,5 (từ mùa giá thật: 15%, k = −0,7), lương 2‰/khung (PO 19/11: mùa 69 khung, 4‰ quá nặng),
 /// trần lương mềm = quỹ lương/khung của CLB đứng thứ 2.
 /// </summary>
 public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store, TimeProvider clock)
 {
     public const int WagePermille = 2;
     public const double FundShare = 0.20, BudgetExponent = 0.5;
+    /// <summary>Mùa giá thật (PO 22/11): giá trị squad chênh ~150 lần (PSG 1,3 tỉ, CLB nhỏ 9 tr) → k = 0,5 cho CLB nhỏ ngân sách gấp 5 lần squad.
+    /// Quỹ 15%, k = −0,7: PSG ≈ 8% giá trị, CLB trung vị ≈ 23%, CLB nhỏ nhất ≈ 36%.</summary>
+    public const double MarketFundShare = 0.15, MarketBudgetExponent = -0.7;
+
+    public static (double FundShare, double Exponent) BudgetRule(int seasonNumber) =>
+        seasonNumber >= PriceModelOptions.MarketFromSeason ? (MarketFundShare, MarketBudgetExponent) : (FundShare, BudgetExponent);
 
     /// <summary>Mùa chờ bắt đầu sự nghiệp: mùa PES17 chưa xong sớm nhất, đang Planned, đã chia CLB vào giải; không thì null.</summary>
     public async Task<Season?> PendingSeasonAsync(CancellationToken ct = default)
@@ -35,11 +41,12 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
     public async Task<SeasonEconomyChange> EconomyAsync(Guid seasonId, CancellationToken ct = default)
     {
         var econ = new EconomyAdminService(db, clock);
-        var pv = await econ.PreviewAsync(seasonId, new(WagePermille: WagePermille, BudgetExponent: BudgetExponent), ct);
-        var fund = (long)Math.Round(pv.Clubs.Sum(c => c.SquadValue) * FundShare / 1e6) * 1_000_000;
+        var (share, k) = BudgetRule(await db.Seasons.Where(s => s.Id == seasonId).Select(s => s.Number).SingleAsync(ct));
+        var pv = await econ.PreviewAsync(seasonId, new(WagePermille: WagePermille, BudgetExponent: k), ct);
+        var fund = (long)Math.Round(pv.Clubs.Sum(c => c.SquadValue) * share / 1e6) * 1_000_000;
         var pays = pv.Clubs.Select(c => c.Payroll).OrderByDescending(x => x).ToList();
         var soft = pays.Count > 1 ? pays[1] / 1000 * 1000 : 0;
-        return new SeasonEconomyChange(SoftWageCap: soft, WagePermille: WagePermille, InitialBudgetFund: fund, BudgetExponent: BudgetExponent);
+        return new SeasonEconomyChange(SoftWageCap: soft, WagePermille: WagePermille, InitialBudgetFund: fund, BudgetExponent: k);
     }
 
     /// <summary>Mọi CLB dự giải quốc nội của mùa chờ bắt đầu, mạnh trước.</summary>

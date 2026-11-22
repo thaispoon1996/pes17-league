@@ -22,6 +22,7 @@ using Pes17League.Clubs.Infrastructure;
 //   hide-retired                          ẩn khỏi chợ cầu thủ giải nghệ (tự do + không thuộc đội tuyển), chỉ người chưa bị admin ép
 //   set-visibility true|false|null PES... ép hiện/ẩn (null = theo luật) theo ID PES của patch mùa đang chạy
 //   end-attempt                           gỡ lần chạy kẹt Running (vd. DB sập lúc ghi kết quả) → Crashed, trận về Scheduled. Chỉ dùng khi không có trận nào đang chạy
+//   import-real-values CSV [--dry]        giá thật Transfermarkt (tools/tmvalues/match.py: player_id,value_eur,ref) → giá gốc từ mùa 2; thay toàn bộ
 var cs = Environment.GetEnvironmentVariable("PES17_DB") ?? throw new InvalidOperationException("Thiếu PES17_DB");
 var storeDir = Environment.GetEnvironmentVariable("PES17_STORE") ?? throw new InvalidOperationException("Thiếu PES17_STORE");
 var script = Environment.GetEnvironmentVariable("PESMATCH_SCRIPT") ?? Path.GetFullPath("tools/match/pesmatch.py");
@@ -105,8 +106,11 @@ switch (args.FirstOrDefault())
     case "set-password" when args.Length >= 3:
         await SetPasswordAsync(args[1], args[2]);
         break;
+    case "import-real-values" when args.Length >= 2:
+        await ImportRealValuesAsync(args[1], args.Contains("--dry"));
+        break;
     default:
-        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | setup-pes17-world WORLD_JSON [--dry] | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry]");
+        Console.Error.WriteLine("Dùng: setup-alpha OF_GOC HUMAN_IDX IDX... | setup-federation OF_GOC [TEN_MUA] | import-pes17 PESDB_JSON [TEN_MUA] | export-pes17-squads RA_JSON | setup-pes17-leagues LEAGUES_JSON PES_DOI_PO | setup-pes17-world WORLD_JSON [--dry] | schedule-preview [SEED] | open-market | move-player PES_CT PES_DOI|free | set-contracts SO_TRAN | play-bots | status | top-up-budget QUY TRAN_MEM | hide-retired | set-visibility true|false|null PES... | end-attempt | assign-club TEN_TK PES_DOI | set-password TEN_TK MAT_KHAU | fix-club-names [--dry] | import-real-values CSV [--dry]");
         return 2;
 }
 return 0;
@@ -228,7 +232,7 @@ async Task StartPes17SeasonAsync(int seed, bool dry, string? user, int? pesClub)
     var change = await career.EconomyAsync(season.Id);
     var pv = await new EconomyAdminService(db, clock).PreviewAsync(season.Id, change);
     var budgets = pv.Clubs.Select(c => c.Budget).OrderBy(x => x).ToList();
-    Console.WriteLine($"{season.Name}: {pv.Clubs.Count} CLB, quỹ {change.InitialBudgetFund / 1e6:N0} tr ({Pes17CareerService.FundShare:P0}), trần mềm {change.SoftWageCap / 1e6:N3} tr/khung, lương {Pes17CareerService.WagePermille}‰, k {Pes17CareerService.BudgetExponent}");
+    Console.WriteLine($"{season.Name}: {pv.Clubs.Count} CLB, quỹ {change.InitialBudgetFund / 1e6:N0} tr ({Pes17CareerService.BudgetRule(season.Number).FundShare:P0}), trần mềm {change.SoftWageCap / 1e6:N3} tr/khung, lương {Pes17CareerService.WagePermille}‰, k {change.BudgetExponent}");
     Console.WriteLine($"  ngân sách: thấp nhất {budgets[0] / 1e6:N2} · trung vị {budgets[budgets.Count / 2] / 1e6:N2} · cao nhất {budgets[^1] / 1e6:N2} tr");
     foreach (var c in pv.Clubs.OrderByDescending(c => c.SquadValue).Take(3))
         Console.WriteLine($"  {c.Name}: giá trị {c.SquadValue / 1e6:N1} tr, lương {c.Payroll / 1e6:N3} tr/khung, ngân sách {c.Budget / 1e6:N2} tr, đủ {c.Khung:0.#} khung");
@@ -312,6 +316,19 @@ async Task FixClubNamesAsync(bool dry)
 
 /// <summary>PO 18/11: giao CLB cho tài khoản người chơi (admin không cầm CLB). CLB đang do admin cầm (ParticipantId null) → trả admin về không cầm trước.</summary>
 /// <summary>Đặt mật khẩu tài khoản HLV (PO 18/11: test1/test2 = 123). Không in mật khẩu.</summary>
+async Task ImportRealValuesAsync(string csvPath, bool dry)
+{
+    var rows = new List<RealValueRow>();
+    foreach (var line in File.ReadLines(csvPath).Skip(1))
+    {
+        var f = line.Split(',');
+        if (f.Length >= 2 && Guid.TryParse(f[0], out var id) && long.TryParse(f[1], out var v)) rows.Add(new(id, v, f.Length > 2 ? f[2] : null));
+    }
+    await using var db = Db();
+    var r = await new RealValueService(db, clock).ImportAsync(rows, "cli", dry);
+    Console.WriteLine($"{(dry ? "[thử] " : "")}{rows.Count} dòng: đặt {r.Set}, xoá {r.Cleared}, không có cầu thủ {r.UnknownPlayers}, thiếu chỉ số {r.NoAttributes}");
+}
+
 async Task SetPasswordAsync(string username, string password)
 {
     await using var db = Db();

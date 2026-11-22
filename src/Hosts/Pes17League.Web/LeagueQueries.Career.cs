@@ -170,6 +170,6 @@ public sealed partial class LeagueQueries
 
         return new CareerClubInfo(club.Id, club.Name, club.LogoPath, strength.GetValueOrDefault(clubId), ranked.IndexOf(clubId) + 1,
             strength.Count == 0 ? 0 : strength.Values.Average(), peers.Count, [.. eds.Select(e => new NameLogo(e.Name, e.Logo))], lines, players,
-            cap, fin?.Fans ?? cap * 9 / 10, fin?.TicketPrice ?? FinanceRules.DefaultTicketPrice, FinanceRules.Sponsor(rep), history);
+            cap, fin?.Fans ?? cap * 9 / 10, fin?.TicketPrice ?? FinanceRules.DefaultTicketPrice, fin?.SponsorPerRound ?? FinanceRules.Sponsor(rep), history);
     }
 }

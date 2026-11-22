@@ -1158,6 +1158,19 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
 
+                    b.Property<long?>("RealValue")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("RealValueAge")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RealValueOverall")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RealValueRef")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OriginClubId");

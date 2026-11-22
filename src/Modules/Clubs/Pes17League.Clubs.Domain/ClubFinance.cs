@@ -33,6 +33,12 @@ public static class FinanceRules
     public static int DefaultCapacity(double reputation) => (int)Math.Round((MinCapacity + (MaxCapacity - MinCapacity) * (reputation - 0.6) / 0.8 * 0.6) / 1000) * 1000;
     public static long Sponsor(double reputation) => (long)Math.Round(SponsorBase * reputation / 1000) * 1000;
 
+    /// <summary>Từ mùa giá thật (PO 22/11): tài trợ tối thiểu 1,5‰ giá trị squad mỗi vòng — CLB tầm trung giữ mức cũ, CLB lớn (lương theo giá thật)
+    /// không lỗ triền miên.</summary>
+    public const double SponsorPermilleOfSquad = 1.5;
+    public static long Sponsor(double reputation, long squadValue) =>
+        Math.Max(Sponsor(reputation), (long)Math.Round(squadValue * SponsorPermilleOfSquad / 1000 / 1000) * 1000);
+
     /// <summary>Khán giả: fan × cầu theo giá vé (vé 12 → 100% fan), tối đa sức chứa.</summary>
     public static int Attendance(int capacity, int fans, long ticketPrice) =>
         Math.Min(capacity, (int)(fans * Math.Clamp(1.3 - ticketPrice / 40.0, 0.3, 1.2)));

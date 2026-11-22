@@ -14,7 +14,8 @@ public class SeasonEconomy
     public int WagePermille { get; set; } = 10;
     /// <summary>Tổng quỹ ngân sách đầu mùa chia cho các CLB.</summary>
     public long InitialBudgetFund { get; set; }
-    /// <summary>Hệ số k chia ngân sách: trọng số (1/giá trị squad)^k. 0 = chia đều, 1 = tỷ lệ nghịch.</summary>
+    /// <summary>Hệ số k chia ngân sách: trọng số (1/giá trị squad)^k. 0 = chia đều, 1 = tỷ lệ nghịch, âm = CLB giá trị cao nhận nhiều hơn
+    /// (mùa giá thật: −0,7).</summary>
     public double BudgetExponent { get; set; } = 0.5;
     /// <summary>Số trận hợp đồng nhập từ patch / tự gia hạn tại CLB gốc / về CLB gốc (PO chọn 10).</summary>
     public int DefaultContractMatches { get; set; } = ContractRules.MinMatches;
@@ -74,7 +75,7 @@ public static class BudgetAllocation
     public static IReadOnlyDictionary<TId, long> Allocate<TId>(IReadOnlyList<(TId Club, long SquadValue)> clubs, long fund, double exponent) where TId : notnull
     {
         ArgumentOutOfRangeException.ThrowIfNegative(fund);
-        ArgumentOutOfRangeException.ThrowIfNegative(exponent);
+        ArgumentOutOfRangeException.ThrowIfLessThan(exponent, -1);   // âm = CLB giá trị cao nhận nhiều hơn (mùa giá thật)
         if (clubs.Count == 0) return new Dictionary<TId, long>();
         var weights = clubs.Select(c => Math.Pow(Math.Max(1, c.SquadValue), -exponent)).ToList();
         var total = weights.Sum();
@@ -120,6 +121,11 @@ public sealed record PriceModelOptions
     public int Pivot { get; init; } = 70;
     /// <summary>Mỗi +1 chỉ số tổng nhân giá e^Growth (0.12 ≈ +12,7%).</summary>
     public double Growth { get; init; } = 0.12;
+    /// <summary>Trên chỉ số tổng TopPivot mỗi +1 nhân thêm e^TopGrowth (ngôi sao đắt vọt; 0 = tắt).</summary>
+    public int TopPivot { get; init; } = 75;
+    public double TopGrowth { get; init; }
+    /// <summary>Có giá thật (<see cref="FootballPlayer.RealValue"/>) thì lấy làm giá gốc thay công thức.</summary>
+    public bool UseRealValues { get; init; }
     /// <summary>Hệ số theo tuổi: (tuổi tối đa, hệ số), xét theo thứ tự.</summary>
     public IReadOnlyList<(int MaxAge, double Factor)> AgeFactors { get; init; } =
         [(20, 1.3), (23, 1.15), (27, 1.0), (30, 0.85), (33, 0.6), (int.MaxValue, 0.4)];
@@ -129,6 +135,7 @@ public sealed record PriceModelOptions
     public double MaxFormMultiplier { get; init; } = 2.0;
     /// <summary>Trọng số chỉ số tổng theo nhóm vị trí; khoá = tên trường PlayerField (OF).</summary>
     public IReadOnlyDictionary<PositionGroup, IReadOnlyDictionary<string, double>> Weights { get; init; } = DefaultWeights;
+
 
     public static readonly IReadOnlyDictionary<PositionGroup, IReadOnlyDictionary<string, double>> DefaultWeights =
         new Dictionary<PositionGroup, IReadOnlyDictionary<string, double>>
@@ -148,6 +155,32 @@ public sealed record PriceModelOptions
                 ["DRIBBLE ACCURACY"] = 1, ["TECHNIQUE"] = 1, ["RESPONSE"] = 1,
             },
         };
+
+    // Sau DefaultWeights: static khởi tạo theo thứ tự trong file.
+    /// <summary>Mô hình cũ (mùa 1).</summary>
+    public static readonly PriceModelOptions Legacy = new();
+
+    /// <summary>
+    /// Giá sát thực tế (PO 22/11, phương án C): giá gốc = giá Transfermarkt nếu ghép được, còn lại công thức chỉnh theo 8.998 cầu thủ đã ghép
+    /// (hồi quy log giá theo chỉ số tổng + tuổi): 1 tr ở chỉ số 70, +12% mỗi điểm, trên 75 thêm +9%; giá giảm mạnh sau 27 tuổi.
+    /// </summary>
+    public static readonly PriceModelOptions Market = new()
+    {
+        Growth = 0.113, TopPivot = 75, TopGrowth = 0.087, UseRealValues = true,
+        AgeFactors = [(19, 1.3), (26, 1.0), (27, 0.8), (28, 0.7), (29, 0.55), (30, 0.45), (31, 0.32), (32, 0.26), (33, 0.2), (34, 0.13), (int.MaxValue, 0.08)],
+    };
+
+    /// <summary>Mùa bắt đầu dùng <see cref="Market"/> (PO 22/11: từ mùa sau, mùa 1 đang đá giữ giá cũ).</summary>
+    public const int MarketFromSeason = 2;
+
+    public static PriceModelOptions ForSeason(int seasonNumber) => seasonNumber >= MarketFromSeason ? Market : Legacy;
+}
+
+/// <summary>Giá thật lúc nhập (<see cref="FootballPlayer.RealValue"/>) cùng tuổi + chỉ số tổng lúc đó.</summary>
+public readonly record struct RealValue(long Value, int Age, int Overall)
+{
+    public static RealValue? Of(long? value, int? age, int? overall) =>
+        value is > 0 && age is { } a && overall is { } o ? new RealValue(value.Value, a, o) : null;
 }
 
 /// <summary>Mô hình giá A: Price = BasePrice × e^(Growth × (Overall − Pivot)) × hệ số tuổi × hệ số phong độ.</summary>
@@ -169,7 +202,17 @@ public sealed class PriceModel(PriceModelOptions? options = null)
 
     /// <summary>Giá gốc (chưa tính phong độ), làm tròn 1.000.</summary>
     public long BasePrice(int overall, int age) =>
-        RoundPrice(Options.BasePrice * Math.Exp(Options.Growth * (overall - Options.Pivot)) * AgeFactor(age));
+        RoundPrice(Options.BasePrice * Math.Exp(Exponent(overall)) * AgeFactor(age));
+
+    /// <summary>Giá gốc có giá thật: giá thật lúc nhập, đi theo tuổi (hệ số tuổi) và chỉ số tổng (đường giá) từ lúc nhập tới nay.
+    /// Không có giá thật / mô hình không dùng giá thật → <see cref="BasePrice(int, int)"/>.</summary>
+    public long BasePrice(int overall, int age, RealValue? real) =>
+        Options.UseRealValues && real is { Value: > 0 } r
+            ? RoundPrice(r.Value * AgeFactor(age) / AgeFactor(r.Age) * Math.Exp(Exponent(overall) - Exponent(r.Overall)))
+            : BasePrice(overall, age);
+
+    private double Exponent(int overall) =>
+        Options.Growth * (overall - Options.Pivot) + Options.TopGrowth * Math.Max(0, overall - Options.TopPivot);
 
     public long Price(long basePrice, double formMultiplier) => RoundPrice(basePrice * formMultiplier);
 
