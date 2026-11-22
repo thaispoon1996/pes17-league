@@ -20,6 +20,7 @@
   Sự kiện stdout (JSON mỗi dòng): stage boot|menu|teams|ready|loading, kickoff, goal{side,half,minute,wall,slot:null}, end{home,away},
   error{reason}. Bàn thắng in ngay trước "end", đã khớp tỷ số cuối (ghi kết quả nguồn Memory đòi khớp).
   ratings{home:[{shirt,rating}],away:[...]} đọc từ bảng Player Rankings ở menu hết trận (11 người đầu mỗi bên).
+  PESMATCH_LOGO=FILE (trận giải, PO 22/11): logo giải góc phải trên trang chơi Selkies từ lúc giao bóng tới hết trận (overlay(), tools/bench/pes-overlay.js).
   AFK (trận 2 người): xem AFK_STALL / Presence (tools/afk17.py). Chưa có: ghi hình (PESMATCH_REC), hiệp phụ/penalty (PESMATCH_EXTRA_TIME), người ghi bàn.
 """
 from __future__ import annotations
@@ -41,6 +42,8 @@ LOCK = OUT / "match.lock"
 WAIT_GO = os.environ.get("PESMATCH_WAIT_GO") == "1"
 WARM = os.environ.get("PESMATCH_WARM") == "1"
 BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
+LOGO = os.environ.get("PESMATCH_LOGO")   # logo giải của trận (web, PO 22/11) → góc phải trên màn hình chơi, từ lúc giao bóng tới hết trận
+OVERLAY = "/bench/overlay"                # trong pes17-bench; trang Selkies đọc ở pes/overlay.json (tools/bench/pes-overlay.js)
 BOOT_TIMEOUT = 300        # từ lúc mở game tới màn chọn đội
 NO_PITCH_TIMEOUT = 600    # quá 10 phút không thấy HUD trận → treo
 HUMAN_PREMATCH_TIMEOUT = 1800
@@ -398,6 +401,8 @@ class Match:
                 if self.kick is None:
                     self.kick = now
                     emit(event="kickoff")
+                    if LOGO:
+                        overlay(LOGO)
                 self.on_hud(h)
             elif now - last_play > (NO_PITCH_TIMEOUT if not self.human
                                     else HUMAN_PREMATCH_TIMEOUT if not self.kick or self.halftime else NO_PITCH_TIMEOUT):
@@ -551,6 +556,22 @@ def wait_go(squads: str, home: int, away: int, setup) -> bool:
             raise NavError("human_timeout: không bấm vào trận")
 
 
+def overlay(logo: str | None) -> None:
+    """Đặt (logo-<sha>.png + overlay.json {"logo": tên}) / xoá ({}) logo giải trên trang chơi. Lỗi thì bỏ qua: logo là phụ."""
+    try:
+        data, name = b"", ""
+        if logo:
+            data = Path(logo).read_bytes()
+            name = f"logo-{hashlib.sha1(data).hexdigest()[:10]}{Path(logo).suffix.lower() or '.png'}"
+        doc = json.dumps({"logo": name} if name else {})
+        sh = (f"mkdir -p {OVERLAY} && cd {OVERLAY} && "
+              + (f"cat > {name}.tmp && mv {name}.tmp {name} && chmod 644 {name} && find . -maxdepth 1 -name 'logo-*' ! -name {name} -delete && " if name else "")
+              + f"printf '%s' '{doc}' > overlay.json.tmp && chmod 644 overlay.json.tmp && mv overlay.json.tmp overlay.json")
+        subprocess.run(["docker", "exec", "-i", BENCH, "sh", "-c", sh], input=data, capture_output=True, timeout=20, check=True)
+    except Exception as e:
+        log(f"logo giải lỗi: {e}")
+
+
 def grass(im: Image.Image) -> int:
     """Điểm màu cỏ (lưới 8 px, tối đa 5750) — chịu được bóng râm khán đài (loop.green_pitch thì không). Sân ~5600, menu < 400."""
     n = 0
@@ -595,6 +616,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
     LOCK.write_text(f"{os.getpid()} {home}-{away}\n")
     try:
         emit(event="stage", stage="boot")
+        overlay(None)   # bỏ logo sót của trận trước (bộ chạy bị dừng ngang)
         if WAIT_GO or WARM:
             threading.Thread(target=read_cmds, daemon=True).start()
         restarted = ensure_game(squads, home, away)
@@ -629,6 +651,8 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         finally:
             if pres:
                 pres.close()
+            if LOGO:
+                overlay(None)
         try:
             emit(event="ratings", **ocr.rankings(nav.shot("m17_ft")))
         except Exception as e:   # điểm cầu thủ là phụ: lỗi thì bỏ

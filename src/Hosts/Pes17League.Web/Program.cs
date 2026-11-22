@@ -31,7 +31,7 @@ b.Services.AddSingleton(TimeProvider.System);
 b.Services.AddSingleton(new MatchJobOptions(
     Path.GetFullPath(b.Configuration["Match:Script"]!), Path.Combine(storeDir, "..", "run"), b.Configuration["Match:StreamUrl"]!,
     Path.Combine(storeDir, "..", "recordings"), Path.Combine(storeDir, "..", "highlights"), b.Configuration.GetValue("Match:MinFreeDiskGb", 20),
-    Path.Combine(storeDir, "..", "stats"), Path.Combine(storeDir, "..", "live")));
+    Path.Combine(storeDir, "..", "stats"), Path.Combine(storeDir, "..", "live"), Path.Combine(storeDir, "..", "logos")));
 b.Services.AddSingleton(new HighlightStore(Path.GetFullPath(Path.Combine(storeDir, "..", "highlights"))));
 b.Services.AddSingleton(new RoundReelStore(Path.GetFullPath(Path.Combine(storeDir, "..", "reels"))));
 b.Services.AddSingleton(new LiveStore(Path.GetFullPath(Path.Combine(storeDir, "..", "live"))));

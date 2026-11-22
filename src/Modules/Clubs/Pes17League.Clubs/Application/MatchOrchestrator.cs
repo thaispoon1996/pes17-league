@@ -14,8 +14,10 @@ public enum MatchSide { Home, Away }
 /// (đội hình mới nhất) và ghi squad + đội hình 2 đội vào bộ nhớ game rồi mới chọn đội.</param>
 /// <param name="Sync">Cùng <paramref name="Refresh"/> (PES17, PO 21/11): HLV sửa đội hình trong lúc chờ → bộ chạy dựng lại ảnh chụp và
 /// gửi "sync FILE" để game cài lại ngay, lúc bấm Sẵn sàng thường không phải khởi động lại game nữa.</param>
+/// <param name="CompetitionLogo">Logo giải của trận (đường dẫn web /img/upload/…, PO 22/11): hiện góc phải trên màn hình chơi (stream).</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
-    bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null);
+    bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null,
+    string? CompetitionLogo = null);
 
 /// <summary>Báo "đội hình vừa đổi" trong lúc game dựng sẵn chờ Sẵn sàng (gộp nhiều lần báo thành 1).</summary>
 public sealed class SquadSync
@@ -333,8 +335,11 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         var build = (await db.OptionFileBuilds.FindAsync([buildId], ct))!;
         var index = await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && (m.ClubId == f.HomeClubId || m.ClubId == f.AwayClubId))
             .ToDictionaryAsync(m => m.ClubId, m => m.PesClubIndex, ct);
+        var logo = f.CompetitionEditionId is { } ed
+            ? await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select c.LogoPath).SingleOrDefaultAsync(ct)
+            : null;
         return new MatchRunRequest(fixtureId, container, await store.ReadAsync(build.StoragePath!, ct), index[f.HomeClubId], index[f.AwayClubId], humanSide,
-            ExtraTime: f.Stage == FixtureStage.Final);
+            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: logo);
     }
 
     /// <summary>ID PES → cầu thủ theo patch của mùa; số áo (chụp màn) → cầu thủ đang ở CLB. Không ghép được thì bỏ dòng đó.</summary>

@@ -18,9 +18,11 @@ namespace Pes17League.Clubs.Infrastructure;
 /// → yên <see cref="SyncQuiet"/> thì gửi "sync FILE" (PES17: game cài lại ngay, không đợi tới lúc bấm Sẵn sàng).
 /// <paramref name="recordingDir"/>: có → ghi hình cả trận (PESMATCH_REC, C7) vào {recordingDir}/{fixture}-{giờ UTC}.mkv; "wall" = giây trong video.
 /// <paramref name="liveDir"/>: có (cùng ghi hình) → thêm HLS xem trực tiếp (PESMATCH_LIVE) {liveDir}/{fixture}.m3u8, sự kiện "live" khi bắt đầu ghi.
+/// <paramref name="logoDir"/>: thư mục logo tải lên (LogoStore) — trận có <see cref="MatchRunRequest.CompetitionLogo"/> và file có thật
+/// → PESMATCH_LOGO = đường dẫn file (bộ chạy PES17 đặt logo lên màn hình chơi).
 /// </summary>
 public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<MatchRunRequest, JsonElement>? onEvent = null, string? recordingDir = null,
-    string? liveDir = null, TimeSpan? syncQuiet = null)
+    string? liveDir = null, TimeSpan? syncQuiet = null, string? logoDir = null)
     : IMatchRunner
 {
     /// <summary>Gom thay đổi đội hình: HLV thường chỉnh liền nhiều lần, mỗi lần cài lại PES17 phải khởi động lại game (~1,5–2 phút).</summary>
@@ -41,6 +43,8 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         if (r.ExtraTime) psi.Environment["PESMATCH_EXTRA_TIME"] = "1";
         if (recordingDir is not null) psi.Environment["PESMATCH_REC"] = Path.Combine(Path.GetFullPath(recordingDir), $"{r.FixtureId:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.mkv");
         if (liveDir is not null) psi.Environment["PESMATCH_LIVE"] = Path.Combine(Path.GetFullPath(liveDir), $"{r.FixtureId:N}.m3u8");
+        if (logoDir is not null && r.CompetitionLogo is { Length: > 0 } logo && Path.Combine(Path.GetFullPath(logoDir), Path.GetFileName(logo)) is var lf && File.Exists(lf))
+            psi.Environment["PESMATCH_LOGO"] = lf;
 
         using var p = Process.Start(psi)!;
         var stdin = new SemaphoreSlim(1, 1);
