@@ -3512,3 +3512,69 @@ html:has(.bx-sheet) { overflow: hidden; }
 .cx .hx-photo { position: absolute; top: 10px; right: 10px; z-index: 4; background: rgba(15,19,29,.72); backdrop-filter: blur(6px); }
 .cx .hx-facepanel { margin-bottom: 16px; scroll-margin-top: calc(120px + env(safe-area-inset-top)); }
 .cx .hx-facepanel h2 { display: flex; align-items: center; gap: 8px; }
+
+/* ===== Chợ career: sửa dòng cầu thủ + bảng Lọc (PO 22/11) — logo CLB không đè chữ, CLB 1 dòng, tuổi/thể hình/phong cách 1 dòng có "…" ===== */
+.cx .mk-club .crest { flex: none; }
+.cx .mk-row .who > span.cl { color: var(--text); }
+.cx .mk-row .who > span.cl .mk-club { max-width: 100%; }
+.cx .mk-row .who > span.sub { display: block; text-overflow: ellipsis; }
+.cx .mk-fg h4 small { margin-left: 6px; font: 600 12px "Be Vietnam Pro", sans-serif; text-transform: none; letter-spacing: 0; }
+/* tab dính bám sát đầu trang .cxh (cao 108px máy tính, 56px điện thoại); .cx-sub nay không dính nên bỏ +48px cũ → hết khe hở lộ chữ phía trên tab */
+.cx .mk-tabs, .cx:has(.cx-sub) .mk-tabs, .cx .bx-seg, .cx:has(.cx-sub) .bx-seg, .cx .lx-seg, .cx:has(.cx-sub) .lx-seg { top: calc(108px + env(safe-area-inset-top)); }
+@media (max-width: 900px) { .cx .mk-tabs, .cx:has(.cx-sub) .mk-tabs, .cx .bx-seg, .cx:has(.cx-sub) .bx-seg, .cx .lx-seg, .cx:has(.cx-sub) .lx-seg { top: calc(56px + env(safe-area-inset-top)); } }
+
+/* ===== Chợ career: dòng cầu thủ đủ thông tin + điểm nhấn (PO 22/11) — .mk-row2: hàng trên ô OVR/ảnh/tên+CLB/giá, hàng dưới thẻ tuổi·cao·nặng·lương + phong cách (cam), không cắt chữ; vạch màu nhóm vị trí bên trái ===== */
+.cx .mk-row.mk-row2 { grid-template-columns: 52px 46px minmax(0, 1fr) auto; grid-template-areas: "t f w c" "x x x x"; row-gap: 8px; column-gap: 10px;
+  padding: 10px 12px 10px 12px; position: relative; overflow: hidden; contain-intrinsic-size: auto 118px;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--pc, #9ba7b5) 13%, #1c1f2a) 0, #1c1f2a 42%); box-shadow: inset 3px 0 0 var(--pc, #9ba7b5); }
+.cx .mk-row2 > .mk-tile { grid-area: t; width: 52px; height: 58px; }
+.cx .mk-row2 > .mk-tile b { font-size: 27px; }
+.cx .mk-row2 > .mk-face { grid-area: f; width: 46px; height: 46px; }
+.cx .mk-row2 > .who { grid-area: w; display: grid; gap: 4px; }
+.cx .mk-row2 .who > b { font: 800 20px/1 var(--f-display); text-transform: uppercase; letter-spacing: .01em; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.cx .mk-row2 .who > span.cl { margin: 0; font-size: 13px; color: var(--text); white-space: normal; }
+.cx .mk-row2 .who > span.cl .mk-club > span { white-space: normal; overflow: visible; }
+.cx .mk-row2 .who .mk-club .crest { width: 18px; height: 18px; }
+.cx .mk-row2 > .cost { grid-area: c; align-self: start; }
+.cx .mk-row2 > .cost b { font-size: 23px; color: #dee1f7; }
+.cx .mk-row2.ok > .cost b { color: var(--gold); text-shadow: 0 0 16px rgba(0,255,135,.35); }
+.cx .mk-row2 > .cost small { margin-top: 5px; font-weight: 600; }
+.cx .mk-row2.ok > .cost small { display: inline-block; padding: 2px 7px; border-radius: 6px; background: rgba(0,255,135,.12); color: var(--gold); }
+.cx .mk-row2 > .facts { grid-area: x; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,.08); }
+.cx .mk-row2 .facts .f { display: inline-flex; align-items: baseline; gap: 3px; height: 26px; padding: 0 9px; border-radius: 7px; background: rgba(255,255,255,.05); font-size: 11px; line-height: 26px; color: var(--muted); }
+.cx .mk-row2 .facts .f b { font: 800 16px/26px var(--f-display); color: var(--text); }
+.cx .mk-row2 .facts .wg b { color: var(--cyan); }
+.cx .mk-row2 .who .sty { justify-self: start; margin-top: 2px;  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px 0 7px; border-radius: 7px; border: 1px solid rgba(255,185,95,.35); white-space: normal; overflow: visible;
+  background: rgba(255,185,95,.1); color: var(--cyan); font: 800 13px/1 var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
+.cx .mk-row2 .who .sty .ms { font-size: 16px; }
+.cx .mk-row2:hover, .cx .mk-row2.sel { border-color: color-mix(in srgb, var(--pc, #ffb95f) 55%, transparent); }
+@container (min-width: 640px) {
+  .cx .mk-row.mk-row2 { grid-template-columns: 52px 46px minmax(0, 1fr) auto; grid-template-areas: "t f w c" "t f x c"; row-gap: 6px; }
+  .cx .mk-row2 > .mk-tile, .cx .mk-row2 > .mk-face, .cx .mk-row2 > .cost { align-self: center; }
+  .cx .mk-row2 > .facts { padding-top: 0; border-top: 0; }
+  .cx .mk-row2 > .who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .cx .mk-row2 .who > b { flex-basis: 100%; }
+  .cx .mk-row2 .who .sty { margin-top: 0; }
+}
+
+/* ===== Trang nhất: tin lớn tự chạy (PO 22/11) — .fp-leads xếp chồng các .fp-lead (cxHot: data-slide/data-dots), thanh tiến trình dưới ===== */
+.cx .fp-leads { position: relative; display: grid; margin-bottom: 12px; }
+.cx .fp-leads > .fp-lead { grid-area: 1 / 1; opacity: 0; visibility: hidden; transform: translateX(14px); transition: opacity .45s ease, transform .45s ease, visibility 0s .45s; padding-bottom: 30px; }
+.cx .fp-leads > .fp-lead.on { opacity: 1; visibility: visible; transform: none; transition: opacity .45s ease, transform .45s ease, visibility 0s; }
+.cx .fp-leads > .fp-lead.k-match { background: radial-gradient(120% 140% at 100% 0%, rgba(0,255,135,.2), transparent 55%), linear-gradient(160deg, #10261a, #171b26 62%); }
+.cx .fp-leads > .fp-lead.k-bomb { background: radial-gradient(120% 140% at 100% 0%, rgba(255,185,95,.18), transparent 55%), linear-gradient(160deg, #231d14, #171b26 62%); border-color: rgba(255,185,95,.3); }
+.cx .fp-leads > .fp-lead.k-bomb .fp-fee { color: var(--cyan); }
+.cx .fp-leads > .fp-lead.k-bomb .fp-move .cw.to { box-shadow: 0 0 0 2px var(--cyan), 0 10px 30px rgba(255,185,95,.25); }
+.cx .fp-leads > .fp-lead.k-bomb .fp-move > .ms { color: var(--cyan); }
+.cx .fp-tag.match { --tc: #00ff87; }
+.cx .fp-dots { position: absolute; left: 18px; right: 18px; bottom: 10px; z-index: 3; display: flex; gap: 6px; }
+.cx .fp-dots button { display: block; flex: 1; min-width: 0; height: 16px; min-height: 0; padding: 6px 0; border: 0; background: none; box-shadow: none; cursor: pointer; }
+.cx .fp-dots button i { display: block; width: 100%; height: 3px; border-radius: 2px; background: rgba(255,255,255,.18); overflow: hidden; }
+.cx .fp-dots button i::after { content: ""; display: block; height: 100%; background: var(--primary); transform: scaleX(0); transform-origin: left; }
+.cx .fp-dots button.done i::after { transform: scaleX(1); }
+.cx .fp-dots button.on i::after { animation: md-prog 5.2s linear both; }
+.cx .fp-leads.paused .fp-dots button.on i::after { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .cx .fp-leads > .fp-lead { transition: none; transform: none; }
+  .cx .fp-dots button.on i::after { animation: none; transform: scaleX(1); }
+}

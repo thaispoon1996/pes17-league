@@ -248,7 +248,7 @@
   // Blazor không đặt lại class khi markup không đổi → JS giữ tin đang hiện, gọi lại sau mỗi lần vẽ chỉ đồng bộ.
   window.cxHot = () => {
     document.querySelectorAll('.cx [data-hot]').forEach(el => {
-      const slides = [...el.querySelectorAll('.md-slide')], dots = [...el.querySelectorAll('.md-dots button')];
+      const slides = [...el.querySelectorAll(el.dataset.slide || '.md-slide')], dots = [...el.querySelectorAll(el.dataset.dots || '.md-dots button')];
       const st = el._hot || (el._hot = { i: 0, t: 0, hold: false });
       const show = i => {
         st.i = (i + slides.length) % slides.length;

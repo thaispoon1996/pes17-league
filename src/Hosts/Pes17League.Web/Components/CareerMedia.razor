@@ -69,7 +69,7 @@
     }
 }
 @ChildContent
-@if (!Full && data is { } fd && (fd.Lead is not null || fd.Front.Count > 0))
+@if (!Full && data is { } fd && (fd.Leads.Count > 0 || fd.Front.Count > 0))
 {
     var cats = FpCats.Select(c => (c.Key, c.Label, N: fd.Front.Count(x => x.Cat == c.Key))).Where(c => c.N > 0).ToList();
     var cur = cats.Any(c => c.Key == fpTab) ? fpTab : "all";
@@ -86,9 +86,14 @@
                 }
             </div>
         }
-        @if (cur == "all" && fd.Lead is { } ld)
+        @if (cur == "all" && fd.Leads.Count > 0)
         {
-            <a class="fp-lead" href="@ld.Item.Href">
+            @* Tin lớn tự chạy (PO 22/11): bài sau trận của đội luôn đứng đầu → bom tấn → vòng đấu của giải; 5,2s/tin, dừng khi rê chuột/focus (cxHot). *@
+            <div class="fp-leads" data-hot data-slide=".fp-lead" data-dots=".fp-dots button">
+            @for (var li = 0; li < fd.Leads.Count; li++)
+            {
+            var ld = fd.Leads[li];
+            <a class="fp-lead k-@ld.Item.Cat @(li == 0 ? "on" : null)" href="@ld.Item.Href" aria-hidden="@(li == 0 ? "false" : "true")" tabindex="@(li == 0 ? 0 : -1)">
                 <div class="fp-tx">
                     <span class="fp-tag @ld.Item.Cat"><i class="ms fill" aria-hidden="true">@ld.Icon</i>@ld.Tag</span>
                     <h3>@ld.Title</h3>
@@ -104,6 +109,14 @@
                     <div class="fp-fee">@ld.Big<small>@ld.BigLabel</small></div>
                 </div>
             </a>
+            }
+            @if (fd.Leads.Count > 1)
+            {
+                <div class="fp-dots" role="group" aria-label="Chọn tin lớn">
+                    @for (var di = 0; di < fd.Leads.Count; di++) { <button type="button" aria-label="Tin @(di + 1): @fd.Leads[di].Title"><i></i></button> }
+                </div>
+            }
+            </div>
         }
         <div class="fp-list">
             @foreach (var x in list) { @FpCard(x) }
@@ -207,12 +220,12 @@
     sealed record Shot(string Src, string Caption, string? Sub, DateTimeOffset At, MatchItem? Match = null);
     sealed record DeskItem(string Col, string Icon, string Tone, string Title, string? Text, string? Value, string? Href, DateTimeOffset At, int Weight, int? Meter = null);
     sealed record Data(IReadOnlyList<Slide> Slides, IReadOnlyList<Game> Ticker, int TickSlot, IReadOnlyList<PressItem> Press, PressPending? Pending, IReadOnlyList<MatchItem> Matches,
-        IReadOnlyList<Shot> Shots, bool Album, IReadOnlyList<DeskItem> Desk, string? LeagueName, FpLead? Lead, IReadOnlyList<Fp> Front, IReadOnlyList<Fp> Mix);
+        IReadOnlyList<Shot> Shots, bool Album, IReadOnlyList<DeskItem> Desk, string? LeagueName, IReadOnlyList<FpLead> Leads, IReadOnlyList<Fp> Front, IReadOnlyList<Fp> Mix);
     /// <summary>Tin Trang nhất. Cat: bomb / deal / drama / event / life. Score chỉ so trong cùng mục (phí, độ nổi, thời điểm). Ảnh nhỏ: Face = mặt HLV, không thì logo CLB, không thì Icon.</summary>
     sealed record Fp(string Cat, string Title, string? Sub, string Href, string? Logo, string? LogoName, long Score, string? Tag = null, string? Icon = null, bool Face = false);
     /// <summary>Tin lớn Trang nhất: vụ chuyển nhượng nổi nhất (A → B, phí), hoặc trận vừa đá của đội khi mùa chưa có vụ nào (A vs B, tỉ số).</summary>
     sealed record FpLead(Fp Item, string Tag, string Icon, string Title, string Text, string Meta, string AName, string? ALogo, string BName, string? BLogo, bool Vs, string Big, string BigLabel);
-    static readonly (string Key, string Label)[] FpCats = [("bomb", "Bom tấn"), ("deal", "Chuyển nhượng"), ("drama", "Drama"), ("event", "Sự kiện"), ("life", "Đời sống")];
+    static readonly (string Key, string Label)[] FpCats = [("match", "Trận đấu"), ("bomb", "Bom tấn"), ("deal", "Chuyển nhượng"), ("drama", "Drama"), ("event", "Sự kiện"), ("life", "Đời sống")];
     sealed record WorldGame(Guid Id, Guid EditionId, string Comp, int? Tier, int H, int A, int? HP, int? AP, Guid HomeClubId, Guid AwayClubId,
         DateTimeOffset? PlayedAt, string Home, string? HomeLogo, string Away, string? AwayLogo)
     {
@@ -275,7 +288,7 @@
         var ids = games.Select(g => g.F.Id).ToList();
         var have = await db.MatchArticles.Where(a => ids.Contains(a.FixtureId)).Select(a => a.FixtureId).ToListAsync();
         // Trận đá thật có bài AI + ảnh do máy đăng sau trận (MatchOrchestrator) → chỉ điền bài mẫu cho trận mô phỏng/BTC nhập, hoặc trận cũ vẫn chưa có bài.
-        var missing = games.Where(g => !have.Contains(g.F.Id) && (g.F.ResultSource is ResultSource.Simulated or ResultSource.Admin || g.F.PlayedAt < now.AddMinutes(-30)))
+        var missing = games.Where(g => !have.Contains(g.F.Id) && (g.F.ResultSource is ResultSource.Simulated or ResultSource.Admin || g.F.PlayedAt < now.AddMinutes(-10)))
             .Select(g => g.F.Id).Take(10).ToList();
         if (missing.Count > 0)
         {
@@ -549,22 +562,37 @@
         if (dealSlide is not null)
             hot.Add(new("deal", "Chợ chuyển nhượng", "cyan", dealSlide.Title, $"{dealSlide.Text} · vụ lớn nhất trong giải mùa này", dealSlide.Href, Icon: "swap_horiz", Big: dealSlide.Value));
 
-        var lead = Full ? null : await FrontAsync(db, p, fp, pressSorted, matches);
+        // Vòng gần nhất của giải VĐQG mình (khung vừa đá có thể là cúp châu Âu)
+        var leSlot = Full || leId == Guid.Empty ? 0 : await (from f in db.Fixtures join m in db.Matchdays on f.MatchdayId equals m.Id
+                                                     where m.SeasonId == sid && f.CompetitionEditionId == leId && f.Status == FixtureStatus.Played select (int?)m.Number).MaxAsync() ?? 0;
+        List<WorldGame> leRound = leSlot == 0 ? [] : await (from f in db.Fixtures.AsNoTracking() join m in db.Matchdays on f.MatchdayId equals m.Id
+                                                join e in db.Editions on f.CompetitionEditionId equals (Guid?)e.Id join c in db.Competitions on e.CompetitionId equals c.Id
+                                                join h in db.Clubs on f.HomeClubId equals h.Id join w in db.Clubs on f.AwayClubId equals w.Id
+                                                where m.SeasonId == sid && m.Number == leSlot && e.Id == leId && f.Status == FixtureStatus.Played && f.HomeGoals != null && f.AwayGoals != null
+                                                select new WorldGame(f.Id, e.Id, c.Name, c.Tier, f.HomeGoals!.Value, f.AwayGoals!.Value, f.HomePenalties, f.AwayPenalties,
+                                                    f.HomeClubId, f.AwayClubId, f.PlayedAt, h.Name, h.LogoPath, w.Name, w.LogoPath)).ToListAsync();
+        List<FpLead> leads = Full ? [] : await FrontAsync(db, p, fp, pressSorted, matches, leRound, leSlot);
         return new(hot, ticker, tickSlot, pressSorted, media.Press, matches, [.. shots.OrderByDescending(s => s.At)], album, desk, le?.Name,
-            lead, fp, Mix(fp, lead?.Item, 6));
+            leads, fp, Mix(fp, [.. leads.Select(l => l.Item)], 6));
     }
 
     /// <summary>Trang nhất: thêm tin đời sống (họp báo, bài báo sau trận) và chuyển nhượng cả mùa ở mọi giải vào <paramref name="fp"/> (đã có sự kiện, thư báo chí),
     /// rồi chọn tin lớn. Bom tấn = 5 vụ phí cao nhất mùa (từ €1M); Drama = lời hỏi mua bị từ chối của đội mình, ngôi sao rời 5 giải lớn sang giải khác.</summary>
-    async Task<FpLead?> FrontAsync(ClubsDbContext db, CareerProgress p, List<Fp> fp, List<PressItem> press, List<MatchItem> matches)
+    async Task<List<FpLead>> FrontAsync(ClubsDbContext db, CareerProgress p, List<Fp> fp, List<PressItem> press, List<MatchItem> matches, List<WorldGame> round, int slot)
     {
+        var leads = new List<FpLead>();
         Guid mine = p.ClubId, sid = p.SeasonId;
         foreach (var x in press.Take(3))
             fp.Add(new("life", x.Quote ? $"“{x.Headline}”" : x.Headline, x.Res is null ? $"Họp báo ra mắt · {Day(x.At)}" : $"{x.Tag} · {x.ResText}",
                 "truyen-thong", null, null, x.At.ToUnixTimeSeconds(), Tag: "Họp báo", Face: true));
-        foreach (var m in matches.Where(m => m.Title is not null).Take(3))
-            fp.Add(new("life", Headline(m), $"Bài báo sau trận · {m.Comp.Split(" · ")[0]}", $"truyen-thong#md-m-{m.Id}",
-                m.MineHome ? m.AwayLogo : m.HomeLogo, m.MineHome ? m.Away : m.Home, (m.At ?? DateTimeOffset.MinValue).ToUnixTimeSeconds(), Tag: "Sau trận"));
+        // ---- Trận đấu: bài sau trận của đội (mỗi trận một bài) + các trận khác trong giải ở khung vừa đá ----
+        foreach (var m in matches.Take(6))
+            fp.Add(new("match", Headline(m), $"Bài báo sau trận · {m.Comp.Split(" · ")[0]}" + (m.At is { } ma ? $" · {Day(ma)}" : ""), $"truyen-thong#md-m-{m.Id}",
+                m.MineHome ? m.AwayLogo : m.HomeLogo, m.MineHome ? m.Away : m.Home, 1_000_000_000_000 + (m.At ?? DateTimeOffset.MinValue).ToUnixTimeSeconds(), Tag: "Sau trận"));
+        var others = round.Where(x => x.HomeClubId != mine && x.AwayClubId != mine).OrderByDescending(x => Math.Abs(x.H - x.A)).ThenByDescending(x => x.H + x.A).ToList();
+        foreach (var (x, i) in others.Select((x, i) => (x, i)))
+            fp.Add(new("match", RoundTitle(x), $"{x.Comp} · khung {slot}", $"tran/{x.Id}", x.H >= x.A ? x.HomeLogo : x.AwayLogo, x.H >= x.A ? x.Home : x.Away,
+                500 - i, Tag: $"Khung {slot}"));
 
         var moves = await (from t in db.Transfers join w in db.TransferWindows on t.TransferWindowId equals w.Id join pl in db.Players on t.PlayerId equals pl.Id
                            where w.SeasonId == sid && t.Status == TransferStatus.Completed && t.CompletedAt != null
@@ -628,7 +656,13 @@
             fp.Add(new("drama", $"{Nm(o.SellerClubId)} từ chối bán {Sur(o.Name)}", $"Đề nghị {MoneyText.Format(o.Fee)} của {Short(p.ClubName)} · {Day(o.At)}", "de-nghi",
                 Lg(o.SellerClubId), Long(o.SellerClubId), o.At.ToUnixTimeSeconds()));
 
-        // ---- Tin lớn: vụ đắt nhất từ trận trước của đội (không có thì đắt nhất mùa) ----
+        // ---- Tin lớn 1: trận vừa đá của đội (sau mỗi trận luôn có bài — bài AI của máy, hoặc bài mẫu) ----
+        if (matches.FirstOrDefault() is { } lm && fp.FirstOrDefault(f => f.Href == $"truyen-thong#md-m-{lm.Id}") is { } li)
+            leads.Add(new(li, "Sau trận", "sports_soccer", Headline(lm),
+                lm.Paras.FirstOrDefault() is { } p0 ? Clip(p0, 230) : MatchSub(lm) is { Length: > 0 } ms ? ms : lm.Comp,
+                lm.Comp + (lm.At is { } at ? $" · {Day(at)}" : ""), lm.Home, lm.HomeLogo, lm.Away, lm.AwayLogo,
+                true, lm.Score, lm.Res switch { "win" => "thắng", "loss" => "thua", _ => "hoà" }));
+        // ---- Tin lớn 2: vụ đắt nhất từ trận trước của đội (không có thì đắt nhất mùa) ----
         var prevAt = matches.Skip(1).FirstOrDefault()?.At;
         var lb = bombs.Where(x => prevAt is null || x.At >= prevAt).MaxBy(x => x.Fee) ?? top;
         if (lb is not null)
@@ -642,23 +676,29 @@
             else if (spend.Club != lb.ToClubId)
                 text += $" CLB chi mạnh nhất mùa vẫn là {Nm(spend.Club)}: {MoneyText.Format(spend.Sum)} cho {spend.N} tân binh.";
             var to = Nm(lb.ToClubId);
-            return new(fp.First(f => f.Cat == "bomb" && f.Href == $"cau-thu/{lb.PlayerId}"), record ? "Bom tấn · kỷ lục mùa" : "Bom tấn", "local_fire_department",
+            leads.Add(new(fp.First(f => f.Cat == "bomb" && f.Href == $"cau-thu/{lb.PlayerId}"), record ? "Bom tấn · kỷ lục mùa" : "Bom tấn", "local_fire_department",
                 broke ? $"{to} phá kỷ lục mùa vì {Sur(lb.Name)}" : record ? $"{to} lập kỷ lục mùa với {Sur(lb.Name)}" : $"{to} chi {MoneyText.Format(lb.Fee)} cho {Sur(lb.Name)}",
                 text, $"Chợ chuyển nhượng · {Day(lb.At)} · {Fmt.PositionName(lb.Position)}", Long(lb.FromClubId), Lg(lb.FromClubId), Long(lb.ToClubId), Lg(lb.ToClubId),
-                false, MoneyText.Format(lb.Fee), "phí chuyển nhượng");
+                false, MoneyText.Format(lb.Fee), "phí chuyển nhượng"));
         }
-        // Mùa chưa có vụ lớn: trận vừa đá của đội.
-        if (matches.FirstOrDefault() is { } lm && fp.FirstOrDefault(f => f.Href == $"truyen-thong#md-m-{lm.Id}") is { } li)
-            return new(li, "Sau trận", "sports_soccer", Headline(lm), MatchSub(lm) is { Length: > 0 } ms ? ms : lm.Comp, lm.Comp, lm.Home, lm.HomeLogo, lm.Away, lm.AwayLogo,
-                true, lm.Score, lm.Res switch { "win" => "thắng", "loss" => "thua", _ => "hoà" });
-        return null;
+        // ---- Tin lớn 3: trận nổi nhất các đội khác trong giải ở khung vừa đá + kết quả còn lại ----
+        if (others.FirstOrDefault() is { } rg && fp.FirstOrDefault(f => f.Href == $"tran/{rg.Id}") is { } ri)
+        {
+            var rest = others.Skip(1).Take(4).Select(x => $"{Short(x.Home)} {x.Score} {Short(x.Away)}").ToList();
+            leads.Add(new(ri, $"{rg.Comp} · khung {slot}", "emoji_events", RoundTitle(rg),
+                rest.Count == 0 ? $"{rg.Home} {rg.Score} {rg.Away}." : $"Kết quả khác: {string.Join(", ", rest)}" + (others.Count > 5 ? $" và {others.Count - 5} trận nữa." : "."),
+                rg.Comp, rg.Home, rg.HomeLogo, rg.Away, rg.AwayLogo, true, rg.Score, "tỉ số"));
+        }
+        return leads;
     }
+    static string RoundTitle(WorldGame x) => x.H == x.A ? $"{Short(x.Home)} và {Short(x.Away)} hoà {x.Score}"
+        : $"{Short(x.H > x.A ? x.Home : x.Away)} {(Math.Abs(x.H - x.A) >= 3 ? "đè bẹp" : "thắng")} {Short(x.H > x.A ? x.Away : x.Home)} {Math.Max(x.H, x.A)} – {Math.Min(x.H, x.A)}";
 
     /// <summary>"Tất cả": xen kẽ các mục (Drama → Bom tấn → Chuyển nhượng → Sự kiện → Đời sống), mỗi mục lấy tin nổi nhất trước.</summary>
-    static List<Fp> Mix(List<Fp> all, Fp? skip, int n)
+    static List<Fp> Mix(List<Fp> all, List<Fp> skip, int n)
     {
-        string[] order = ["drama", "bomb", "deal", "event", "life"];
-        var q = order.Select(c => new Queue<Fp>(all.Where(x => x.Cat == c && !ReferenceEquals(x, skip)).OrderByDescending(x => x.Score))).ToList();
+        string[] order = ["match", "drama", "bomb", "deal", "event", "life"];
+        var q = order.Select(c => new Queue<Fp>(all.Where(x => x.Cat == c && !skip.Any(k => ReferenceEquals(x, k))).OrderByDescending(x => x.Score))).ToList();
         var r = new List<Fp>();
         while (r.Count < n && q.Any(x => x.Count > 0))
             foreach (var x in q) if (r.Count < n && x.Count > 0) r.Add(x.Dequeue());

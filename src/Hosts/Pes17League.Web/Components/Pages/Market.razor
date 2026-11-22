@@ -153,6 +153,10 @@
                     @if (affordable) { <button type="button" class="no-busy" @onclick="() => affordable = false">Đủ tiền<i class="ms">close</i></button> }
                     @if (skill is not null) { <button type="button" class="no-busy" @onclick="() => skill = null">@LaneBy(skill).Name<i class="ms">close</i></button> }
                     @if (play is { } st) { <button type="button" class="no-busy" @onclick="() => play = null">@Fmt.Style(st)<i class="ms">close</i></button> }
+                    @if (minAge > 0) { <button type="button" class="no-busy" @onclick="() => minAge = 0">≥ @minAge tuổi<i class="ms">close</i></button> }
+                    @if (maxPrice > 0) { <button type="button" class="no-busy" @onclick="() => maxPrice = 0">Giá ≤ @Fmt.Money(maxPrice)<i class="ms">close</i></button> }
+                    @if (minHeight > 0) { <button type="button" class="no-busy" @onclick="() => minHeight = 0">Cao ≥ @minHeight cm<i class="ms">close</i></button> }
+                    @if (scoutF != "all") { <button type="button" class="no-busy" @onclick='() => scoutF = "all"'>@(scoutF == "fog" ? "Chưa trinh sát" : "Đã rõ chỉ số")<i class="ms">close</i></button> }
                 </div>
             }
             @if (message is not null) { <p class="cx-msg @(message.StartsWith("Đã") ? null : "neg")">@message</p> }
@@ -208,15 +212,21 @@
                 {
                     var can = p.Price <= balance;
                     <li>
-                        <button type="button" class="mk-row no-busy @(sel == p.PlayerId ? "sel" : null)" @onclick="() => Pick(p)">
+                        <button type="button" class="mk-row mk-row2 no-busy @Fmt.Group(p.Position) @(can ? "ok" : null) @(sel == p.PlayerId ? "sel" : null)" @onclick="() => Pick(p)">
                             <span class="mk-tile @Tc(p)"><b>@Ovr(p)</b><span class="mk-ps sm @Fmt.Group(p.Position)">@p.Position</span></span>
                             <span class="mk-face"><Face Id="@p.PlayerId" Name="@p.Name" Size="md" /></span>
                             <span class="who">
                                 <b>@p.Name@if (scouting.ContainsKey(p.PlayerId)) { <i class="ms scout" title="Đang trinh sát">travel_explore</i> }</b>
-                                <span>@ClubTag(p.ClubId, "Tự do")<span class="age">· @(p.Age?.ToString() ?? "–") tuổi · @Fmt.Body(p.Height, p.Weight) · @Fmt.Style(p.Style)</span></span>
+                                <span class="cl">@ClubTag(p.ClubId, "Tự do")</span>
+                                @if (p.Style > 0) { <span class="sty"><i class="ms" aria-hidden="true">bolt</i>@Fmt.Style(p.Style)</span> }
                             </span>
-                            <span class="wage"><b>@Fmt.Money(Wage(p))</b>lương/vòng</span>
                             <span class="cost @(can ? null : "no")"><b>@Fmt.Money(p.Price)</b><small>@(can ? "Đủ tiền" : $"Thiếu {Fmt.Money(p.Price - balance)}")</small></span>
+                            <span class="facts">
+                                <span class="f"><b>@(p.Age?.ToString() ?? "–")</b>tuổi</span>
+                                <span class="f"><b>@(p.Height?.ToString() ?? "–")</b>cm</span>
+                                <span class="f"><b>@(p.Weight?.ToString() ?? "–")</b>kg</span>
+                                <span class="f wg"><b>@Fmt.Money(Wage(p))</b>/vòng</span>
+                            </span>
                         </button>
                     </li>
                 }
@@ -237,8 +247,14 @@
             <div class="body">
                 <h2>Bộ lọc</h2>
                 <div class="mk-fg"><h4>Nguồn</h4><div>@foreach (var (k, l) in new[] { ("all", "Tất cả"), ("free", "Tự do"), ("clubs", "Đang ở CLB") }) { <button type="button" class="mk-chip no-busy @(source == k ? "on" : null)" @onclick="() => source = k">@l</button> }</div></div>
+                <div class="mk-fg"><h4>Vị trí</h4><div><button type="button" class="mk-chip no-busy @(pos is null ? "on" : null)" @onclick="() => { pos = null; group = null; }">Mọi vị trí</button>@foreach (var ps in positions) { var x = ps; <button type="button" class="mk-chip no-busy @(pos == x ? "on" : null)" title="@Fmt.PositionName(x)" @onclick="() => { pos = pos == x ? null : x; group = null; }"><i class="@Fmt.Group(x)" aria-hidden="true"></i>@x</button> }</div></div>
+                <div class="mk-fg"><h4>Tuổi tối thiểu</h4><div>@foreach (var a in new[] { 0, 18, 21, 24, 27, 30 }) { <button type="button" class="mk-chip no-busy @(minAge == a ? "on" : null)" @onclick="() => minAge = a">@(a == 0 ? "Bất kỳ" : $"≥ {a}")</button> }</div></div>
                 <div class="mk-fg"><h4>Tuổi tối đa</h4><div>@foreach (var a in new[] { 0, 21, 23, 25, 28, 30 }) { <button type="button" class="mk-chip no-busy @(maxAge == a ? "on" : null)" @onclick="() => maxAge = a">@(a == 0 ? "Bất kỳ" : $"≤ {a}")</button> }</div></div>
                 <div class="mk-fg"><h4>OVR tối thiểu</h4><div>@foreach (var o in new[] { 0, 70, 75, 80, 85 }) { <button type="button" class="mk-chip no-busy @(minOvr == o ? "on" : null)" @onclick="() => minOvr = o">@(o == 0 ? "Bất kỳ" : $"≥ {o}")</button> }</div></div>
+                <div class="mk-fg"><h4>Giá tối đa</h4><div>@foreach (var m in PriceCaps) { <button type="button" class="mk-chip no-busy @(maxPrice == m ? "on" : null)" @onclick="() => maxPrice = m">@(m == 0 ? "Bất kỳ" : $"≤ {Fmt.Money(m)}")</button> }</div></div>
+                <div class="mk-fg"><h4>Chiều cao tối thiểu</h4><div>@foreach (var h in new[] { 0, 175, 180, 185, 190 }) { <button type="button" class="mk-chip no-busy @(minHeight == h ? "on" : null)" @onclick="() => minHeight = h">@(h == 0 ? "Bất kỳ" : $"≥ {h} cm")</button> }</div></div>
+                <div class="mk-fg"><h4>Chỉ số nổi bật <small>≥ @SkillCut</small></h4><div><button type="button" class="mk-chip no-busy @(skill is null ? "on" : null)" @onclick="() => skill = null">Bất kỳ</button>@foreach (var l in Lanes) { var id = l.Id; <button type="button" class="mk-chip no-busy @(skill == id ? "on" : null)" @onclick="() => skill = skill == id ? null : id">@l.Name</button> }</div></div>
+                <div class="mk-fg"><h4>Trinh sát</h4><div>@foreach (var (k, l) in new[] { ("all", "Tất cả"), ("seen", "Đã rõ chỉ số"), ("fog", "Chưa trinh sát") }) { <button type="button" class="mk-chip no-busy @(scoutF == k ? "on" : null)" @onclick="() => scoutF = k">@l</button> }</div></div>
                 <div class="mk-fg"><h4>Phong cách</h4><div>@for (var i = 0; i <= 21; i++) { var s = i; <button type="button" class="mk-chip no-busy @(play == s ? "on" : null)" @onclick="() => play = play == s ? null : s">@Fmt.Style(s)</button> }</div></div>
                 <div class="mk-fg"><h4>Sắp xếp</h4><div>@foreach (var (k, l) in Sorts) { <button type="button" class="mk-chip no-busy @(sort == k ? "on" : null)" @onclick="() => sort = k">@l</button> }</div></div>
                 <div class="mk-toggle">
@@ -476,7 +492,8 @@ else
     static readonly (PositionGroup Group, string Name, string Short)[] Groups =
         [(PositionGroup.Goalkeeper, "Thủ môn", "TM"), (PositionGroup.Defender, "Hậu vệ", "HV"), (PositionGroup.Midfielder, "Tiền vệ", "TV"), (PositionGroup.Forward, "Tiền đạo", "TĐ")];
     static readonly (string Key, string Label)[] Sorts =
-        [("ovr", "OVR cao"), ("price", "Giá thấp"), ("value", "OVR/giá tốt"), ("age", "Trẻ nhất"), ("change", "Tăng giá mạnh")];
+        [("ovr", "OVR cao"), ("price", "Giá thấp"), ("price-hi", "Giá cao"), ("value", "OVR/giá tốt"), ("age", "Trẻ nhất"), ("tall", "Cao nhất"), ("change", "Tăng giá mạnh")];
+    static readonly long[] PriceCaps = [0, 1_000_000, 3_000_000, 5_000_000, 10_000_000, 20_000_000, 50_000_000];
 
     SeasonInfo? season;
     TransferWindow? window;
@@ -488,7 +505,9 @@ else
     string tab = "tim", name = "", source = "all", sort = "ovr";
     PositionGroup? group;
     Position? pos;
-    int minOvr, maxAge;
+    int minOvr, maxAge, minAge, minHeight;
+    long maxPrice;
+    string scoutF = "all";   // trinh sát: all | seen (đã rõ chỉ số) | fog (chưa trinh sát)
     bool affordable;
     Guid? sel;
     PlayerProfile? prof;
@@ -533,12 +552,15 @@ else
         var q = market.Where(p => (group is null || p.Position.Group() == group) && (pos is null || p.Position == pos)
             && p.Name.Contains(name, StringComparison.OrdinalIgnoreCase) && Seen(p) >= minOvr && (maxAge == 0 || p.Age <= maxAge)
             && (source == "all" || (source == "free") == (p.ClubId is null)) && (!affordable || p.Price <= balance)
-            && (play is null || p.Style == play)
+            && (play is null || p.Style == play) && (minAge == 0 || p.Age >= minAge) && (maxPrice == 0 || p.Price <= maxPrice)
+            && (minHeight == 0 || p.Height >= minHeight) && (scoutF == "all" || (scoutF == "fog") == hidden.Contains(p.PlayerId))
             && (lane is null || ((lane.Keeper ? p.Position == Position.GK : p.Position != Position.GK) && lane.Value(p) >= SkillCut)));
         if (sort == "ovr" && lane is not null) return q.OrderByDescending(lane.Value).ThenByDescending(Seen);
         return sort switch
         {
             "price" => q.OrderBy(p => p.Price),
+            "price-hi" => q.OrderByDescending(p => p.Price),
+            "tall" => q.OrderByDescending(p => p.Height ?? 0).ThenByDescending(Seen),
             "value" => q.OrderByDescending(p => Seen(p) / (double)Math.Max(p.Price, 1)),
             "age" => q.OrderBy(p => p.Age ?? 99).ThenByDescending(Seen),
             "change" => q.OrderByDescending(p => Change(p)).ThenByDescending(Seen),
@@ -608,14 +630,15 @@ else
     IEnumerable<SquadRow> Weak() => squad.GroupBy(s => s.Position).Select(g => g.MaxBy(s => s.Overall)!).OrderBy(s => s.Overall).Take(3);
 
     int? play;
-    int FilterCount => (source != "all" ? 1 : 0) + (maxAge > 0 ? 1 : 0) + (minOvr > 0 ? 1 : 0) + (affordable ? 1 : 0) + (play is not null ? 1 : 0);
+    int FilterCount => (source != "all" ? 1 : 0) + (maxAge > 0 ? 1 : 0) + (minOvr > 0 ? 1 : 0) + (affordable ? 1 : 0) + (play is not null ? 1 : 0)
+        + (minAge > 0 ? 1 : 0) + (maxPrice > 0 ? 1 : 0) + (minHeight > 0 ? 1 : 0) + (scoutF != "all" ? 1 : 0);
     bool Filtered => FilterCount > 0 || name.Length > 0 || pos is not null || group is not null || skill is not null;
     string ListTitle => pos is { } p ? Fmt.PositionName(p) : play is { } st ? Fmt.Style(st) : skill is not null ? LaneBy(skill).Name : source == "free" ? "Cầu thủ tự do" : Filtered ? "Kết quả lọc" : "Tất cả cầu thủ";
     static string CxTier(int ovr) => ovr >= 88 ? "t3" : ovr >= 82 ? "t2" : ovr >= 75 ? "t1" : "t0";
     string Tc(MarketRow p) => hidden.Contains(p.PlayerId) ? "fog" : CxTier(p.Overall);
 
     void NextSort() => sort = Sorts[(Array.FindIndex(Sorts, s => s.Key == sort) + 1) % Sorts.Length].Key;
-    void ClearFilters() { source = "all"; maxAge = 0; minOvr = 0; affordable = false; play = null; }
+    void ClearFilters() { source = "all"; maxAge = 0; minOvr = 0; affordable = false; play = null; minAge = 0; maxPrice = 0; minHeight = 0; scoutF = "all"; skill = null; pos = null; group = null; }
     void ClosePlayer() { sel = null; prof = null; scoutMessage = null; }
 
     async Task FocusPos(Position p)
