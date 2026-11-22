@@ -62,7 +62,8 @@ b.Services.AddSingleton(new FriendlyMachineOptions(b.Configuration["Friendly:Con
     TimeSpan.FromMinutes(b.Configuration.GetValue("Friendly:MaxMinutes", 45))));
 b.Services.AddSingleton<StreamPass>();
 b.Services.AddHostedService<FriendlyWorker>();
-// PO 17/11: hạn đá vòng ban đêm (League:NightBotDays "Mon,Wed,Fri,Sun", League:NightBotHourVn 23); rỗng = tắt
+// PO 17/11: hạn đá vòng ban đêm (League:NightBotDays "Mon,Wed,Fri,Sun", League:NightBotHourVn 23); rỗng = tắt.
+// PO 22/11: TẮT (chỉ chơi career, giải online tạm hoãn) — hạn đêm giao trận của HLV cho trợ lý + đếm vắng, 5 lần mất CLB.
 b.Services.AddSingleton(new NightBotOptions(
     (b.Configuration["League:NightBotDays"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Select(d => Enum.Parse<DayOfWeek>(d.Length == 3 ? d switch { "Mon" => "Monday", "Tue" => "Tuesday", "Wed" => "Wednesday", "Thu" => "Thursday", "Fri" => "Friday", "Sat" => "Saturday", _ => "Sunday" } : d, true)).ToHashSet(),
