@@ -11,58 +11,58 @@
 @* Máy chơi (PO 22/11 "tạo máy chủ để người dùng biết máy nào rảnh có thể vào chơi"): tình trạng từng máy game (GameMachines) +
    1 lượt dùng máy tốn bao lâu. Chỉ đọc: không giữ chỗ / xếp hàng (chờ PO chốt luật). Tự cập nhật khi việc của máy đổi + mỗi 15 s. *@
 <style>
-    .cx .mc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
-    .cx .mc-head h1 { margin: 0; }
-    .cx .mc-count { margin: 0; font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: var(--muted, #9ba7b5); }
-    .cx .mc-count b { font-size: 44px; color: #00ff87; margin-right: 4px; }
-    .cx .mc-count.none b { color: #ff4d5e; }
-    .cx .mc-lede { color: #9ba7b5; margin: 0 0 18px; max-width: 64ch; }
-    .cx .mc-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-    .cx .mc-bay { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .mcp .mc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+    .mcp .mc-head h1 { margin: 0; }
+    .mcp .mc-count { margin: 0; font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: var(--muted, #9ba7b5); }
+    .mcp .mc-count b { font-size: 44px; color: #00ff87; margin-right: 4px; }
+    .mcp .mc-count.none b { color: #ff4d5e; }
+    .mcp .mc-lede { color: #9ba7b5; margin: 0 0 18px; max-width: 64ch; }
+    .mcp .mc-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .mcp .mc-bay { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
     /* Máy = 1 màn hình phát sóng: khung 16:9, đèn trạng thái + tên máy chữ lớn. */
-    .cx .mc-tv { position: relative; min-height: 230px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 16px;
+    .mcp .mc-tv { position: relative; min-height: 230px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 16px;
         border-radius: 12px; border: 1px solid #2c303b; background:
         repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 2px, transparent 2px 4px), linear-gradient(160deg, #262a35, #1c1f2a 70%); overflow: hidden; }
-    .cx .mc-tv::after { content: ""; position: absolute; inset: auto 0 0; height: 4px; background: var(--mc-tone); }
-    .cx .mc-tv.free { --mc-tone: #00ff87; border-color: rgba(0,255,135,.45); box-shadow: 0 0 0 1px rgba(0,255,135,.12), 0 10px 30px -18px #00ff87; }
-    .cx .mc-tv.playing { --mc-tone: #ff4d5e; }
-    .cx .mc-tv.preparing, .cx .mc-tv.busy { --mc-tone: #ffb95f; }
-    .cx .mc-tv.offline, .cx .mc-tv.unknown { --mc-tone: #2c303b; }
-    .cx .mc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .cx .mc-lamp { display: inline-flex; align-items: center; gap: 8px; font: 800 18px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: var(--mc-tone); }
-    .cx .mc-lamp::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--mc-tone); box-shadow: 0 0 10px var(--mc-tone); }
-    .cx .mc-tv.offline .mc-lamp, .cx .mc-tv.unknown .mc-lamp { color: #9ba7b5; }
-    .cx .mc-tv.playing .mc-lamp::before { animation: mc-pulse 1.4s ease-in-out infinite; }
+    .mcp .mc-tv::after { content: ""; position: absolute; inset: auto 0 0; height: 4px; background: var(--mc-tone); }
+    .mcp .mc-tv.free { --mc-tone: #00ff87; border-color: rgba(0,255,135,.45); box-shadow: 0 0 0 1px rgba(0,255,135,.12), 0 10px 30px -18px #00ff87; }
+    .mcp .mc-tv.playing { --mc-tone: #ff4d5e; }
+    .mcp .mc-tv.preparing, .mcp .mc-tv.busy { --mc-tone: #ffb95f; }
+    .mcp .mc-tv.offline, .mcp .mc-tv.unknown { --mc-tone: #2c303b; }
+    .mcp .mc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .mcp .mc-lamp { display: inline-flex; align-items: center; gap: 8px; font: 800 18px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: var(--mc-tone); }
+    .mcp .mc-lamp::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--mc-tone); box-shadow: 0 0 10px var(--mc-tone); }
+    .mcp .mc-tv.offline .mc-lamp, .mcp .mc-tv.unknown .mc-lamp { color: #9ba7b5; }
+    .mcp .mc-tv.playing .mc-lamp::before { animation: mc-pulse 1.4s ease-in-out infinite; }
     @@keyframes mc-pulse { 50% { opacity: .25; } }
-    @@media (prefers-reduced-motion: reduce) { .cx .mc-tv.playing .mc-lamp::before { animation: none; } }
-    .cx .mc-id { color: #9ba7b5; font-size: 12px; }
-    .cx .mc-name { font: 800 clamp(40px, 6vw, 56px)/.9 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; margin: 0; }
-    .cx .mc-detail { margin: 0; color: #dee1f7; font-size: 14px; }
-    .cx .mc-detail small { display: block; color: #9ba7b5; font-size: 13px; margin-top: 2px; }
-    .cx .mc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-    .cx .mc-eta { font: 800 22px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
-    .cx .mc-eta small { font: 500 12px 'Be Vietnam Pro', sans-serif; text-transform: none; color: #9ba7b5; display: block; margin-top: 2px; }
-    .cx .mc-go { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 12px; background: #00ff87; color: #0f131d;
+    @@media (prefers-reduced-motion: reduce) { .mcp .mc-tv.playing .mc-lamp::before { animation: none; } }
+    .mcp .mc-id { color: #9ba7b5; font-size: 12px; }
+    .mcp .mc-name { font: 800 clamp(40px, 6vw, 56px)/.9 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; margin: 0; }
+    .mcp .mc-detail { margin: 0; color: #dee1f7; font-size: 14px; }
+    .mcp .mc-detail small { display: block; color: #9ba7b5; font-size: 13px; margin-top: 2px; }
+    .mcp .mc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .mcp .mc-eta { font: 800 22px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .mcp .mc-eta small { font: 500 12px 'Be Vietnam Pro', sans-serif; text-transform: none; color: #9ba7b5; display: block; margin-top: 2px; }
+    .mcp .mc-go { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 12px; background: #00ff87; color: #0f131d;
         font: 800 17px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; text-decoration: none; }
-    .cx .mc-go:focus-visible { outline: 2px solid #dee1f7; outline-offset: 2px; }
+    .mcp .mc-go:focus-visible { outline: 2px solid #dee1f7; outline-offset: 2px; }
     /* 1 lượt dùng máy: dải thời gian theo đúng thứ tự (mở game → thi đấu → lưu). */
-    .cx .mc-slot { display: flex; height: 34px; border-radius: 8px; overflow: hidden; margin: 12px 0 8px; font: 800 15px/34px 'Barlow Condensed', sans-serif; text-transform: uppercase; }
-    .cx .mc-slot span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
-    .cx .mc-slot .boot { background: #262a35; color: #ffb95f; }
-    .cx .mc-slot .play { background: rgba(0,255,135,.16); color: #00ff87; }
-    .cx .mc-slot .save { background: #2c303b; padding: 0; }
-    .cx .mc-legend { display: flex; justify-content: space-between; color: #9ba7b5; font-size: 13px; gap: 8px; }
-    .cx .mc-cap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 6px; }
-    .cx .mc-cap div { background: #1c1f2a; border: 1px solid #2c303b; border-radius: 12px; padding: 10px; }
-    .cx .mc-cap b { display: block; font: 800 30px/1 'Barlow Condensed', sans-serif; color: #dee1f7; }
-    .cx .mc-cap span { color: #9ba7b5; font-size: 12px; }
-    .cx .mc-steps { margin: 8px 0 0; padding-left: 20px; color: #dee1f7; font-size: 14px; }
-    .cx .mc-steps li + li { margin-top: 6px; }
-    .cx .mc-steps small { color: #9ba7b5; }
-    @@media (max-width: 900px) { .cx .mc-grid { grid-template-columns: 1fr; } .cx .mc-tv { min-height: 200px; } }
+    .mcp .mc-slot { display: flex; height: 34px; border-radius: 8px; overflow: hidden; margin: 12px 0 8px; font: 800 15px/34px 'Barlow Condensed', sans-serif; text-transform: uppercase; }
+    .mcp .mc-slot span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+    .mcp .mc-slot .boot { background: #262a35; color: #ffb95f; }
+    .mcp .mc-slot .play { background: rgba(0,255,135,.16); color: #00ff87; }
+    .mcp .mc-slot .save { background: #2c303b; padding: 0; }
+    .mcp .mc-legend { display: flex; justify-content: space-between; color: #9ba7b5; font-size: 13px; gap: 8px; }
+    .mcp .mc-cap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 6px; }
+    .mcp .mc-cap div { background: #1c1f2a; border: 1px solid #2c303b; border-radius: 12px; padding: 10px; }
+    .mcp .mc-cap b { display: block; font: 800 30px/1 'Barlow Condensed', sans-serif; color: #dee1f7; }
+    .mcp .mc-cap span { color: #9ba7b5; font-size: 12px; }
+    .mcp .mc-steps { margin: 8px 0 0; padding-left: 20px; color: #dee1f7; font-size: 14px; }
+    .mcp .mc-steps li + li { margin-top: 6px; }
+    .mcp .mc-steps small { color: #9ba7b5; }
+    @@media (max-width: 900px) { .mcp .mc-grid { grid-template-columns: 1fr; } .mcp .mc-tv { min-height: 200px; } }
 </style>
 
-<div class="mc">
+<div class="mcp">   @* gốc riêng (không .cx): khách rơi về MainLayout vẫn đủ kiểu *@
     <div class="mc-head">
         <h1>Máy chơi</h1>
         @if (machines.Count > 0)
