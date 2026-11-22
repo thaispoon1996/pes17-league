@@ -128,21 +128,28 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
 
     // Đo PES17 19/11 (1 trận BOT, Match Time 5): giao bóng → hết giờ 13,8 phút (game chạy chậm hơn thời gian thực); hết giờ → xong ~0,2 phút.
     private const double BotInPlayMinutes = 14, BotAfterMinutes = 0.5;
+    /// <summary>Trận có người (Match Time 10 = 5 phút/hiệp): giao bóng → hết giờ, ƯỚC LƯỢNG (chưa đo; 10 phút đá + nghỉ giữa hiệp + quay chậm).</summary>
+    public const double HumanInPlayMinutes = 16;
 
     /// <summary>Đá BOT: ước lượng phút tới khi trận đang đá xong; null = không đá BOT.</summary>
-    public int? BotMinutesLeft
+    public int? BotMinutesLeft => Title == "Đá các trận BOT" ? MatchMinutesLeft : null;
+
+    /// <summary>Trận đang đá trên máy game (BOT hoặc trận của HLV): ước lượng phút tới khi trận xong (trang Máy chơi, PO 22/11);
+    /// null = không có trận / trận của HLV đang chuẩn bị sẵn, chờ bấm Đá (tự huỷ lúc <see cref="PrepareUntil"/>).</summary>
+    public int? MatchMinutesLeft
     {
         get
         {
-            if (!Running || Title != "Đá các trận BOT") return null;
+            if (!Running || Title is not ("Đá các trận BOT" or "Trận của tôi") || Preparing) return null;
+            var inPlay = Title == "Trận của tôi" ? HumanInPlayMinutes : BotInPlayMinutes;
             lock (_gate)
             {
                 var since = (clock.GetUtcNow() - StageAt).TotalMinutes;
                 var left = Stage switch
                 {
                     "fulltime" => BotAfterMinutes - since,
-                    "kickoff" => BotInPlayMinutes - since + BotAfterMinutes,
-                    _ => Math.Max(0, Eta.GetValueOrDefault(Stage ?? "", 21) / 60 - since) + BotInPlayMinutes + BotAfterMinutes,
+                    "kickoff" => inPlay - since + BotAfterMinutes,
+                    _ => Math.Max(0, Eta.GetValueOrDefault(Stage ?? "", 21) / 60 - since) + inPlay + BotAfterMinutes,
                 };
                 return (int)Math.Max(1, Math.Ceiling(left));
             }

@@ -1,0 +1,210 @@
+@page "/may-choi"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@implements IDisposable
+@inject MatchJobService Jobs
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+<PageTitle>Máy chơi</PageTitle>
+
+@* Máy chơi (PO 22/11 "tạo máy chủ để người dùng biết máy nào rảnh có thể vào chơi"): tình trạng từng máy game (GameMachines) +
+   1 lượt dùng máy tốn bao lâu. Chỉ đọc: không giữ chỗ / xếp hàng (chờ PO chốt luật). Tự cập nhật khi việc của máy đổi + mỗi 15 s. *@
+<style>
+    .cx .mc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+    .cx .mc-head h1 { margin: 0; }
+    .cx .mc-count { margin: 0; font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: var(--muted, #9ba7b5); }
+    .cx .mc-count b { font-size: 44px; color: #00ff87; margin-right: 4px; }
+    .cx .mc-count.none b { color: #ff4d5e; }
+    .cx .mc-lede { color: #9ba7b5; margin: 0 0 18px; max-width: 64ch; }
+    .cx .mc-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .cx .mc-bay { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    /* Máy = 1 màn hình phát sóng: khung 16:9, đèn trạng thái + tên máy chữ lớn. */
+    .cx .mc-tv { position: relative; min-height: 230px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; padding: 16px;
+        border-radius: 12px; border: 1px solid #2c303b; background:
+        repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 2px, transparent 2px 4px), linear-gradient(160deg, #262a35, #1c1f2a 70%); overflow: hidden; }
+    .cx .mc-tv::after { content: ""; position: absolute; inset: auto 0 0; height: 4px; background: var(--mc-tone); }
+    .cx .mc-tv.free { --mc-tone: #00ff87; border-color: rgba(0,255,135,.45); box-shadow: 0 0 0 1px rgba(0,255,135,.12), 0 10px 30px -18px #00ff87; }
+    .cx .mc-tv.playing { --mc-tone: #ff4d5e; }
+    .cx .mc-tv.preparing, .cx .mc-tv.busy { --mc-tone: #ffb95f; }
+    .cx .mc-tv.offline, .cx .mc-tv.unknown { --mc-tone: #2c303b; }
+    .cx .mc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .cx .mc-lamp { display: inline-flex; align-items: center; gap: 8px; font: 800 18px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: var(--mc-tone); }
+    .cx .mc-lamp::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--mc-tone); box-shadow: 0 0 10px var(--mc-tone); }
+    .cx .mc-tv.offline .mc-lamp, .cx .mc-tv.unknown .mc-lamp { color: #9ba7b5; }
+    .cx .mc-tv.playing .mc-lamp::before { animation: mc-pulse 1.4s ease-in-out infinite; }
+    @@keyframes mc-pulse { 50% { opacity: .25; } }
+    @@media (prefers-reduced-motion: reduce) { .cx .mc-tv.playing .mc-lamp::before { animation: none; } }
+    .cx .mc-id { color: #9ba7b5; font-size: 12px; }
+    .cx .mc-name { font: 800 clamp(40px, 6vw, 56px)/.9 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; margin: 0; }
+    .cx .mc-detail { margin: 0; color: #dee1f7; font-size: 14px; }
+    .cx .mc-detail small { display: block; color: #9ba7b5; font-size: 13px; margin-top: 2px; }
+    .cx .mc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .cx .mc-eta { font: 800 22px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .cx .mc-eta small { font: 500 12px 'Be Vietnam Pro', sans-serif; text-transform: none; color: #9ba7b5; display: block; margin-top: 2px; }
+    .cx .mc-go { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 12px; background: #00ff87; color: #0f131d;
+        font: 800 17px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; text-decoration: none; }
+    .cx .mc-go:focus-visible { outline: 2px solid #dee1f7; outline-offset: 2px; }
+    /* 1 lượt dùng máy: dải thời gian theo đúng thứ tự (mở game → thi đấu → lưu). */
+    .cx .mc-slot { display: flex; height: 34px; border-radius: 8px; overflow: hidden; margin: 12px 0 8px; font: 800 15px/34px 'Barlow Condensed', sans-serif; text-transform: uppercase; }
+    .cx .mc-slot span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+    .cx .mc-slot .boot { background: #262a35; color: #ffb95f; }
+    .cx .mc-slot .play { background: rgba(0,255,135,.16); color: #00ff87; }
+    .cx .mc-slot .save { background: #2c303b; padding: 0; }
+    .cx .mc-legend { display: flex; justify-content: space-between; color: #9ba7b5; font-size: 13px; gap: 8px; }
+    .cx .mc-cap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 6px; }
+    .cx .mc-cap div { background: #1c1f2a; border: 1px solid #2c303b; border-radius: 12px; padding: 10px; }
+    .cx .mc-cap b { display: block; font: 800 30px/1 'Barlow Condensed', sans-serif; color: #dee1f7; }
+    .cx .mc-cap span { color: #9ba7b5; font-size: 12px; }
+    .cx .mc-steps { margin: 8px 0 0; padding-left: 20px; color: #dee1f7; font-size: 14px; }
+    .cx .mc-steps li + li { margin-top: 6px; }
+    .cx .mc-steps small { color: #9ba7b5; }
+    @@media (max-width: 900px) { .cx .mc-grid { grid-template-columns: 1fr; } .cx .mc-tv { min-height: 200px; } }
+</style>
+
+<div class="mc">
+    <div class="mc-head">
+        <h1>Máy chơi</h1>
+        @if (machines.Count > 0)
+        {
+            <p class="mc-count @(free == 0 ? "none" : null)" role="status"><b>@free/@machines.Count</b>máy rảnh</p>
+        }
+    </div>
+    <p class="mc-lede">Mỗi máy chạy 1 trận một lúc. Trận của bạn đá trên máy rảnh, hình game mở ngay trong trình duyệt. Trang tự cập nhật.</p>
+
+    <div class="mc-grid">
+        <section class="mc-bay" aria-label="Danh sách máy">
+            @if (machines.Count == 0)
+            {
+                <p class="hlv-note">Đang hỏi tình trạng máy…</p>
+            }
+            @foreach (var m in machines)
+            {
+                <article class="mc-tv @Css(m.State)" aria-label="Máy @m.No: @m.Label">
+                    <div class="mc-top">
+                        <span class="mc-lamp">@m.Label</span>
+                        <span class="mc-id">@m.Container</span>
+                    </div>
+                    <div>
+                        <p class="mc-name">Máy @m.No</p>
+                        <p class="mc-detail">@m.Detail
+                            @if (m.FixtureId is { } f && names.TryGetValue(f, out var n)) { <small>@n</small> }
+                        </p>
+                    </div>
+                    <div class="mc-foot">
+                        @if (m.MinutesLeft is { } left)
+                        {
+                            <span class="mc-eta">~@left phút<small>tới khi rảnh (ước lượng)</small></span>
+                        }
+                        else if (m.State == MachineState.Free)
+                        {
+                            <a class="mc-go" href="./"><i class="ms" aria-hidden="true">sports_esports</i>Vào trận</a>
+                        }
+                    </div>
+                </article>
+            }
+        </section>
+
+        <div>
+            <section class="hlv-panel st-sec" aria-labelledby="mc-slot">
+                <h2 id="mc-slot"><i class="ms" aria-hidden="true">timer</i>Một lượt dùng máy</h2>
+                <p class="hlv-note">Từ lúc bấm vào trận tới khi máy trả về, khoảng @Math.Round(cap.MinutesPerMatch) phút.</p>
+                <div class="mc-slot" aria-hidden="true">
+                    <span class="boot" style="flex:@Flex(boot)">@Math.Round(boot)'</span>
+                    <span class="play" style="flex:@Flex(MatchJobService.HumanInPlayMinutes)">@MatchJobService.HumanInPlayMinutes' thi đấu</span>
+                    <span class="save" style="flex:@Flex(0.5)"></span>
+                </div>
+                <div class="mc-legend"><span>Mở game, chọn đội, tải trận</span><span>2 hiệp 5 phút + nghỉ</span></div>
+                <div class="mc-cap">
+                    <div><b>@Math.Round(cap.MinutesPerMatch)'</b><span>mỗi trận</span></div>
+                    <div><b>@cap.PerHour.ToString("0.#", Vi)</b><span>trận/giờ mỗi máy</span></div>
+                    <div><b>@(cap.PerEvening * machines.Count)</b><span>trận khung 19–23h</span></div>
+                </div>
+            </section>
+
+            <section class="hlv-panel st-sec" aria-labelledby="mc-how">
+                <h2 id="mc-how"><i class="ms" aria-hidden="true">help</i>Cách vào chơi</h2>
+                <ol class="mc-steps">
+                    <li>Mở Trang chủ, bấm <b>Vào trận</b> ở thẻ trận của đội.<br /><small>Chỉ bấm được khi tới lượt trận của bạn và có máy rảnh.</small></li>
+                    <li>Sửa đội hình trong lúc game đang mở.</li>
+                    <li>Màn hình game mở trong trình duyệt: chơi bằng tay cầm hoặc bàn phím.</li>
+                </ol>
+            </section>
+        </div>
+    </div>
+</div>
+
+@code {
+    List<MachineStatus> machines = [];
+    Dictionary<Guid, string> names = [];
+    int free;
+    double boot;
+    (double MinutesPerMatch, double PerHour, int PerEvening) cap;
+    Timer? timer;
+    readonly CancellationTokenSource cts = new();
+
+    // Máy trận của web hiện có 1 (MatchJobService chạy 1 việc một lúc); thêm máy = thêm container + bộ điều phối nhiều máy (chờ PO).
+    static readonly string[] Containers = ["pes17-bench"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        boot = Jobs.SecondsToKickoffEstimate / 60.0;
+        cap = GameMachines.Capacity(Jobs.SecondsToKickoffEstimate);
+        await RefreshAsync();
+        Jobs.Changed += OnJob;
+        timer = new Timer(_ => _ = InvokeAsync(RefreshAsync), null, GameMachines.ProbeTtl, GameMachines.ProbeTtl);
+    }
+
+    async Task RefreshAsync()
+    {
+        if (cts.IsCancellationRequested) return;
+        try { await LoadAsync(); }
+        catch (OperationCanceledException) { }   // rời trang giữa lúc hỏi máy
+    }
+
+    async Task LoadAsync()
+    {
+        var list = new List<MachineStatus>();
+        var i = 0;
+        foreach (var c in Containers)
+        {
+            var probe = await GameMachines.ProbeAsync(c, Clock, cts.Token);
+            list.Add(GameMachines.Match(++i, c, Jobs, probe, Jobs.Running ? null : LockText()));
+        }
+        var ids = list.Where(m => m.FixtureId is not null).Select(m => m.FixtureId!.Value).Where(id => !names.ContainsKey(id)).ToList();
+        if (ids.Count > 0)
+        {
+            await using var db = await Dbs.CreateDbContextAsync(cts.Token);
+            var fx = await db.Fixtures.AsNoTracking().Where(f => ids.Contains(f.Id)).Select(f => new { f.Id, f.HomeClubId, f.AwayClubId }).ToListAsync(cts.Token);
+            var clubIds = fx.SelectMany(f => new[] { f.HomeClubId, f.AwayClubId }).Distinct().ToList();
+            var clubs = await db.Clubs.AsNoTracking().Where(c => clubIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, cts.Token);
+            foreach (var f in fx)
+                names[f.Id] = $"{Club(clubs, f.HomeClubId)} – {Club(clubs, f.AwayClubId)}";
+        }
+        machines = list;
+        free = list.Count(m => m.State == MachineState.Free);
+        StateHasChanged();
+    }
+
+    static string Club(Dictionary<Guid, string> clubs, Guid id) =>
+        clubs.TryGetValue(id, out var n) ? Pes17League.Clubs.Application.ClubNames.Pretty(n) : "?";
+
+    string? LockText()
+    {
+        try { return Jobs.Options.LockFile is { } f && File.Exists(f) ? File.ReadAllText(f).Trim() : null; }
+        catch (IOException) { return null; }
+    }
+
+    static readonly System.Globalization.CultureInfo Vi = new("vi-VN");
+    static string Css(MachineState s) => s.ToString().ToLowerInvariant();
+    string Flex(double minutes) => (minutes / cap.MinutesPerMatch).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    void OnJob() => _ = InvokeAsync(RefreshAsync);
+
+    public void Dispose()
+    {
+        Jobs.Changed -= OnJob;
+        timer?.Dispose();
+        cts.Cancel();   // không Dispose: lượt hỏi máy đang chạy dở còn đọc Token
+    }
+}
