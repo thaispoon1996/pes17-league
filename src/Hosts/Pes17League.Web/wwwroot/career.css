@@ -3473,3 +3473,26 @@ html:has(.bx-sheet) { overflow: hidden; }
   .cx .fp-lead h3 { font-size: 27px; }
   .cx .fp-list { grid-template-columns: 1fr; }
 }
+
+/* Cài đặt → Máy game (PO 22/11): độ khó máy 6 mức + đồ hoạ 3 mức, ghi game-settings.json cho bộ chạy trận. */
+.cx .st-opt { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--line); }
+.cx .st-opt:first-of-type { border-top: 0; }
+.cx .st-opt > b { font-size: 14.5px; font-weight: 600; color: var(--text); }
+.cx .st-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cx .st-chips button {
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 2px; justify-items: start; padding: 10px 12px; min-height: 52px; text-align: left; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 12px; background: #1c1f2a; color: var(--text);
+  font: 800 16px/1 var(--f-display); text-transform: uppercase; letter-spacing: .03em;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.cx .st-chips button small { font: 400 11.5px/1.2 var(--f-body, inherit); text-transform: none; letter-spacing: 0; color: var(--muted); }
+.cx .st-chips button:hover { border-color: rgba(0,255,135,.5); }
+.cx .st-chips button.on { border-color: #00ff87; background: rgba(0,255,135,.1); color: #00ff87; box-shadow: inset 0 0 0 1px #00ff87; }
+.cx .st-chips button:focus-visible { outline: 2px solid #00ff87; outline-offset: 2px; }
+.cx .st-hint { display: flex; gap: 6px; align-items: flex-start; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.cx .st-hint .ms { font-size: 16px; color: var(--cyan); }
+.cx .st-saved { display: flex; gap: 6px; align-items: center; margin: 10px 0 0; color: #00ff87; font-size: 13px; font-weight: 600; }
+.cx .st-saved .ms { font-size: 18px; }
+.cx .st-tip { color: var(--muted); }
+.cx .st-tip:hover b { color: var(--text); }
+@media (max-width: 420px) { .cx .st-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cx .st-chips.st-gfx { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

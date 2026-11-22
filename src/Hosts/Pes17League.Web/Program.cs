@@ -32,6 +32,7 @@ b.Services.AddSingleton(TimeProvider.System);
 // thì khoá còn sót là khoá chết (restart giữa trận), xoá luôn (PO 22/11).
 var matchLock = Path.GetFullPath(Path.Combine(storeDir, "..", "pes17-deploy", "match.lock"));
 if (File.Exists(matchLock)) { Console.WriteLine($"Xoá khoá trận sót: {File.ReadAllText(matchLock).Trim()}"); File.Delete(matchLock); }
+b.Services.AddSingleton(new GameSettingsStore(Path.Combine(Path.GetDirectoryName(matchLock)!, "game-settings.json")));   // độ khó + đồ hoạ máy game (PO 22/11)
 b.Services.AddSingleton(new MatchJobOptions(
     Path.GetFullPath(b.Configuration["Match:Script"]!), Path.Combine(storeDir, "..", "run"), b.Configuration["Match:StreamUrl"]!,
     Path.Combine(storeDir, "..", "recordings"), Path.Combine(storeDir, "..", "highlights"), b.Configuration.GetValue("Match:MinFreeDiskGb", 20),

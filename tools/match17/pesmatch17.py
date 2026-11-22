@@ -243,12 +243,49 @@ def pick(home: int, away: int, both: bool = False) -> None:
 MATCH_TIME = 10            # trận có người: phút cả trận trong game = 5 phút/hiệp (PO 18/11)
 BOT_MATCH_TIME = 5         # trận BOT vs BOT: 2,5 phút/hiệp cho nhanh (PO 19/11)
 MT_VALUE = (780, 345, 970, 372)   # ô giá trị dòng "Match Time" trong GENERAL SETTINGS
+ML_VALUE = (780, 316, 970, 343)   # ô giá trị dòng "Match Level" (ngay trên Match Time)
+LEVELS = ["Beginner", "Amateur", "Regular", "Professional", "Top Player", "Superstar"]   # độ khó máy, thứ tự trong game
+QUALITIES = {"low": 0, "medium": 1, "high": 2}   # settings.dat byte 24
+SETTINGS_DAT = "/config/.wine/drive_c/users/abc/Documents/KONAMI/Pro Evolution Soccer 2017/settings.dat"
 
 
-def match_time(want: int = MATCH_TIME) -> None:
-    """Màn Kickoff (con trỏ ở KICKOFF): GENERAL SETTINGS → Match Time = want → về lại KICKOFF.
+def game_settings() -> dict:
+    """Cài đặt game do web ghi ($DATA/pes17-deploy/game-settings.json, trang /cai-dat, PO 22/11): level, quality. Lỗi/thiếu → {}."""
+    try:
+        d = json.loads((OUT / "game-settings.json").read_text())
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"[^a-z]", "", t.lower())
+
+
+def match_level(want: str) -> None:
+    """Đang trong GENERAL SETTINGS, con trỏ ở dòng Match Level: bấm Trái/Phải tới độ khó `want` (OCR). Lỗi thì ghi log, không chặn trận."""
+    target, order = _norm(want), [_norm(x) for x in LEVELS]
+    key, last, flipped = None, None, False
+    for _ in range(14):
+        v = _norm(ocr.rec(nav.shot("m17_ml"), ML_VALUE)[0])
+        if v == target:
+            return
+        if key is None:
+            key = "Left" if v in order and order.index(target) < order.index(v) else "Right"
+        elif v == last and not flipped:   # bấm mà không đổi (chạm đầu/cuối danh sách) → đổi chiều 1 lần
+            key, flipped = ("Left" if key == "Right" else "Right"), True
+        last = v
+        nav.pad(f"{key} w:0.4")
+    log(f"không chỉnh được độ khó {want} (đang '{last}')")
+
+
+def match_time(want: int = MATCH_TIME, level: str | None = None) -> None:
+    """Màn Kickoff (con trỏ ở KICKOFF): GENERAL SETTINGS → (Match Level = level) → Match Time = want → về lại KICKOFF.
     Game chưa có thư mục save → cài đặt có thể mất khi khởi động lại game, nên kiểm mỗi trận (~6 s nếu đã đúng)."""
-    nav.pad("Right w:0.6 Right w:0.6 A w:2.5 Down w:0.8")
+    nav.pad("Right w:0.6 Right w:0.6 A w:2.5")
+    if level:
+        match_level(level)
+    nav.pad("Down w:0.8")
     try:
         for _ in range(30):
             t = ocr.rec(nav.shot("m17_mt"), MT_VALUE)[0]
@@ -507,6 +544,26 @@ def game_has(squads: str, home: int, away: int) -> bool:
     return r.returncode == 0
 
 
+def ensure_quality(want: str | None) -> bool:
+    """Đồ hoạ (Thấp/Trung bình/Cao, PO 22/11): settings.dat byte 24 khác → ghi lại; trả True nếu cần mở lại game để áp dụng."""
+    if want not in QUALITIES:
+        return False
+    v = QUALITIES[want]
+    r = subprocess.run(["docker", "exec", BENCH, "python3", "-c",
+                        "import sys;p=sys.argv[1];b=bytearray(open(p,'rb').read());v=int(sys.argv[2])\n"
+                        "if len(b)<28 or b[:4]!=b'WECF': print('bad')\n"
+                        "elif b[24]==v: print('same')\n"
+                        "else: b[24]=v;open(p,'wb').write(b);print('changed')", SETTINGS_DAT, str(v)],
+                       capture_output=True, text=True)
+    out = r.stdout.strip()
+    if out == "changed":
+        log(f"đồ hoạ → {want}: mở lại game")
+        return True
+    if out != "same":
+        log(f"không đổi được đồ hoạ: {out or r.stderr.strip()[-200:]}")
+    return False
+
+
 def ensure_game(squads: str, home: int, away: int) -> bool:
     """Cài đội hình nếu 2 đội của trận khác game (khởi động lại game). Trả True nếu đã cài lại."""
     if game_has(squads, home, away):
@@ -619,14 +676,20 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         overlay(None)   # bỏ logo sót của trận trước (bộ chạy bị dừng ngang)
         if WAIT_GO or WARM:
             threading.Thread(target=read_cmds, daemon=True).start()
+        gs = game_settings()
+        gfx = ensure_quality(gs.get("quality"))   # ghi trước: cài đội hình (nếu có) cũng mở lại game
         restarted = ensure_game(squads, home, away)
+        if gfx and not restarted:
+            restart_game()
+            restarted = True
         both = human == "both"
+        level = gs.get("level") if human and not both and gs.get("level") in LEVELS else None   # độ khó chỉ có nghĩa khi người đá với máy
 
         def setup(fresh: bool) -> None:
             with nav.session():   # 1 kết nối tay cầm cho cả đoạn đi menu; đóng trước khi người chơi cầm tay cầm
                 to_team_select(both, human == "away", fresh)
                 pick(home, away, both)
-                match_time(MATCH_TIME if human else BOT_MATCH_TIME)
+                match_time(MATCH_TIME if human else BOT_MATCH_TIME, level)
                 coach_mode(human is None)
 
         setup(restarted)

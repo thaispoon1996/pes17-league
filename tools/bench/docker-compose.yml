@@ -19,7 +19,7 @@ services:
       PGID: "1000"
       TZ: Asia/Ho_Chi_Minh
       SELKIES_ENCODER: x264enc
-      SELKIES_VIDEO_BITRATE: "18"
+      SELKIES_VIDEO_BITRATE: "8-18"   # khoảng: trang chơi (pes-overlay.js) tự đặt 18, nút "Giảm giật" hạ 8 (PO 22/11)
       SELKIES_FRAMERATE: "60"
       SELKIES_ENABLE_RATE_CONTROL: "true"
       SELKIES_RATE_CONTROL_MODE: cbr

@@ -4,6 +4,7 @@
 @inject CurrentUser Me
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject MatchJobService Jobs
+@inject GameSettingsStore Game
 
 <PageTitle>Cài đặt</PageTitle>
 
@@ -40,9 +41,40 @@
         </section>
     }
 
+    @if (clubId is not null || admin)
+    {
+        <section class="hlv-panel st-sec" aria-labelledby="st-pes">
+            <h2 id="st-pes"><i class="ms" aria-hidden="true">videogame_asset</i>Máy game</h2>
+            <p class="hlv-note">Áp dụng từ trận kế tiếp bạn vào đá trong game.</p>
+            <div class="st-opt" role="radiogroup" aria-labelledby="st-lv">
+                <b id="st-lv">Độ khó máy</b>
+                <div class="st-chips no-busy">
+                    @foreach (var (key, label) in GameSettingsStore.Levels)
+                    {
+                        <button type="button" role="radio" aria-checked="@(game.Level == key ? "true" : "false")" class="@(game.Level == key ? "on" : null)"
+                                @onclick="() => Set(game with { Level = key })">@label<small>@key</small></button>
+                    }
+                </div>
+            </div>
+            <div class="st-opt" role="radiogroup" aria-labelledby="st-gfx">
+                <b id="st-gfx">Đồ hoạ</b>
+                <div class="st-chips st-gfx no-busy">
+                    @foreach (var (key, label, note) in GameSettingsStore.Qualities)
+                    {
+                        <button type="button" role="radio" aria-checked="@(game.Quality == key ? "true" : "false")" class="@(game.Quality == key ? "on" : null)"
+                                @onclick="() => Set(game with { Quality = key })">@label<small>@note</small></button>
+                    }
+                </div>
+                <small class="st-hint"><i class="ms" aria-hidden="true">info</i>Đổi đồ hoạ: game tự mở lại trước trận kế tiếp (thêm khoảng 30–60 giây). Máy game giữ 60 khung/giây ở mọi mức; hình bị giật do mạng thì bật "Giảm giật" trên màn hình chơi.</small>
+            </div>
+            @if (saved is not null) { <p class="st-saved" role="status"><i class="ms" aria-hidden="true">check_circle</i>@saved</p> }
+        </section>
+    }
+
     <section class="hlv-panel st-sec" aria-labelledby="st-game">
         <h2 id="st-game"><i class="ms" aria-hidden="true">sports_esports</i>Điều khiển game</h2>
         <a class="st-row" href="dieu-khien"><span><b>Bàn phím và tay cầm</b>Đổi phím dùng khi vào trận</span><i class="ms" aria-hidden="true">chevron_right</i></a>
+        <div class="st-row st-tip"><i class="ms" aria-hidden="true">fullscreen</i><span><b>Toàn màn hình · Giảm giật</b>2 nút ở giữa mép trên màn hình chơi</span></div>
     </section>
 
     <section class="hlv-panel st-sec" aria-labelledby="st-acc">
@@ -58,12 +90,14 @@
 
 @code {
     bool admin, autoLineup = true;
-    string? who, profile;
+    string? who, profile, saved;
+    GameSettingsStore.Settings game = new();
     Guid? clubId;
 
     protected override async Task OnInitializedAsync()
     {
         admin = await Me.IsAdminAsync();
+        game = Game.Get();
         if (await Me.ManagerIdAsync() is { } mid)
         {
             await using var db = await Dbs.CreateDbContextAsync();
@@ -76,6 +110,15 @@
             who = await Me.NameAsync();
             profile = "nguoi-choi/" + await Me.UsernameAsync();
         }
+    }
+
+    void Set(GameSettingsStore.Settings s)
+    {
+        if (clubId is null && !admin) return;
+        var gfx = s.Quality != game.Quality;
+        Game.Save(s);
+        game = s;
+        saved = gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : "Đã lưu";
     }
 
     async Task ToggleAuto(ChangeEventArgs e)
