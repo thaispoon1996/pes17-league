@@ -47,44 +47,81 @@
         }
     </div>
     @if (message is not null) { <p class="msg">@message</p> }
-    <div class="pitch" @ref="root">
-        <div class="mark half"></div><div class="mark circle"></div><div class="mark box top"></div><div class="mark box bottom"></div>
-        @for (var slot = 0; slot <= 10; slot++)
-        {
-            var p = squad.FirstOrDefault(x => x.Slot == slot);
-            var (left, top) = Spot(slot);
-            var role = layout?.Roles[slot] ?? "";
-            if (p is null) { <div class="pl empty" style="left:@(left)%;top:@(top)%"><small>@role</small></div> continue; }
-            <div class="pl @Fit(p.Position, role) @(picked == p.PlayerId ? "picked" : "")" style="left:@(left)%;top:@(top)%" data-pid="@p.PlayerId" data-slot="@slot" @onclick="() => Tap(p)">
-                @if (jobs.GetValueOrDefault(TeamJob.Captain)?.PlayerId == p.PlayerId) { <i class="cap">C</i> }
-                <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@RoleLabel(role) · @p.Overall</small>
-            </div>
-        }
-    </div>
-    @if (Shell is not null && !Locked && squad.FirstOrDefault(x => x.PlayerId == picked) is { Slot: >= 1 and <= 10 } rp && layout is not null)
-    {
-        @* Career (PO 21/11): chọn tay vai trò cho cầu thủ đang chọn → dời về vùng của vai trò đó (vai trò luôn khớp vị trí). *@
-        var cur = layout.Roles[rp.Slot];
-        <div class="role-bar" role="group" aria-label="Vai trò của @rp.Name">
-            <span>Vai trò <b>@Short(rp.Name)</b><small>@rp.Position · @rp.Overall</small></span>
-            <div>
-                @foreach (var r in FormationRoles.Pickable.Where(r => r is not ("LWB" or "RWB")))
-                {
-                    <button type="button" class="@(r == cur ? "on" : null) @Fit(rp.Position, r)" aria-pressed="@(r == cur ? "true" : "false")" @onclick="() => SetRole(rp, r)">@RoleLabel(r)</button>
-                }
-            </div>
-        </div>
-    }
-    <div class="bench">
-        <h3>Dự bị</h3>
-        <div class="bench-list">
-            @foreach (var p in squad.Where(x => x.Slot > 10))
+    @{ var sugs = Suggestions(); var sugIds = sugs.Select(x => x.Other.PlayerId).ToHashSet(); var sel = squad.FirstOrDefault(x => x.PlayerId == picked); }
+    @* PO 23/11: dự bị sang cột phải cạnh sân (điện thoại: dưới sân), chia theo tuyến; chọn 1 cầu thủ → gợi ý người thay hợp vị trí. *@
+    <div class="lb-main">
+    <div class="lb-field">
+        <div class="pitch" @ref="root">
+            <div class="mark half"></div><div class="mark circle"></div><div class="mark box top"></div><div class="mark box bottom"></div>
+            @for (var slot = 0; slot <= 10; slot++)
             {
-                <div class="pl @(picked == p.PlayerId ? "picked" : "")" data-pid="@p.PlayerId" @onclick="() => Tap(p)">
-                    <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall · @Fmt.Body(p.Height, p.Weight)</small>
+                var p = squad.FirstOrDefault(x => x.Slot == slot);
+                var (left, top) = Spot(slot);
+                var role = layout?.Roles[slot] ?? "";
+                if (p is null) { <div class="pl empty" style="left:@(left)%;top:@(top)%"><small>@role</small></div> continue; }
+                <div class="pl @Fit(p.Position, role) @(picked == p.PlayerId ? "picked" : "") @(sugIds.Contains(p.PlayerId) ? "sug" : "")" style="left:@(left)%;top:@(top)%" data-pid="@p.PlayerId" data-slot="@slot" @onclick="() => Tap(p)">
+                    @if (jobs.GetValueOrDefault(TeamJob.Captain)?.PlayerId == p.PlayerId) { <i class="cap">C</i> }
+                    <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@RoleLabel(role) · @p.Overall</small>
                 </div>
             }
         </div>
+        @if (Shell is not null && !Locked && squad.FirstOrDefault(x => x.PlayerId == picked) is { Slot: >= 1 and <= 10 } rp && layout is not null)
+        {
+            @* Career (PO 21/11): chọn tay vai trò cho cầu thủ đang chọn → dời về vùng của vai trò đó (vai trò luôn khớp vị trí). *@
+            var cur = layout.Roles[rp.Slot];
+            <div class="role-bar" role="group" aria-label="Vai trò của @rp.Name">
+                <span>Vai trò <b>@Short(rp.Name)</b><small>@rp.Position · @rp.Overall</small></span>
+                <div>
+                    @foreach (var r in FormationRoles.Pickable.Where(r => r is not ("LWB" or "RWB")))
+                    {
+                        <button type="button" class="@(r == cur ? "on" : null) @Fit(rp.Position, r)" aria-pressed="@(r == cur ? "true" : "false")" @onclick="() => SetRole(rp, r)">@RoleLabel(r)</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+    <aside class="lb-side" aria-label="Dự bị">
+        @if (sel is not null && !Locked)
+        {
+            <div class="lb-sug" aria-live="polite">
+                <p>@(sel.Slot <= 10 ? "Thay" : "Đưa vào sân") <b>@Short(sel.Name)</b><small>@(sel.Slot <= 10 ? RoleLabel(RoleOf(sel.Slot)) : sel.Position.ToString()) · @sel.Overall</small></p>
+                @if (sugs.Count == 0)
+                {
+                    <small class="muted">@(sel.Slot <= 10 ? "Dự bị không có người hợp vị trí này." : "Không có ô nào trên sân hợp tuyến của cầu thủ này.")</small>
+                }
+                @foreach (var s in sugs)
+                {
+                    var d = sel.Slot <= 10 ? s.Other.Overall - sel.Overall : sel.Overall - s.Other.Overall;
+                    <button type="button" class="lb-sug-i @s.Fit" @onclick="() => SwapSug(sel, s.Other)">
+                        <Face Id="s.Other.PlayerId" Name="@s.Other.Name" Size="pf" />
+                        <span><b>@Short(s.Other.Name)</b><small>@(sel.Slot <= 10 ? s.Other.Position.ToString() : RoleLabel(RoleOf(s.Other.Slot))) · @s.Other.Overall</small></span>
+                        <em class="@(d > 0 ? "up" : d < 0 ? "neg" : "")">@(d > 0 ? "+" : "")@d</em>
+                        <i>Đổi</i>
+                    </button>
+                }
+                <small class="muted">Chạm cầu thủ đang chọn lần nữa để bỏ chọn.</small>
+            </div>
+        }
+        <div class="bench">
+            <h3>Dự bị <small>@squad.Count(x => x.Slot > 10)</small></h3>
+            @foreach (var (g, label) in Lines)
+            {
+                var rows = squad.Where(x => x.Slot > 10 && x.Position.Group() == g).OrderBy(x => x.Position).ThenByDescending(x => x.Overall).ToList();
+                if (rows.Count == 0) continue;
+                <div class="lb-grp">
+                    <h4>@label <small>@rows.Count</small></h4>
+                    <div class="bench-list">
+                        @foreach (var p in rows)
+                        {
+                            <div class="pl @(picked == p.PlayerId ? "picked" : "") @(sugIds.Contains(p.PlayerId) ? "sug" : "") @(sel is { Slot: <= 10 } ? Fit(p.Position, RoleOf(sel.Slot)) : "")" data-pid="@p.PlayerId" @onclick="() => Tap(p)">
+                                <Face Id="p.PlayerId" Name="@p.Name" Size="pf" /><b>@p.Shirt</b><span>@Short(p.Name)</span><small>@p.Position · @p.Overall · @Fmt.Body(p.Height, p.Weight)</small>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </aside>
     </div>
     <p class="muted legend"><i class="fit"></i>đúng vị trí <i class="near"></i>cùng tuyến <i class="off"></i>trái tuyến · Kéo thả hoặc chạm 2 cầu thủ để đổi chỗ (ô thủ môn chỉ dành cho GK); kéo cầu thủ vào chỗ trống trên sân để đặt vị trí tự do@(Shell is null ? "" : " (vai trò tự đổi theo vùng); chạm 1 cầu thủ trên sân để chọn vai trò").</p>
     @if (pes17)
@@ -258,6 +295,38 @@
         "SS" => Position.SS, _ => Position.CF,
     };
     static string Fit(Position p, string role) => role == "" ? "" : p == RolePosition(role) ? "fit" : p.Group() == RolePosition(role).Group() ? "near" : "off";
+
+    static readonly (PositionGroup G, string Label)[] Lines =
+        [(PositionGroup.Goalkeeper, "Thủ môn"), (PositionGroup.Defender, "Hậu vệ"), (PositionGroup.Midfielder, "Tiền vệ"), (PositionGroup.Forward, "Tiền đạo")];
+    string RoleOf(int slot) => layout is not null && slot >= 0 && slot < layout.Roles.Count ? layout.Roles[slot] : "";
+    static int FitRank(Position p, string role) => Fit(p, role) switch { "fit" => 0, "near" => 1, _ => 2 };
+
+    sealed record Sug(SquadRow Other, string Fit);
+
+    /// <summary>Gợi ý cho cầu thủ đang chọn (PO 23/11). Trên sân → 3 dự bị hợp vai trò ô đó nhất (đúng vị trí > cùng tuyến, rồi chỉ số cao);
+    /// dự bị → 3 ô trên sân hợp tuyến, người đang đứng yếu nhất trước. Ô thủ môn chỉ GK.</summary>
+    List<Sug> Suggestions()
+    {
+        var a = squad.FirstOrDefault(x => x.PlayerId == picked);
+        if (a is null || Locked) return [];
+        if (a.Slot <= 10)
+        {
+            var role = RoleOf(a.Slot);
+            var pool = squad.Where(x => x.Slot > 10 && (x.Position == Position.GK) == (a.Slot == 0))
+                .OrderBy(x => FitRank(x.Position, role)).ThenByDescending(x => x.Overall).ToList();
+            var good = pool.Where(x => FitRank(x.Position, role) < 2).Take(3).ToList();
+            return (good.Count > 0 ? good : pool.Take(2)).Select(x => new Sug(x, Fit(x.Position, role))).ToList();
+        }
+        return squad.Where(x => x.Slot <= 10 && (x.Slot == 0) == (a.Position == Position.GK) && FitRank(a.Position, RoleOf(x.Slot)) < 2)
+            .OrderBy(x => FitRank(a.Position, RoleOf(x.Slot))).ThenBy(x => x.Overall).Take(3)
+            .Select(x => new Sug(x, Fit(a.Position, RoleOf(x.Slot)))).ToList();
+    }
+
+    async Task SwapSug(SquadRow a, SquadRow b)
+    {
+        picked = null;
+        await SwapAsync(a.PlayerId, b.PlayerId);
+    }
 
     bool Blocked()
     {

@@ -354,6 +354,45 @@ pre.log { white-space: pre-wrap; font-size: 12px; margin: 0; background: var(--c
   font: 800 11px/18px system-ui, sans-serif; font-style: normal; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .board .pl { position: relative; }
 .pitch .pl { position: absolute; }
+/* PO 23/11: dự bị cột phải cạnh sân, chia theo tuyến; gợi ý thay người khi chọn 1 cầu thủ. Điện thoại: dự bị dưới sân. */
+.lb-main { display: grid; gap: 14px; align-items: start; }
+.lb-field { min-width: 0; }
+.lb-side { min-width: 0; display: grid; gap: 12px; }
+@media (min-width: 980px) {
+  .lb-main { grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: 18px; }
+  .lb-main .pitch { margin: 0; }
+  .lb-side { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+}
+.lb-side .bench h3 { display: flex; align-items: baseline; gap: 8px; }
+.lb-side .bench h3 small, .lb-grp h4 small { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.lb-grp { margin-top: 10px; }
+.lb-grp:first-of-type { margin-top: 0; }
+.lb-grp h4 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 6px; font: 800 15px/1 var(--f-display, inherit); text-transform: uppercase; letter-spacing: .03em; color: var(--text); }
+.lb-side .bench-list { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.board .lb-side .bench-list .pl { width: auto; grid-template-columns: 32px minmax(0, 1fr); column-gap: 8px; row-gap: 1px; align-items: center; text-align: left;
+  padding: 6px 8px; border-bottom-width: 0; border-left: 4px solid var(--line); }
+.board .lb-side .bench-list .pl .face { grid-row: span 2; width: 32px; height: 32px; margin: 0; }
+.board .lb-side .bench-list .pl span { font-size: 13px; }
+.board .lb-side .bench-list .pl small { grid-column: 2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .lb-side .pl.fit { border-left-color: var(--accent); } .board .lb-side .pl.near { border-left-color: #f2b632; } .board .lb-side .pl.off { border-left-color: var(--danger); }
+.board .pl.sug { box-shadow: 0 0 0 2px #00ff87, 0 0 14px rgba(0,255,135,.45); }
+.lb-sug { display: grid; gap: 6px; padding: 10px 12px; border-radius: 12px; background: rgba(0,255,135,.06); border: 1px solid rgba(0,255,135,.35); }
+.lb-sug p { display: flex; align-items: baseline; gap: 8px; margin: 0; font: 800 16px/1.1 var(--f-display, inherit); text-transform: uppercase; color: var(--muted); }
+.lb-sug p b { color: var(--text); }
+.lb-sug p small { margin-left: auto; font: 600 12px var(--f-body, inherit); text-transform: none; }
+.board .lb-sug button.lb-sug-i { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; width: 100%; min-height: 44px;
+  padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); border-left: 4px solid var(--line); background: rgba(0,0,0,.18); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.board .lb-sug button.lb-sug-i:hover { background: rgba(0,255,135,.1); }
+.board .lb-sug button.lb-sug-i:focus-visible { outline: 2px solid #00ff87; outline-offset: 2px; }
+.board .lb-sug .lb-sug-i.fit { border-left-color: var(--accent); } .board .lb-sug .lb-sug-i.near { border-left-color: #f2b632; } .board .lb-sug .lb-sug-i.off { border-left-color: var(--danger); }
+.lb-sug-i .face { width: 30px; height: 30px; margin: 0; }
+.lb-sug-i span { display: grid; min-width: 0; line-height: 1.2; }
+.lb-sug-i span b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-sug-i span small { font-size: 12px; color: var(--muted); }
+.lb-sug-i em { font: 800 16px/1 var(--f-display, inherit); font-style: normal; color: var(--muted); }
+.lb-sug-i em.up { color: #00ff87; } .lb-sug-i em.neg { color: #ff4d5e; }
+.lb-sug-i i { font: 800 14px/1 var(--f-display, inherit); font-style: normal; text-transform: uppercase; padding: 6px 10px; border-radius: 8px; background: #00ff87; color: #0f131d; }
+@media (max-width: 560px) { .lb-side .bench-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .board-cols { display: grid; gap: 16px; margin-top: 16px; }
 @media (min-width: 700px) { .board-cols { grid-template-columns: 1fr 1fr; } }
 .board-cols h3 { margin: 0 0 8px; font-size: 14px; }
