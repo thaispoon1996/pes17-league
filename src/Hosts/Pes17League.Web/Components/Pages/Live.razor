@@ -8,6 +8,7 @@
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject IOptionFileStore Store
 @inject TimeProvider Clock
+@inject GraphicsStore Gfx
 
 <PageTitle>Trực tiếp</PageTitle>
 
@@ -31,6 +32,8 @@
     .lvp .lv-screen { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 1px solid #2c303b; background:
         repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 2px, transparent 2px 4px), radial-gradient(120% 90% at 50% 110%, rgba(0,255,135,.12), transparent 60%), #0b0f18; }
     .lvp .lv-screen video { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; }
+    .lvp .lv-bug { position: absolute; height: auto; pointer-events: none; }
+    .lvp .lv-bug.tl { top: 4%; left: 3%; } .lvp .lv-bug.tr { top: 4%; right: 3%; } .lvp .lv-bug.bl { bottom: 14%; left: 3%; } .lvp .lv-bug.br { bottom: 14%; right: 3%; }
     .lvp .lv-card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center; }
     .lvp .lv-card b { font: 800 clamp(26px, 4.4vw, 44px)/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
     .lvp .lv-card span { color: #9ba7b5; max-width: 46ch; font-size: 14px; }
@@ -84,6 +87,11 @@
                 @if (OnAir)
                 {
                     <video @ref="video" muted autoplay playsinline controls></video>
+                    @if (Gfx.BugWebPath() is { } bug && Gfx.BugSettings() is var bs)
+                    {
+                        @* logo kênh (/admin/do-hoa, PO 23/11) *@
+                        <img class="lv-bug @bs.Corner" src="@bug" style="width: @(bs.Size)%; opacity: @((bs.Opacity / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture))" alt="" />
+                    }
                 }
                 else if (cur is not null)
                 {

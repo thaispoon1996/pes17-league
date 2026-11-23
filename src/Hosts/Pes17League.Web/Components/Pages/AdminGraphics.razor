@@ -1,0 +1,250 @@
+@page "/admin/do-hoa"
+@* Đồ hoạ trong game (PO 23/11: "tạo chỗ để tôi có thể sửa và upload hình từ website và đưa vào game"): logo kênh (C) + gói menu theo giải (D). *@
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject GraphicsStore Gfx
+@inject NavigationManager Nav
+
+<PageTitle>Đồ hoạ trong game</PageTitle>
+<h1>Quản trị</h1>
+
+<div class="panel">
+    <h2>Logo kênh</h2>
+    <p class="muted">Hiện ở góc video trên trang Trực tiếp và được in vào đoạn bàn thắng, clip vòng làm sau khi lưu. Ảnh PNG hoặc WebP nền trong suốt, tối đa 8 MB. Cỡ tính theo % chiều rộng khung hình.</p>
+    <div class="gfx">
+        <div class="gfx-frame gfx-pitch">
+            @if (bugPath is not null)
+            {
+                <img class="gfx-bug @corner" src="@bugPath" style="width: @(size)%; opacity: @((opacity / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture))" alt="Logo kênh" />
+            }
+            else { <span class="gfx-empty">Chưa có logo kênh</span> }
+        </div>
+        <div class="gfx-side">
+            <label class="upload">@(bugPath is null ? "Tải logo kênh" : "Đổi logo")<InputFile accept="image/png,image/webp" OnChange="UploadBug" /></label>
+            <label>Góc
+                <select @bind="corner">
+                    <option value="tl">Trên trái</option><option value="tr">Trên phải</option>
+                    <option value="bl">Dưới trái</option><option value="br">Dưới phải</option>
+                </select>
+            </label>
+            <label title="% chiều rộng khung hình">Cỡ <input type="range" min="4" max="20" @bind="size" @bind:event="oninput" /> <b>@size%</b></label>
+            <label>Độ đậm <input type="range" min="20" max="100" step="5" @bind="opacity" @bind:event="oninput" /> <b>@opacity%</b></label>
+            <div class="gfx-acts">
+                <button class="primary" disabled="@(bugPath is null)" @onclick="SaveBug">Lưu vị trí</button>
+                @if (bugPath is not null) { <button class="link" @onclick="ClearBug">Bỏ logo kênh</button> }
+            </div>
+            @if (bugMsg is not null) { <span class="@(bugErr ? "warn" : "muted")">@bugMsg</span> }
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Menu trong game theo giải</h2>
+    <p class="muted">Mỗi giải một gói menu: chọn một bộ menu có sẵn trên máy game, tải ảnh nền riêng (màn chọn đội và trước trận, 1920×1080, ảnh được co phủ đầy khung), hoặc cả hai.
+        Bấm <b>Dựng gói</b> để lưu. Khi trận của giải lên máy game, máy tự cài gói của giải. Nếu khác gói đang cài, game mở lại mất 1–2 phút. Giải chưa có gói dùng giao diện gốc.</p>
+    <p class="muted">Bảng tỉ số trong trận là của game, ảnh tải lên không đổi được. Ảnh trong menu tạm dừng mỗi bộ một bố cục nên chưa cho thay.</p>
+    @if (packsError is not null) { <p class="warn">Không đọc được danh sách bộ menu: @packsError</p> }
+    @if (comps is null) { <p class="muted">Đang tải…</p> }
+    else if (comps.Count == 0) { <p>Chưa có giải.</p> }
+    else
+    {
+        @foreach (var c in comps)
+        {
+            var st = state[c.Id];
+            var built = Gfx.BuiltPack(c.Id);
+            <details class="gfx-comp" id="g-@c.Id.ToString("N")" open="@st.Open">
+                <summary @onclick="() => ToggleAsync(c.Id)" @onclick:preventDefault>
+                    @if (c.LogoPath is not null) { <img class="logo" src="@c.LogoPath" alt="" /> }
+                    <b>@c.Name</b>
+                    @if (built is null) { <span class="gfx-chip">Chưa có gói</span> }
+                    else if (built.Sha == installed) { <span class="gfx-chip on">Đang cài trên máy game</span> }
+                    else { <span class="gfx-chip ok">Đã dựng @built.At.ToOffset(TimeSpan.FromHours(7)).ToString("HH:mm dd/MM") · trận sau của giải sẽ cài</span> }
+                    @if (built is not null && (built.Pack != st.Pack || built.Bg != (st.Bg is not null))) { <span class="gfx-chip warn">Có thay đổi chưa dựng</span> }
+                    else if (built is null && st.Bg is not null) { <span class="gfx-chip warn">Có ảnh nền, chưa dựng</span> }
+                </summary>
+                <div class="gfx">
+                    <div class="gfx-frame" style="@(Preview(st) is { } p ? $"background-image: url('{p}')" : "")">
+                        @if (st.Bg is null && st.Loading) { <span class="gfx-empty">Đang lấy ảnh nền của bộ từ máy game…</span> }
+                        else if (Preview(st) is null) { <span class="gfx-empty">Ảnh nền gốc của game — bấm Xem nền</span> }
+                        <span class="gfx-cap">@(st.Bg is not null ? "Ảnh nền tải lên" : st.Pack ?? "Giao diện gốc của game")</span>
+                    </div>
+                    <div class="gfx-side">
+                        <label>Bộ menu
+                            <select value="@(st.Pack ?? "")" disabled="@st.Busy" @onchange="e => PickAsync(c.Id, e.Value as string)">
+                                <option value="">Giao diện gốc của game</option>
+                                @foreach (var g in groups)
+                                {
+                                    <optgroup label="@g.Key">
+                                        @foreach (var pk in g) { <option value="@pk">@pk[(g.Key.Length + 1)..]</option> }
+                                    </optgroup>
+                                }
+                            </select>
+                        </label>
+                        <div class="gfx-acts">
+                            <label class="upload">@(st.Bg is null ? "Tải ảnh nền" : "Đổi ảnh nền")<InputFile accept="image/png,image/jpeg,image/webp" disabled="@st.Busy" OnChange="e => UploadBgAsync(c.Id, e)" /></label>
+                            @if (st.Bg is not null) { <button class="link" disabled="@st.Busy" @onclick="() => ClearBg(c.Id)">Bỏ ảnh nền</button> }
+                            else if (st.PackBg is null && !st.Loading) { <button class="link" @onclick="() => LoadPreviewAsync(c.Id)">Xem nền</button> }
+                        </div>
+                        <div class="gfx-acts">
+                            <button class="primary" disabled="@(st.Busy || (st.Pack is null && st.Bg is null))" @onclick="() => BuildAsync(c.Id)">@(st.Busy ? "Đang dựng…" : "Dựng gói")</button>
+                            @if (built is not null) { <button class="link" disabled="@st.Busy" @onclick="() => Remove(c.Id)">Gỡ gói</button> }
+                        </div>
+                        @if (st.Msg is not null) { <span class="@(st.Err ? "warn" : "muted")">@st.Msg</span> }
+                    </div>
+                </div>
+            </details>
+        }
+    }
+</div>
+
+@code {
+    sealed class CompState
+    {
+        public string? Pack, Bg, PackBg, Msg;
+        public bool Busy, Loading, Err, Open;
+    }
+
+    List<Competition>? comps;
+    readonly Dictionary<Guid, CompState> state = [];
+    IReadOnlyList<IGrouping<string, string>> groups = [];
+    string installed = "";
+    string? packsError, bugPath, bugMsg;
+    bool bugErr;
+    string corner = "tr";
+    int size = 9, opacity = 85;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var b = Gfx.BugSettings();
+        (corner, size, opacity, bugPath) = (b.Corner, b.Size, b.Opacity, Gfx.BugWebPath());
+        installed = Gfx.Installed();
+        await using var db = await Dbs.CreateDbContextAsync();
+        comps = await db.Competitions.AsNoTracking().Where(c => c.Status == CompetitionStatus.Active)
+            .OrderBy(c => c.Type).ThenBy(c => c.Tier).ThenBy(c => c.Name).ToListAsync();
+        foreach (var c in comps)
+        {
+            var built = Gfx.BuiltPack(c.Id);
+            var bg = Gfx.BgWebPath(c.Id);
+            state[c.Id] = new() { Pack = built?.Pack, Bg = bg, Open = built is not null || bg is not null };   // giải đã làm đồ hoạ mở sẵn
+        }
+        var hash = new Uri(Nav.Uri).Fragment;   // từ trang giải: /admin/do-hoa#g-{id}
+        foreach (var c in comps.Where(c => hash == $"#g-{c.Id:N}")) state[c.Id].Open = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (!first || comps is null) return;
+        try { groups = [.. (await Gfx.PacksAsync()).GroupBy(p => p.Split('/')[0])]; }
+        catch (AdminRuleException e) { packsError = e.Message; }
+        StateHasChanged();
+        foreach (var c in comps.Where(c => state[c.Id] is { Open: true, Bg: null, Pack: not null }))   // nền của bộ đã chọn (đệm sau lần đầu)
+            await LoadPreviewAsync(c.Id);
+    }
+
+    static string? Preview(CompState s) => s.Bg ?? s.PackBg;
+
+    async Task ToggleAsync(Guid id)
+    {
+        var s = state[id];
+        s.Open = !s.Open;
+        if (s is { Open: true, Bg: null, Pack: not null, PackBg: null, Loading: false }) await LoadPreviewAsync(id);
+    }
+
+    async Task PickAsync(Guid id, string? pack)
+    {
+        var s = state[id];
+        (s.Pack, s.PackBg, s.Msg) = (string.IsNullOrEmpty(pack) ? null : pack, null, null);
+        if (s.Bg is null) await LoadPreviewAsync(id);
+    }
+
+    async Task LoadPreviewAsync(Guid id)
+    {
+        var s = state[id];
+        var pack = s.Pack;
+        s.Loading = true;
+        StateHasChanged();
+        try
+        {
+            var path = await Gfx.PackBgAsync(pack);
+            if (s.Pack == pack) s.PackBg = path;   // đã chọn bộ khác trong lúc chờ → bỏ
+        }
+        catch (AdminRuleException e) { (s.Msg, s.Err) = (e.Message, true); }
+        finally { s.Loading = false; }
+        StateHasChanged();
+    }
+
+    async Task UploadBgAsync(Guid id, InputFileChangeEventArgs e)
+    {
+        var s = state[id];
+        (s.Msg, s.Err) = (null, false);
+        try
+        {
+            await Gfx.SaveBgAsync(id, await ReadAsync(e.File));
+            (s.Bg, s.Msg) = (Gfx.BgWebPath(id), "Đã lưu ảnh nền. Bấm Dựng gói để đưa vào game.");
+        }
+        catch (AdminRuleException x) { (s.Msg, s.Err) = (x.Message, true); }
+    }
+
+    void ClearBg(Guid id)
+    {
+        var s = state[id];
+        Gfx.ClearBg(id);
+        (s.Bg, s.Msg, s.Err) = (null, "Đã bỏ ảnh nền. Bấm Dựng gói để cập nhật gói.", false);
+        if (s.PackBg is null) _ = InvokeAsync(() => LoadPreviewAsync(id));
+    }
+
+    async Task BuildAsync(Guid id)
+    {
+        var s = state[id];
+        (s.Busy, s.Msg, s.Err) = (true, null, false);
+        StateHasChanged();
+        try
+        {
+            var b = await Gfx.BuildAsync(id, s.Pack);
+            s.Msg = $"Đã dựng gói ({b.Bytes / 1048576.0:0.#} MB). Trận sau của giải trên máy game sẽ dùng gói này.";
+        }
+        catch (AdminRuleException x) { (s.Msg, s.Err) = (x.Message, true); }
+        finally { s.Busy = false; }
+        installed = Gfx.Installed();
+    }
+
+    void Remove(Guid id)
+    {
+        Gfx.Remove(id);
+        (state[id].Msg, state[id].Err) = ("Đã gỡ gói. Trận sau của giải dùng giao diện gốc.", false);
+    }
+
+    async Task UploadBug(InputFileChangeEventArgs e)
+    {
+        (bugMsg, bugErr) = (null, false);
+        try
+        {
+            await Gfx.SaveBugAsync(await ReadAsync(e.File));
+            Gfx.SaveBugSettings(new(corner, size, opacity));
+            (bugPath, bugMsg) = (Gfx.BugWebPath(), "Đã lưu logo kênh.");
+        }
+        catch (AdminRuleException x) { (bugMsg, bugErr) = (x.Message, true); }
+    }
+
+    void SaveBug()
+    {
+        Gfx.SaveBugSettings(new(corner, size, opacity));
+        (bugMsg, bugErr) = ("Đã lưu vị trí.", false);
+    }
+
+    void ClearBug()
+    {
+        Gfx.ClearBug();
+        (bugPath, bugMsg, bugErr) = (null, "Đã bỏ logo kênh.", false);
+    }
+
+    static async Task<byte[]> ReadAsync(IBrowserFile f)
+    {
+        if (f.Size > GraphicsStore.MaxBytes) throw new AdminRuleException("Ảnh tối đa 8 MB");
+        using var ms = new MemoryStream();
+        await using (var s = f.OpenReadStream(GraphicsStore.MaxBytes)) await s.CopyToAsync(ms);
+        return ms.ToArray();
+    }
+}

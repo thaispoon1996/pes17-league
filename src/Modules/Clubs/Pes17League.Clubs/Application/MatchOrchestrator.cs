@@ -16,9 +16,10 @@ public enum MatchSide { Home, Away }
 /// gửi "sync FILE" để game cài lại ngay, lúc bấm Sẵn sàng thường không phải khởi động lại game nữa.</param>
 /// <param name="CompetitionLogo">Logo giải của trận (đường dẫn web /img/upload/…, PO 22/11): hiện góc phải trên màn hình chơi (stream).</param>
 /// <param name="Hot">Trận cầu đinh (<see cref="HotMatchService"/>, PO 23/11): record-mode = hot thì chỉ ghi hình + phát trực tiếp trận này.</param>
+/// <param name="CompetitionId">Giải của trận (PO 23/11): bộ chạy cài gói đồ hoạ menu của giải (trang /admin/do-hoa) trước khi vào trận.</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
     bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null,
-    string? CompetitionLogo = null, bool Hot = false);
+    string? CompetitionLogo = null, bool Hot = false, Guid? CompetitionId = null);
 
 /// <summary>Báo "đội hình vừa đổi" trong lúc game dựng sẵn chờ Sẵn sàng (gộp nhiều lần báo thành 1).</summary>
 public sealed class SquadSync
@@ -336,11 +337,11 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         var build = (await db.OptionFileBuilds.FindAsync([buildId], ct))!;
         var index = await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && (m.ClubId == f.HomeClubId || m.ClubId == f.AwayClubId))
             .ToDictionaryAsync(m => m.ClubId, m => m.PesClubIndex, ct);
-        var logo = f.CompetitionEditionId is { } ed
-            ? await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select c.LogoPath).SingleOrDefaultAsync(ct)
+        var comp = f.CompetitionEditionId is { } ed
+            ? await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select new { c.Id, c.LogoPath }).SingleOrDefaultAsync(ct)
             : null;
         return new MatchRunRequest(fixtureId, container, await store.ReadAsync(build.StoragePath!, ct), index[f.HomeClubId], index[f.AwayClubId], humanSide,
-            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: logo, Hot: await HotAsync(db, fixtureId, ct));
+            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: comp?.LogoPath, Hot: await HotAsync(db, fixtureId, ct), CompetitionId: comp?.Id);
     }
 
     /// <summary>Trận cầu đinh? Lỗi tính BXH/sức mạnh thì coi như không (chỉ ảnh hưởng ghi hình).</summary>

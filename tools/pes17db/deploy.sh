@@ -5,6 +5,7 @@
 #   3. pesdb.py apply (pesdb gốc HANO) → PlayerAssignment.bin (+ TacticsFormation.bin khi có _formations, Tactics.bin khi có _plan)
 #   4. cpk.py build → pes17league.cpk (khuôn gói HANO 23, đọc từ game)
 #   5. ghi vào download/ của game qua docker exec + DpFileList.bin = danh sách gốc HANO (order +1) + pes17league.cpk CUỐI, order 1
+#      (dplist.py; đang cài gói đồ hoạ giải compe.py thì thêm pes17compe.cpk sau cùng)
 #      (đã thử 18/11: gói cuối, order nhỏ nhất thắng; đặt đầu với order 33 thì KHÔNG ăn)
 #   --restart: tắt + mở lại game (game chỉ đọc gói lúc khởi động). Đừng dùng khi đang đá (bộ chạy trận tự giữ match.lock).
 # Ghi file game bằng docker exec (user abc) → chạy được trên máy chủ lẫn trong container web (bộ chạy trận tools/match17).
@@ -46,17 +47,9 @@ FILES=("common/etc/pesdb/PlayerAssignment.bin=$OUT/PlayerAssignment.bin")
 [ -f "$OUT/TacticsFormation.bin" ] && FILES+=("common/etc/pesdb/TacticsFormation.bin=$OUT/TacticsFormation.bin")
 [ -f "$OUT/Tactics.bin" ] && FILES+=("common/etc/pesdb/Tactics.bin=$OUT/Tactics.bin")   # thông số chiến thuật (khoá _plan, PO 21/11)
 python3 "$H/cpk.py" build "$OUT/template.cpk" "$OUT/pes17league.cpk" "${FILES[@]}"
-python3 - "$ORIG" "$OUT/DpFileList.bin" <<'E'
-import struct, sys
-o = open(sys.argv[1], "rb").read()
-ents = [bytearray(o[i:i + 48]) for i in range(0, len(o), 48)]
-ents = [e for e in ents if not e[16:].startswith(b"pes17league.cpk")]
-for e in ents:
-    struct.pack_into("<I", e, 4, struct.unpack_from("<I", e, 4)[0] + 1)
-me = bytearray(48); struct.pack_into("<I", me, 4, 1); me[16:31] = b"pes17league.cpk"
-open(sys.argv[2], "wb").write(b"".join(ents) + me)
-print("DpFileList:", len(ents), "gói HANO + pes17league.cpk")
-E
+# gói đồ hoạ giải đang cài (compe.py, PO 23/11) giữ nguyên trong danh sách
+EXTRA=(pes17league.cpk); [ -s "$OUT/compe.active" ] && EXTRA+=(pes17compe.cpk)
+python3 "$H/dplist.py" "$ORIG" "$OUT/DpFileList.bin" "${EXTRA[@]}"
 put() { docker exec -i -u abc "$BENCH" sh -c 'cat > "$1.new" && mv "$1.new" "$1"' sh "$DL/$2" < "$1"; }
 put "$OUT/pes17league.cpk" pes17league.cpk
 put "$OUT/DpFileList.bin" DpFileList.bin

@@ -11,9 +11,10 @@ namespace Pes17League.Web;
 /// <param name="StatsDir">File thô thống kê trận (B3, <see cref="MatchOrchestratorOptions.StatsDir"/>).</param>
 /// <param name="LiveDir">Hình xem trực tiếp (<see cref="LiveStore"/>); cần có ghi hình.</param>
 /// <param name="LogoDir">Logo tải lên (<see cref="LogoStore"/>): logo giải của trận hiện trên màn hình chơi (PO 22/11).</param>
+/// <param name="GraphicsDir">Đồ hoạ trong game (<see cref="GraphicsStore"/>, PO 23/11): bộ chạy cài gói menu của giải trước trận.</param>
 /// <param name="LockFile">Khoá "đang đá" match.lock: web xoá hộ khi dừng bộ chạy ngang (<see cref="ScriptMatchRunner"/>, PO 22/11).</param>
 public sealed record MatchJobOptions(string Script, string WorkDir, string StreamUrl, string? RecordingDir = null, string? HighlightDir = null, int MinFreeDiskGb = 20,
-    string? StatsDir = null, string? LiveDir = null, string? LogoDir = null, string? LockFile = null);
+    string? StatsDir = null, string? LiveDir = null, string? LogoDir = null, string? LockFile = null, string? GraphicsDir = null);
 
 /// <summary>Ảnh bài báo: {Dir}/{fixture:N}/{n}.jpg, web phục vụ ở <see cref="RequestPath"/>.</summary>
 public sealed record NewsStore(string Dir)
@@ -356,7 +357,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     public void Cancel() => _cts?.Cancel();
 
     private MatchOrchestrator Orchestrator() =>
-        new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, OnEvent, o.RecordingDir, o.LiveDir, logoDir: o.LogoDir, lockFile: o.LockFile),
+        new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, OnEvent, o.RecordingDir, o.LiveDir, logoDir: o.LogoDir, lockFile: o.LockFile, graphicsDir: o.GraphicsDir),
             new MatchOrchestratorOptions { FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null, MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
             null,   // PO 12/11: bỏ highlight từng trận; bàn thắng cắt từ bản ghi trong RoundReelService (đoạn từng bàn + clip vòng)
             new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));
@@ -364,7 +365,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     /// <summary>Trận giải người vs người trên máy 2 người (FriendlyWorker, PO 17/11): ghi hình + bài báo như trận giải, không phát trực tiếp,
     /// chỉ dùng <paramref name="container"/> (lượt Running sót chỉ dọn trên máy đó).</summary>
     public MatchOrchestrator DuelOrchestrator(string container, Action<MatchRunRequest, JsonElement> onEvent) =>
-        new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, onEvent, o.RecordingDir, logoDir: o.LogoDir, lockFile: o.LockFile),
+        new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, onEvent, o.RecordingDir, logoDir: o.LogoDir, lockFile: o.LockFile, graphicsDir: o.GraphicsDir),
             new MatchOrchestratorOptions { Containers = [container], FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null,
                 MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
             null, new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));

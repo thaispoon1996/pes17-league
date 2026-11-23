@@ -52,7 +52,7 @@ public sealed record RoundReelStore(string Dir)
 /// 4) bàn đã vào clip vòng → xoá đoạn nguồn (PO 12/11: không giữ video bàn lẻ). Sau đó clip vòng không dựng lại được nữa.
 /// </summary>
 public sealed class RoundReelService(IDbContextFactory<ClubsDbContext> dbs, MatchJobOptions o, RoundReelStore reels,
-    MatchJobService jobs, ILogger<RoundReelService> log) : BackgroundService
+    MatchJobService jobs, GraphicsStore gfx, ILogger<RoundReelService> log) : BackgroundService
 {
     public const int KeepRecordingDays = 7, MaxRecordingDays = 14;
     /// <summary>1 = có phát lại chậm + số bình chọn; 2 = chỉ pha bàn thắng (PO 12/11 bỏ chiếu chậm, bỏ bình chọn).</summary>
@@ -192,7 +192,8 @@ public sealed class RoundReelService(IDbContextFactory<ClubsDbContext> dbs, Matc
         if (n > 0) log.LogInformation("Xoá {Count} đoạn bàn thắng đã vào clip vòng", n);
     }
 
-    private sealed record ReelJob(string Key, string Title, int Round, int Goals, int Missing, List<ReelGoal> Items, Dictionary<Guid, double> At, string Signature);
+    private sealed record ReelJob(string Key, string Title, int Round, int Goals, int Missing, List<ReelGoal> Items, Dictionary<Guid, double> At, string Signature,
+        string? Logo = null);
 
     private async Task<List<ReelJob>> PendingAsync(CancellationToken ct)
     {
@@ -242,8 +243,8 @@ public sealed class RoundReelService(IDbContextFactory<ClubsDbContext> dbs, Matc
                 if (_failed.TryAdd(key, signature)) log.LogWarning("Clip vòng {Key}: dữ liệu bàn đổi nhưng đoạn nguồn đã xoá, giữ clip cũ", key);
                 continue;
             }
-            var title = editions.FirstOrDefault(e => e.Id == grp.Key.EditionId)?.Name ?? season.Name;
-            list.Add(new ReelJob(key, title, grp.Key.Matchday, total, total - items.Count, items, at, signature));
+            var ed = editions.FirstOrDefault(e => e.Id == grp.Key.EditionId);
+            list.Add(new ReelJob(key, ed?.Name ?? season.Name, grp.Key.Matchday, total, total - items.Count, items, at, signature, ed?.Logo));
         }
         return [.. list.OrderBy(j => j.Round)];
     }
@@ -259,10 +260,18 @@ public sealed class RoundReelService(IDbContextFactory<ClubsDbContext> dbs, Matc
             subtitle = $"Vòng {job.Round} · {job.Goals} bàn",
             outro = new[] { "Hẹn gặp lại ở vòng sau", "PES 17 League" },
             items = job.Items.Select(i => new { src = $"{goals}/{i.GoalId:N}.mp4", at = job.At[i.GoalId], no = i.No, who = i.Who, score = i.Score }),
+            // đồ hoạ (/admin/do-hoa, PO 23/11): logo giải trên khung mở đầu, logo kênh góc mọi pha bàn
+            logo = o.LogoDir is not null && job.Logo is { Length: > 0 } lg ? InRoot(Path.Combine(Path.GetFullPath(o.LogoDir), Path.GetFileName(lg))) : null,
+            bug = gfx.BugFile() is { } bf && InRoot(bf) is { } bugRel && gfx.BugSettings() is var bs
+                ? new { src = bugRel, corner = bs.Corner, size = bs.Size, opacity = bs.Opacity } : null,
         }, ct);
         var r = JsonDocument.Parse(output).RootElement;
         return (r.GetProperty("seconds").GetDouble(), [.. r.GetProperty("marks").EnumerateArray().Select(m => m.GetDouble())]);
     }
+
+    /// <summary>File có thật nằm trong <see cref="Root"/> (round_reel.py chỉ thấy ROOT qua docker -v) → đường dẫn tương đối; khác → null.</summary>
+    private string? InRoot(string file) =>
+        File.Exists(file) && Path.GetRelativePath(Root, file) is var rel && !rel.StartsWith("..") && !Path.IsPathRooted(rel) ? rel.Replace('\\', '/') : null;
 
     /// <summary>Chạy script trong tools/match (cạnh <see cref="MatchJobOptions.Script"/>), stdin = JSON; trả stdout.</summary>
     private async Task<string> RunAsync(string script, string[] args, object input, CancellationToken ct)

@@ -36,7 +36,8 @@ b.Services.AddSingleton(new GameSettingsStore(Path.Combine(Path.GetDirectoryName
 b.Services.AddSingleton(new MatchJobOptions(
     Path.GetFullPath(b.Configuration["Match:Script"]!), Path.Combine(storeDir, "..", "run"), b.Configuration["Match:StreamUrl"]!,
     Path.Combine(storeDir, "..", "recordings"), Path.Combine(storeDir, "..", "highlights"), b.Configuration.GetValue("Match:MinFreeDiskGb", 20),
-    Path.Combine(storeDir, "..", "stats"), Path.Combine(storeDir, "..", "live"), Path.Combine(storeDir, "..", "logos"), matchLock));
+    Path.Combine(storeDir, "..", "stats"), Path.Combine(storeDir, "..", "live"), Path.Combine(storeDir, "..", "logos"), matchLock,
+    Path.Combine(storeDir, "..", "graphics")));
 b.Services.AddSingleton(new HighlightStore(Path.GetFullPath(Path.Combine(storeDir, "..", "highlights"))));
 b.Services.AddSingleton(new RoundReelStore(Path.GetFullPath(Path.Combine(storeDir, "..", "reels"))));
 b.Services.AddSingleton(new LiveStore(Path.GetFullPath(Path.Combine(storeDir, "..", "live"))));
@@ -50,6 +51,10 @@ var faces = new FaceStore(Path.GetFullPath(Path.Combine(storeDir, "..", "faces")
 b.Services.AddSingleton(faces);
 var kits = new KitStore(Path.GetFullPath(Path.Combine(storeDir, "..", "kits")));
 b.Services.AddSingleton(kits);
+var graphics = new GraphicsStore(Path.GetFullPath(Path.Combine(storeDir, "..", "graphics")),   // đồ hoạ trong game (PO 23/11, /admin/do-hoa)
+    Path.GetFullPath(Path.Combine(Path.GetDirectoryName(b.Configuration["Match:Script"]!)!, "..", "pes17db", "compe.py")),
+    Path.GetDirectoryName(matchLock)!);
+b.Services.AddSingleton(graphics);
 b.Services.AddHttpClient("news", c => c.Timeout = TimeSpan.FromSeconds(45));
 b.Services.AddSingleton<IArticleWriter>(sp => new DeepSeekArticleWriter(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("news"),
@@ -106,6 +111,8 @@ Directory.CreateDirectory(news.Dir);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(news.Dir), RequestPath = NewsStore.RequestPath });
 Directory.CreateDirectory(faces.Dir);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(faces.Dir), RequestPath = FaceStore.RequestPath });
+Directory.CreateDirectory(graphics.Dir);
+app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(graphics.Dir), RequestPath = GraphicsStore.RequestPath });
 Directory.CreateDirectory(kits.Dir);
 // áo đấu: URL có ?v= theo giờ sửa file → cho trình duyệt giữ 30 ngày, mở lại bảng chi tiết không phải hỏi lại máy chủ
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(kits.Dir), RequestPath = KitStore.RequestPath,

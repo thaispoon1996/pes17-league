@@ -21,11 +21,13 @@ namespace Pes17League.Clubs.Infrastructure;
 /// <paramref name="logoDir"/>: thư mục logo tải lên (LogoStore) — trận có <see cref="MatchRunRequest.CompetitionLogo"/> và file có thật
 /// → PESMATCH_LOGO = đường dẫn file (bộ chạy PES17 đặt logo lên màn hình chơi).
 /// <see cref="MatchRunRequest.Hot"/>: PESMATCH_HOT=1 (trận cầu đinh, PO 23/11).
+/// <paramref name="graphicsDir"/>: thư mục đồ hoạ của web (GraphicsStore, PO 23/11) → PESMATCH_GRAPHICS + PESMATCH_COMPETITION
+/// (<see cref="MatchRunRequest.CompetitionId"/>): bộ chạy cài gói menu compe/{giải}.cpk của giải, giải chưa có gói → gỡ gói đang cài.
 /// <paramref name="lockFile"/>: khoá "đang đá" của bộ chạy (PESMATCH_LOCK, nội dung "PID trận"). Bộ chạy bị dừng ngang (web dừng ngay sau "end",
 /// huỷ, lỗi) không kịp tự xoá → xoá hộ khi khoá còn ghi PID của nó, kẻo sync.sh tưởng vẫn đang đá (PO 22/11).
 /// </summary>
 public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<MatchRunRequest, JsonElement>? onEvent = null, string? recordingDir = null,
-    string? liveDir = null, TimeSpan? syncQuiet = null, string? logoDir = null, string? lockFile = null)
+    string? liveDir = null, TimeSpan? syncQuiet = null, string? logoDir = null, string? lockFile = null, string? graphicsDir = null)
     : IMatchRunner
 {
     /// <summary>Gom thay đổi đội hình: HLV thường chỉnh liền nhiều lần, mỗi lần cài lại PES17 phải khởi động lại game (~1,5–2 phút).</summary>
@@ -50,6 +52,11 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
             psi.Environment["PESMATCH_LOGO"] = lf;
         if (lockFile is not null) psi.Environment["PESMATCH_LOCK"] = Path.GetFullPath(lockFile);
         if (r.Hot) psi.Environment["PESMATCH_HOT"] = "1";   // trận cầu đinh: record-mode = hot chỉ ghi trận này (tools/match17/tools/rec17.py)
+        if (graphicsDir is not null)
+        {
+            psi.Environment["PESMATCH_GRAPHICS"] = Path.GetFullPath(graphicsDir);
+            psi.Environment["PESMATCH_COMPETITION"] = r.CompetitionId?.ToString("N") ?? "";
+        }
 
         using var p = Process.Start(psi)!;
         var pid = p.Id;

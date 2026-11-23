@@ -51,7 +51,8 @@
     <LogoUpload @bind-Value="form.LogoPath" Prefix="@(comp is null ? "comp-moi" : $"comp-{comp.Id:N}")" Name="@form.Name" />
     @if (comp is not null)
     {
-        <ScoreboardUpload CompetitionId="comp.Id" />
+        @* PES17 (PO 23/11): ảnh trong game theo giải ở trang Đồ hoạ (bảng tỉ số trận không đổi bằng ảnh được; ScoreboardUpload là của PES6) *@
+        <p class="muted">Menu và ảnh nền trong game của giải: <a href="admin/do-hoa#g-@comp.Id.ToString("N")">trang Đồ hoạ</a>.</p>
     }
 </div>
 

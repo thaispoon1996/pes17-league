@@ -21,6 +21,7 @@
   error{reason}. Bàn thắng in ngay trước "end", đã khớp tỷ số cuối (ghi kết quả nguồn Memory đòi khớp).
   ratings{home:[{shirt,rating}],away:[...]} đọc từ bảng Player Rankings ở menu hết trận (11 người đầu mỗi bên).
   PESMATCH_LOGO=FILE (trận giải, PO 22/11): logo giải góc phải trên trang chơi Selkies từ lúc giao bóng tới hết trận (overlay(), tools/bench/pes-overlay.js).
+  PESMATCH_GRAPHICS=DIR + PESMATCH_COMPETITION=GIẢI (PO 23/11): cài gói đồ hoạ menu của giải trước khi vào trận (ensure_compe(), tools/pes17db/compe.py).
   AFK (trận 2 người): xem AFK_STALL / Presence (tools/afk17.py). Chưa có: hiệp phụ/penalty (PESMATCH_EXTRA_TIME), người ghi bàn.
   Ghi hình PESMATCH_REC=FILE.mkv (+ PESMATCH_LIVE=FILE.m3u8 xem trực tiếp), 23/11: chỉ khi $DATA/pes17-deploy/record-mode = bot|all
   (mặc định tắt, tools/rec17.py). Ghi từ lúc bấm Kickoff tới hết trận; sự kiện recording{path} / live{path}; khi ghi, "wall" = giây trong video.
@@ -47,6 +48,8 @@ WARM = os.environ.get("PESMATCH_WARM") == "1"
 BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
 REC = os.environ.get("PESMATCH_REC")     # web luôn truyền; chỉ ghi khi record-mode cho phép (rec17.wanted)
 LOGO = os.environ.get("PESMATCH_LOGO")   # logo giải của trận (web, PO 22/11) → góc phải trên màn hình chơi, từ lúc giao bóng tới hết trận
+GRAPHICS = os.environ.get("PESMATCH_GRAPHICS")         # $DATA/graphics của web (PO 23/11): gói menu theo giải compe/{giải}.cpk (trang /admin/do-hoa)
+COMPETITION = os.environ.get("PESMATCH_COMPETITION")   # mã giải của trận (Guid dạng N); trống = giao hữu / không thuộc giải
 OVERLAY = "/bench/overlay"                # trong pes17-bench; trang Selkies đọc ở pes/overlay.json (tools/bench/pes-overlay.js)
 BOOT_TIMEOUT = 300        # từ lúc mở game tới màn chọn đội
 NO_PITCH_TIMEOUT = 600    # quá 10 phút không thấy HUD trận → treo
@@ -577,6 +580,31 @@ def ensure_quality(want: str | None) -> bool:
     return False
 
 
+def ensure_compe() -> bool:
+    """Gói đồ hoạ menu của giải (phương án D, PO 23/11; tools/pes17db/compe.py): giải có gói → cài, giải chưa có → gỡ gói đang cài;
+    chưa giải nào có gói và máy không cài gói nào → không đụng. Trả True nếu đã đổi (game chỉ đọc gói lúc mở → mở lại game).
+    Lỗi chỉ ghi log: đồ hoạ là phụ, trận vẫn đá."""
+    if not GRAPHICS:
+        return False
+    try:
+        d = Path(GRAPHICS) / "compe"
+        if not any(d.glob("*.cpk")) and not (OUT / "compe.active").exists():
+            return False
+        cpk = d / f"{COMPETITION}.cpk" if COMPETITION else None
+        target = str(cpk) if cpk and cpk.is_file() else "none"
+        r = subprocess.run([sys.executable, str(REPO / "tools" / "pes17db" / "compe.py"), "install", target],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode:
+            log(f"gói đồ hoạ giải lỗi: {(r.stderr or r.stdout).strip()[-200:]}")
+            return False
+        if json.loads(r.stdout).get("changed"):
+            log(f"gói đồ hoạ giải → {Path(target).stem}: mở lại game")
+            return True
+    except Exception as e:
+        log(f"gói đồ hoạ giải lỗi: {e}")
+    return False
+
+
 def ensure_game(squads: str, home: int, away: int) -> bool:
     """Cài đội hình nếu 2 đội của trận khác game (khởi động lại game). Trả True nếu đã cài lại."""
     if game_has(squads, home, away):
@@ -693,6 +721,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             threading.Thread(target=read_cmds, daemon=True).start()
         gs = game_settings()
         gfx = ensure_quality(gs.get("quality"))   # ghi trước: cài đội hình (nếu có) cũng mở lại game
+        gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active
         restarted = ensure_game(squads, home, away)
         if gfx and not restarted:
             restart_game()
