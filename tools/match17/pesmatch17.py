@@ -315,7 +315,11 @@ def match_time(want: int = MATCH_TIME, level: str | None = None) -> None:
         nav.pad("B w:2.5 Left w:0.6 Left w:0.6")
 
 
-GP_TITLE = (80, 112, 400, 140)   # "Main Menu" / "Lineup/Edit Position" góc trên trái màn GAME PLAN
+GP_TITLE = (80, 112, 400, 140)   # tiêu đề GAME PLAN khung đội nhà; khung đội khách dời 576 px
+
+
+def gp_title(im: Image.Image) -> str:
+    return " ".join(ocr.rec(im, (x + d, y, x2 + d, y2))[0] for x, y, x2, y2 in [GP_TITLE] for d in (0, gameplan17.AWAY_DX))   # "Main Menu" / "Lineup/Edit Position" góc trên trái màn GAME PLAN
 UNI_COUNT = {"home": (530, 515, 630, 560), "away": (995, 515, 1095, 560)}   # số "2/3" dưới hình cầu thủ trong menu UNIFORM
 KIT_INDEX = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5}
 
@@ -591,6 +595,41 @@ def restart_game() -> None:
     time.sleep(25)
 
 
+EVDEV_MAX = 150   # Selkies giữ lại kết nối tay cầm ảo của mỗi lần mở game; ~400 → game không nhận nút nào (gặp 23/11)
+
+
+def bench_clients() -> int:
+    """Số kết nối tay cầm ảo Selkies đang giữ (dòng "Total EVDEV clients now: N" cuối cùng từ lần container khởi động)."""
+    try:
+        since = subprocess.run(["docker", "inspect", "-f", "{{.State.StartedAt}}", BENCH], capture_output=True, text=True, timeout=20).stdout.strip()
+        out = subprocess.run(["docker", "logs", "--since", since, BENCH], capture_output=True, text=True, timeout=60, errors="replace")
+        m = re.findall(r"Total EVDEV clients now: (\d+)", out.stdout + out.stderr)
+        return int(m[-1]) if m else 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0
+
+
+def heal_bench() -> bool:
+    """Kết nối rò quá EVDEV_MAX → khởi động lại cả container máy game (vé người chơi chưa cấp: web cấp lúc stage loading),
+    cấp lại vé tay cầm ảo, mở game. Trả True nếu đã làm (game mới mở, về màn đầu)."""
+    n = bench_clients()
+    if n <= EVDEV_MAX:
+        return False
+    log(f"máy game giữ {n} kết nối tay cầm ảo (> {EVDEV_MAX}) → khởi động lại container")
+    emit(event="stage", stage="boot")
+    subprocess.run(["docker", "restart", BENCH], capture_output=True, timeout=180)
+    for _ in range(30):
+        r = subprocess.run(["docker", "exec", BENCH, "sh", "-c", "echo {} | /lsiopy/bin/python3 /usr/local/bin/pes-tokens.py"],
+                           capture_output=True, timeout=20)
+        if r.returncode == 0:
+            break
+        time.sleep(2)
+    subprocess.run(["docker", "exec", "-d", BENCH, "bash", "-lc",
+                    "su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"], capture_output=True)
+    time.sleep(35)
+    return True
+
+
 def deploy(squads: str) -> None:
     r = subprocess.run([str(REPO / "tools" / "pes17db" / "deploy.sh"), "--squads", squads, "--force", "--restart"],
                        capture_output=True, text=True, env={**os.environ, "PES17_DATA": str(DATA)})
@@ -721,13 +760,13 @@ def ensure_name() -> bool:
     return False
 
 
-def ensure_game(squads: str, home: int, away: int, plan_team: int | None = None) -> bool | str:
+def ensure_game(squads: str, home: int, away: int, plan_teams: list[int] | None = None) -> bool | str:
     """Cài đội hình nếu 2 đội của trận khác game (khởi động lại game). Trả True nếu đã cài lại.
-    plan_team (đội người chơi cầm P1): chỉ khác ĐỘI HÌNH đá chính của đội đó → trả "plan" (đổi người trong GAME PLAN, khỏi mở lại game)."""
+    plan_teams (đội người chơi cầm): chỉ khác ĐỘI HÌNH (đá chính, dự bị) của các đội đó → trả "plan" (đổi người trong GAME PLAN, khỏi mở lại game)."""
     if game_has(squads, home, away):
         log("game đã có đội hình 2 đội → không cài lại")
         return False
-    if plan_team is not None and plan_only(squads, home, away, plan_team):
+    if plan_teams and plan_only(squads, home, away, plan_teams):
         log("chỉ đổi đội hình đá chính → đổi trong GAME PLAN, không cài lại game")
         return "plan"
     deploy(squads)
@@ -754,7 +793,7 @@ def player_names() -> dict[int, str]:
     return _ROSTER
 
 
-def plan_only(squads: str, home: int, away: int, team: int) -> bool:
+def plan_only(squads: str, home: int, away: int, teams: list[int]) -> bool:
     """Gói đã cài (game đang chạy) và `squads` chỉ khác ở THỨ TỰ cầu thủ của `team` (cùng người, cùng số áo, cùng sơ đồ/vai/chiến
     thuật; đội kia giống hệt) → đổi được bằng tay cầm trong GAME PLAN (gameplan17, PO 23/11 hướng B)."""
     try:
@@ -764,43 +803,66 @@ def plan_only(squads: str, home: int, away: int, team: int) -> bool:
         want = json.loads(Path(squads).read_text())
     except (OSError, ValueError):
         return False
-    t, other = str(team), str(away if team == home else home)
-    a, b = cur.get(t) or [], want.get(t) or []
-    if len(b) < 11 or sorted(map(tuple, a)) != sorted(map(tuple, b)) or cur.get(other) != want.get(other):
-        return False
-    for extra in ("_formations", "_jobs", "_plan"):
-        if any((cur.get(extra) or {}).get(k) != (want.get(extra) or {}).get(k) for k in (t, other)):
+    for t in (str(home), str(away)):
+        a, b = cur.get(t) or [], want.get(t) or []
+        if int(t) in teams:
+            if len(b) < 11 or sorted(map(tuple, a)) != sorted(map(tuple, b)) or not (want.get("_formations") or {}).get(t):
+                return False
+        elif a != b:
             return False
-    if not (want.get("_formations") or {}).get(t):
-        return False
+        for extra in ("_formations", "_jobs", "_plan"):
+            if (cur.get(extra) or {}).get(t) != (want.get(extra) or {}).get(t):
+                return False
     r = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017.exe"], capture_output=True)
     return r.returncode == 0
 
 
-def game_plan(squads: str, team: int) -> None:
-    """Màn Kickoff (con trỏ ở KICKOFF, trong nav.session): GAME PLAN → Lineup/Edit Position → đổi người tới đúng 11 người đá chính
-    + ô của đội `team` trong `squads` → về KICKOFF. Đọc thật số áo trên màn hình (game có thể khác gói đã cài). Lỗi → NavError."""
+def game_plan(squads: str, teams: list[tuple[int, str, int]]) -> None:
+    """Màn Kickoff (con trỏ ở KICKOFF, trong nav.session): GAME PLAN → Lineup/Edit Position → với mỗi (đội, "home"|"away", tay cầm):
+    đổi người tới đúng 11 người đá chính + vị trí + 12 người ngồi ghế dự bị theo `squads` → về KICKOFF. Đọc thật số áo/tên trên
+    màn hình (game có thể khác gói đã cài). Lỗi → NavError."""
     doc = json.loads(Path(squads).read_text())
-    lst, formation = doc[str(team)], doc["_formations"][str(team)]
     names = player_names()
-    roster = {shirt: names.get(pid, "") for pid, shirt in lst}
     nav.pad("Right w:0.8 A w:4")
     try:
-        if "Menu" not in ocr.rec(nav.shot("m17_gp"), GP_TITLE)[0]:
+        if "Menu" not in gp_title(nav.shot("m17_gp")):
             raise NavError("game_plan: không mở được GAME PLAN")
         nav.pad("A w:2")
-        if "Lineup" not in ocr.rec(nav.shot("m17_gp"), GP_TITLE)[0]:
+        if "Lineup" not in gp_title(nav.shot("m17_gp")):
             raise NavError("game_plan: không mở được Lineup/Edit Position")
-        r = gameplan17.apply([shirt for _, shirt in lst[:11]], formation, roster, OUT / "gameplan-graphs.json")
-        log(f"GAME PLAN: đổi {r['swaps']} lượt trong {r['secs']} s" + (" (dò sơ đồ lần đầu)" if r["explored"] else ""))
+        for team, side, slot in teams:
+            lst, formation = doc[str(team)], doc["_formations"][str(team)]
+            roster = {shirt: names.get(pid, "") for pid, shirt in lst}
+            if slot:   # trận 2 người: mỗi tay cầm có Main Menu riêng ở khung của mình → P2 tự vào Lineup/Edit Position
+                d = gameplan17.AWAY_DX if side == "away" else 0
+                box = (GP_TITLE[0] + d, GP_TITLE[1], GP_TITLE[2] + d, GP_TITLE[3])
+                for _ in range(2):
+                    if "Lineup" in ocr.rec(nav.shot("m17_gp"), box)[0]:
+                        break
+                    nav.pad("A w:2", slot)
+                else:
+                    raise NavError(f"game_plan: tay cầm {slot + 1} không vào được Lineup/Edit Position")
+            gameplan17.set_side(side, slot)
+            r = gameplan17.apply([shirt for _, shirt in lst[:11]], formation, roster, OUT / "gameplan-graphs.json",
+                                 bench=[shirt for _, shirt in lst[11:]])
+            log(f"GAME PLAN {side}: đổi {r['swaps']} lượt + {r['bench']} ghế dự bị trong {r['secs']} s"
+                + (" (dò sơ đồ lần đầu)" if r["explored"] else ""))
     except gameplan17.PlanError as e:
         raise NavError(f"game_plan: {e}") from e
     finally:
-        for _ in range(3):   # Lineup → Main Menu → Kickoff (con trỏ ở GAME PLAN; kickoff_screen chỉ nhận con trỏ ở KICKOFF) → KICKOFF
-            t = ocr.rec(nav.shot("m17_gp"), GP_TITLE)[0]
-            if "Menu" not in t and "Lineup" not in t:
+        gameplan17.set_side("home", 0)
+        # Thoát: mỗi tay cầm B về Main Menu của khung mình; trận 2 người phải cả hai cùng B ở Main Menu (P1 B → "Please wait",
+        # P2 B → ra màn Kickoff, con trỏ ở GAME PLAN, thử 23/11) → Trái về KICKOFF.
+        sides = {side: slot for _, side, slot in teams} or {"home": 0}
+        for _ in range(6):
+            im = nav.shot("m17_gp")
+            title = {sd: ocr.rec(im, (GP_TITLE[0] + d, GP_TITLE[1], GP_TITLE[2] + d, GP_TITLE[3]))[0]
+                     for sd, d in (("home", 0), ("away", gameplan17.AWAY_DX))}
+            if not any("Menu" in t or "Lineup" in t for t in title.values()):
                 break
-            nav.pad("B w:2.5")
+            busy = [sl for sd, sl in sides.items() if "Lineup" in title[sd]]
+            for sl in busy or sorted(sides.values()):
+                nav.pad("B w:2", sl)
         if not kickoff_screen(nav.shot("m17_gp")):
             nav.pad("Left w:0.8")
     if not kickoff_screen(nav.shot("m17_gp")):
@@ -814,7 +876,7 @@ def read_cmds() -> None:
             CMDS.put((w[0], w[1].strip() if len(w) > 1 else None))
 
 
-def wait_go(squads: str, home: int, away: int, setup, replan=None) -> bool:
+def wait_go(squads: str, home: int, away: int, setup, replan=None, plan_teams: list[int] | None = None) -> bool:
     """Chờ lệnh go (nút Sẵn sàng trên web). "sync FILE"/"go FILE" có đội hình 2 đội khác game → cài lại, khởi động lại game,
     setup() về màn Kickoff (stage boot…ready) rồi chờ tiếp / vào trận. Chỉ cài lại khi đang thấy màn Kickoff (người chơi chưa tự vào trận).
     Người chơi tự bấm Kickoff bằng tay cầm (màn Kickoff mất 3 lần liên tiếp) → coi như đã vào trận. Trả True nếu người chơi tự vào."""
@@ -829,7 +891,7 @@ def wait_go(squads: str, home: int, away: int, setup, replan=None) -> bool:
             pass
         on_kick = kickoff_screen(nav.shot("m17_wait"))
         if on_kick and latest != squads:
-            if replan and has_formation(latest, home) and (game_has(latest, home, away) or plan_only(latest, home, away, home)):
+            if replan and all(has_formation(latest, t) for t in plan_teams) and (game_has(latest, home, away) or plan_only(latest, home, away, plan_teams)):
                 log("đội hình đổi → kiểm/đổi trong GAME PLAN")
                 replan(latest, not game_has(latest, home, away))
             elif not game_has(latest, home, away):
@@ -927,18 +989,24 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         rec17.stop(f"pesrec-{container}")   # bản ghi sót của lần chạy bị dừng ngang → đóng file gọn
         if WAIT_GO or WARM:
             threading.Thread(target=read_cmds, daemon=True).start()
+        healed = heal_bench()
         gs = game_settings()
         gfx = ensure_quality(gs.get("quality"))   # ghi trước: cài đội hình (nếu có) cũng mở lại game
         gfx = ensure_house() or gfx               # đồ hoạ chung mọi trận (house.active)
         gfx = ensure_name() or gfx                # tên giải trên dải tiêu đề (name.active)
         gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active + house.active
-        plan_team = home if human == "home" else None   # tay cầm P1 = đội nhà → đổi người được trong GAME PLAN
-        restarted = ensure_game(squads, home, away, plan_team)
+        # đội người cầm → đổi người được trong GAME PLAN bằng tay cầm của họ (P1; trận 2 người: đội khách = P2)
+        plan = {"home": [(home, "home", 0)], "away": [(away, "away", 0)],
+                "both": [(home, "home", 0), (away, "away", 1)]}.get(human or "", [])
+        plan_teams = [t for t, _, _ in plan]
+        restarted = ensure_game(squads, home, away, plan_teams)
         # Không mở lại game → đội hình trong game có thể đã khác gói (trận trước đổi trong GAME PLAN, game tự thay người) → luôn kiểm
         # trong GAME PLAN (đã đúng: ~8 s). "plan" = bắt buộc (lỗi thì cài lại game); còn lại lỗi chỉ ghi log.
         must = restarted == "plan"
-        pending = squads if plan_team and restarted is not True and has_formation(squads, plan_team) else None
+        pending = squads if plan and restarted is not True and all(has_formation(squads, t) for t in plan_teams) else None
         restarted = restarted is True
+        if healed and not restarted:   # game vừa mở lại cùng container → đã nạp gói mới nhất trên đĩa
+            gfx, restarted = False, True
         if gfx and not restarted:
             if must:   # đằng nào cũng mở lại game → cài luôn đội hình, khỏi đổi trong GAME PLAN
                 deploy(squads)
@@ -960,7 +1028,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             """Màn Kickoff: đổi người trong GAME PLAN (~20–60 s); lỗi → cài lại gói + mở lại game như cũ (must) / bỏ qua."""
             try:
                 with nav.session():
-                    game_plan(path, home)
+                    game_plan(path, plan)
             except NavError as e:
                 if not must:
                     log(f"GAME PLAN lỗi ({e}) → bỏ qua")
@@ -976,7 +1044,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         if human and not both:
             emit(event="stage", stage="ready")
             if WAIT_GO or WARM:
-                self_started = wait_go(squads, home, away, setup, replan if plan_team else None)
+                self_started = wait_go(squads, home, away, setup, replan if plan else None, plan_teams)
         emit(event="stage", stage="loading")
         board = make_board(home, away)
         if REC and rec17.wanted(OUT, human):

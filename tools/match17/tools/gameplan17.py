@@ -33,6 +33,17 @@ PANEL2 = (418, 560, 640, 595)       # khi đã chọn 1 người (A): ô thứ h
 LIST_X, ROW0, ROWH = 390, 182, 27
 DIRS = ("Up", "Down", "Left", "Right")
 STEP = 0.55
+VISIBLE = 12                        # danh sách hiện 12 dòng = đúng 12 ghế dự bị (vạch ngăn dưới dòng 12, thử 23/11)
+AWAY_DX = 576                       # khung đội khách = khung đội nhà dời sang phải 576 px
+_DX, _SLOT = 0, 0                   # khung + tay cầm đang dùng (apply đặt theo side)
+
+
+def _pad(keys: str) -> None:
+    nav.pad(keys, _SLOT)
+
+
+def _box(b: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    return (b[0] + _DX, b[1], b[2] + _DX, b[3])
 
 
 class PlanError(Exception):
@@ -43,8 +54,8 @@ def hand(im: Image.Image) -> tuple[str, object] | None:
     """Vị trí bàn tay: ("pitch", (x, y)) | ("list", dòng) | None."""
     a = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2HSV)
     m = ((a[..., 2] > 235) & (a[..., 1] < 25)).astype(np.uint8)
-    m[:, :80] = 0
-    m[:, 640:] = 0
+    m[:, :80 + _DX] = 0
+    m[:, 640 + _DX:] = 0
     m[:160] = 0
     m[545:] = 0
     n, _, st, _ = cv2.connectedComponentsWithStats(m)
@@ -57,14 +68,24 @@ def hand(im: Image.Image) -> tuple[str, object] | None:
         if not pair:
             return None
         x, y = pair[0][0], pair[0][1] - 3
-    if x >= LIST_X:
+    if x >= LIST_X + _DX:
         return ("list", int(round((y - ROW0) / ROWH)))
     return ("pitch", (int(x), int(y)))
 
 
-def number(im: Image.Image, box=PANEL) -> int | None:
-    m = re.match(r"\s*(\d{1,3})\D", ocr.rec(im, box)[0] + " ")
-    return int(m[1]) if m else None
+def number(im: Image.Image, box=PANEL, roster: dict[int, str] | None = None) -> int | None:
+    """Số áo ở đầu ô thông tin. OCR hay dính chữ cái đầu tên vào số ("10 I. Ndiaye" → "101I.Ndiaye"): số không có trong đội
+    mà tên đọc được là người có số áo là phần đầu của số đó → lấy số áo của người đó."""
+    t = ocr.rec(im, _box(box))[0] + " "
+    m = re.match(r"\s*(\d{1,3})\D", t)
+    if not m:
+        return None
+    v = int(m[1])
+    if roster and v not in roster:
+        g = guess(t[m.end(1) - 1:], roster) or guess(t[m.end(1):], roster)
+        if g is not None and m[1].startswith(str(g)):
+            return g
+    return v
 
 
 class Board:
@@ -101,10 +122,10 @@ class Board:
             raise PlanError("không thấy con trỏ bàn tay")
         if h[0] == "list":
             self.at = ("list", h[1] + self.off)
-            self.lst[self.at[1]] = number(im, PANEL2 if self.selected else PANEL)
+            self.lst[self.at[1]] = number(im, PANEL2 if self.selected else PANEL, self.roster)
         else:
             self.at = self._node(h[1])
-            v = number(im, PANEL2 if self.selected else PANEL)   # đọc thật mỗi lần trỏ qua → đè số đoán từ tên
+            v = number(im, PANEL2 if self.selected else PANEL, self.roster)   # đọc thật mỗi lần trỏ qua → đè số đoán từ tên
             if v is not None or self.at not in self.shirt:
                 self.shirt[self.at] = v
                 self.sure.add(self.at)
@@ -114,7 +135,7 @@ class Board:
     def press(self, key: str, record: bool = True) -> object:
         frm = self.at
         before = self.lst.get(frm[1]) if isinstance(frm, tuple) else None
-        nav.pad(f"{key} w:{STEP}")
+        _pad(f"{key} w:{STEP}")
         to = self.look()
         if isinstance(frm, tuple) and to == frm and key in ("Up", "Down") and self.lst.get(to[1]) != before:
             self.off += 1 if key == "Down" else -1   # con trỏ đứng ở mép, danh sách cuộn
@@ -208,41 +229,53 @@ class Board:
             raise PlanError(f"không tới được {target} (đang {self.at})")
 
 
+    def enter_list(self) -> None:
+        if not isinstance(self.at, tuple):
+            entry = next(((n, d) for (n, d), v in self.edges.items() if isinstance(v, tuple)), None)
+            if entry is None:
+                raise PlanError("chưa biết đường vào danh sách")
+            self.go(entry[0])
+            self.press(entry[1])
+            if not isinstance(self.at, tuple):
+                raise PlanError("không vào được danh sách")
+
+    def to_top(self, rows: int = 40) -> None:
+        """Kéo danh sách lên tận đầu (có thể đang cuộn sẵn), đánh số dòng lại: dòng 0 = dòng đầu thật."""
+        self.enter_list()
+        if self.top:
+            self.go(("list", 0))
+            return
+        for _ in range(rows):
+            prev = (self.at, self.lst.get(self.at[1]))
+            self.press("Up")
+            if (self.at, self.lst.get(self.at[1])) == prev:
+                break
+        n0 = self.lst.get(self.at[1])
+        self.off -= self.at[1]
+        self.lst, self.at, self.top = {0: n0}, ("list", 0), True
+
+    def rows(self) -> dict[int, int | None]:
+        """Số áo đoán từ tên 12 dòng danh sách đang hiện (dòng trên màn hình 0–11, theo ảnh vừa chụp)."""
+        return {i: guess(ocr.rec(self.im, _box((455, ROW0 + ROWH * i - 10, 585, ROW0 + ROWH * i + 14)))[0], self.roster or {})
+                for i in range(VISIBLE)}
+
     def find_list(self, shirt: int, rows: int = 40) -> tuple[str, int]:
-        """Tới dòng danh sách có số áo `shirt`. Lần đầu: vào danh sách, lên tận đầu (danh sách có thể đang cuộn sẵn),
-        đánh số dòng lại từ 0 rồi dò xuống (cuộn khi cần)."""
+        """Tới dòng danh sách có số áo `shirt`: dòng đã biết → đi thẳng; đọc tên các dòng đang hiện; không thì lên đầu rồi dò xuống."""
         for r, v in list(self.lst.items()):
             if v == shirt and self.top:
                 self.go(("list", r))
                 if self.lst.get(self.at[1]) == shirt:
                     return self.at
-        if not isinstance(self.at, tuple):
-            entry = next(((n, d, v) for (n, d), v in self.edges.items() if isinstance(v, tuple)), None)
-            if entry is None:
-                raise PlanError("chưa biết đường vào danh sách")
-            self.go(entry[0])
-            self.press(entry[1])
+        self.enter_list()
         if self.roster and self.im is not None:   # đọc tên cả danh sách đang hiện → nhảy thẳng tới dòng cần
-            vis = {i: guess(ocr.rec(self.im, (455, ROW0 + ROWH * i - 10, 585, ROW0 + ROWH * i + 14))[0], self.roster) for i in range(12)}
-            t = next((i for i, v in vis.items() if v == shirt), None)
+            t = next((i for i, v in self.rows().items() if v == shirt), None)
             phys = self.at[1] - self.off
             if t is not None:
-                if t != phys:
-                    nav.pad(" ".join([("Down" if t > phys else "Up") + " w:0.25"] * abs(t - phys)) + " w:0.3")
-                    self.look()
+                for _ in range(abs(t - phys)):   # từng nút (bấm liền game nuốt nút)
+                    self.press("Down" if t > phys else "Up")
                 if self.lst.get(self.at[1]) == shirt:
                     return self.at
-        if not self.top:
-            for _ in range(rows):
-                prev = (self.at, self.lst.get(self.at[1]))
-                self.press("Up")
-                if (self.at, self.lst.get(self.at[1])) == prev:
-                    break
-            n0 = self.lst.get(self.at[1])
-            self.off -= self.at[1]
-            self.lst, self.at, self.top = {0: n0}, ("list", 0), True
-        else:
-            self.go(("list", 0))
+        self.to_top(rows)
         for _ in range(rows):
             if self.lst.get(self.at[1]) == shirt:
                 return self.at
@@ -251,6 +284,21 @@ class Board:
             if self.at == prev:
                 break
         raise PlanError(f"không thấy số áo {shirt} trong danh sách")
+
+    def swap(self, a: object, find) -> object:
+        """Chọn ô `a` (A), tới ô thứ hai bằng find() (trả ô), A → đổi chỗ. Lỗi giữa chừng → B bỏ chọn."""
+        self.go(a)
+        _pad("A w:0.8")
+        self.selected = True
+        try:
+            other = find()
+            _pad("A w:1.2")
+        except Exception:
+            _pad("B w:0.8")
+            raise
+        finally:
+            self.selected = False
+        return other
 
     def tour(self) -> None:
         """Đi qua mọi vị trí trên sân (đọc số áo)."""
@@ -291,8 +339,11 @@ def guess(text: str, roster: dict[int, str]) -> int | None:
 
 
 def read_names(im: Image.Image, nodes: list[tuple[int, int]], roster: dict[int, str]) -> dict[int, int | None]:
-    """Số áo đoán từ tên dưới ảnh từng vị trí trên sân (1 lần chụp)."""
-    return {i: guess(ocr.rec(im, (x - 85, y + 4, x + 12, y + 22))[0], roster) for i, (x, y) in enumerate(nodes)}
+    """Số áo đoán từ tên dưới ảnh từng vị trí trên sân (1 lần chụp). Tên sát nhau dễ đọc lẫn tên người bên cạnh → số áo nào
+    đoán cho ≥ 2 vị trí thì bỏ (None = phải trỏ vào đọc)."""
+    r = {i: guess(ocr.rec(im, (x - 70, y + 4, x + 8, y + 22))[0], roster) for i, (x, y) in enumerate(nodes)}
+    vals = [v for v in r.values() if v is not None]
+    return {i: (v if vals.count(v) == 1 else None) for i, v in r.items()}
 
 
 def assign(nodes: list[tuple[int, int]], formation: list[list[int]]) -> list[int]:
@@ -314,12 +365,14 @@ def assign(nodes: list[tuple[int, int]], formation: list[list[int]]) -> list[int
     return slot_of
 
 
-def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | None = None, cache: Path | None = None) -> dict:
-    """Đang ở Lineup/Edit Position: đổi người tới khi ô k (0–10) là số áo want[k]. roster = {số áo: tên} của đội (đọc tên trên sân
-    1 lần chụp; thiếu thì trỏ từng người). Trả {"swaps", "explored", "secs"}. Đồ thị nhảy lưu theo sơ đồ ở `cache`
-    (dò lần đầu ~1,5 phút). Lỗi → PlanError (người gọi cài lại + mở lại game như cũ)."""
+def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | None = None, cache: Path | None = None,
+          bench: list[int] | None = None) -> dict:
+    """Đang ở Lineup/Edit Position: đổi người tới khi ô k (0–10) là số áo want[k]; bench = số áo phải ngồi 12 ghế dự bị (trên vạch
+    ngăn; thứ tự trong ghế không đổi — chỉ là thứ tự hiện). Khung + tay cầm theo set_side. roster = {số áo: tên} của đội.
+    Trả {"swaps", "bench", "explored", "secs"}. Đồ thị nhảy lưu theo khung + sơ đồ ở `cache` (dò lần đầu ~1,5 phút).
+    Lỗi → PlanError (người gọi cài lại + mở lại game như cũ)."""
     t0 = time.monotonic()
-    key = json.dumps(formation)
+    key = json.dumps(formation) if _DX == 0 else f"away:{json.dumps(formation)}"
     store = {}
     if cache:
         try:
@@ -361,23 +414,20 @@ def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | 
         if b.shirt.get(n) == w:
             continue
         m = next((k for k, v in b.shirt.items() if v == w and k != n), None)
-        b.go(n)
-        nav.pad("A w:0.8")
-        b.selected = True
-        try:
-            if m is not None:
-                b.go(m)
-                if b.shirt.get(m) != w:
-                    raise PlanError(f"vị trí {m} không phải số áo {w}")
-            else:
-                b.find_list(w)
-            other = b.at
-            nav.pad("A w:1.2")
-        except Exception:
-            nav.pad("B w:0.8")   # bỏ chọn
-            raise
-        finally:
-            b.selected = False
+
+        def find(m=m, w=w):
+            if m is None:   # tên đoán sai/không chắc → trỏ vào các vị trí chưa đọc số áo thật trước khi tìm ở danh sách
+                for k in range(11):
+                    if k not in b.sure and k != n:
+                        b.go(k)
+                        if b.shirt.get(k) == w:
+                            return b.at
+                return b.find_list(w)
+            b.go(m)
+            if b.shirt.get(m) != w:
+                raise PlanError(f"vị trí {m} không phải số áo {w}")
+            return b.at
+        other = b.swap(n, find)
         old = b.shirt[n]
         b.shirt[n] = w
         b.sure.discard(n)
@@ -397,10 +447,48 @@ def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | 
         raise PlanError(f"đổi xong vẫn lệch: game {got}, cần {list(want[:11])}")
     if roster:
         names = read_names(nav.shot("m17_gp"), b.nodes, roster)
-        bad = [n for n, v in names.items() if v is not None and v != b.shirt.get(n)]
+        for n in [n for n, v in names.items() if v is not None and v != b.shirt.get(n)]:   # tên lệch → trỏ vào đọc số áo thật
+            b.go(n)
+            if b.shirt.get(n) != want[slot_of[n]]:
+                raise PlanError(f"vị trí {n}: game số áo {b.shirt.get(n)}, cần {want[slot_of[n]]}")
+    moved = fix_bench(b, [x for x in (bench or [])[:VISIBLE] if x not in want[:11]]) if bench and roster else 0
+    return {"swaps": swaps, "bench": moved, "explored": explored, "secs": round(time.monotonic() - t0, 1)}
+
+
+def fix_bench(b: Board, wanted: list[int]) -> int:
+    """12 dòng đầu danh sách (ghế dự bị) phải đúng tập `wanted`: người dự bị thừa ↔ người cần lên ghế đang ở dưới vạch.
+    Đọc tên 12 dòng 1 lần chụp; dòng đọc không chắc thì trỏ vào đọc số áo. Trả số lượt đổi."""
+    b.to_top()
+    b.look()
+    seen = {i: b.lst.get(i) or v for i, v in b.rows().items()}   # đã lên đầu: dòng màn hình = dòng thật
+    for i in range(VISIBLE):
+        if seen.get(i) is None:
+            b.go(("list", i))
+            seen[i] = b.lst.get(i)
+            if seen[i] is None:
+                raise PlanError(f"không đọc được số áo ghế dự bị {i}")
+        else:
+            b.lst.setdefault(i, seen[i])
+    want = set(wanted)
+    extra = [i for i in range(VISIBLE) if seen[i] not in want]
+    missing = [w for w in wanted if w not in seen.values()]
+    moved = 0
+    for i, w in zip(extra, missing):
+        other = b.swap(("list", i), lambda w=w: b.find_list(w))
+        b.lst[other[1]], b.lst[i] = b.lst.get(i), w
+        moved += 1
+    if moved:   # kiểm: lên đầu, đọc lại tên 12 ghế
+        b.go(("list", 0))
+        bad = [v for v in b.rows().values() if v is not None and v not in want]
         if bad:
-            raise PlanError(f"tên trên sân không khớp ở vị trí {bad}")
-    return {"swaps": swaps, "explored": explored, "secs": round(time.monotonic() - t0, 1)}
+            raise PlanError(f"ghế dự bị còn người thừa {bad}")
+    return moved
+
+
+def set_side(side: str, slot: int = 0) -> None:
+    """Khung đội (home = trái, away = phải) + tay cầm (slot) dùng cho các lần apply sau."""
+    global _DX, _SLOT
+    _DX, _SLOT = (AWAY_DX if side == "away" else 0), slot
 
 
 def main(argv: list[str]) -> int:
