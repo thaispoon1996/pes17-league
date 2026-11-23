@@ -46,6 +46,7 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         else if (r.HumanSide is { } side) psi.ArgumentList.Add(side == MatchSide.Home ? "home" : "away");
         if (r.Go is not null) { psi.Environment[r.Refresh is null ? "PESMATCH_WAIT_GO" : "PESMATCH_WARM"] = "1"; psi.RedirectStandardInput = true; }
         if (r.ExtraTime) psi.Environment["PESMATCH_EXTRA_TIME"] = "1";
+        psi.Environment["PESMATCH_FIXTURE"] = r.FixtureId.ToString("N");   // áo đấu web chọn: store/match-kits/{trận}.json (MatchKitService, PO 23/11)
         if (recordingDir is not null) psi.Environment["PESMATCH_REC"] = Path.Combine(Path.GetFullPath(recordingDir), $"{r.FixtureId:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.mkv");
         if (liveDir is not null) psi.Environment["PESMATCH_LIVE"] = Path.Combine(Path.GetFullPath(liveDir), $"{r.FixtureId:N}.m3u8");
         if (logoDir is not null && r.CompetitionLogo is { Length: > 0 } logo && Path.Combine(Path.GetFullPath(logoDir), Path.GetFileName(logo)) is var lf && File.Exists(lf))

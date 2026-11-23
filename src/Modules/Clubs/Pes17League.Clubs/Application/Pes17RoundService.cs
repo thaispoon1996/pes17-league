@@ -21,10 +21,26 @@ public sealed class Pes17RoundService(ClubsDbContext db, IOptionFileStore store,
         IsPes17(await (from s in db.Seasons join p in db.PatchVersions on s.PatchVersionId equals p.Id
                        where s.Id == seasonId select p.Name).FirstOrDefaultAsync(ct));
 
-    public async Task<OptionFileBuild> SnapshotAsync(Guid patchVersionId, Guid? matchdayId, CancellationToken ct = default)
+    /// <param name="fixtureId">Trận sắp đá (PO 23/11): đội hình riêng của trận (<see cref="MatchLineupService"/>) đè đội hình chính của 2 CLB trong ảnh chụp.</param>
+    public async Task<OptionFileBuild> SnapshotAsync(Guid patchVersionId, Guid? matchdayId, CancellationToken ct = default,
+        (Guid FixtureId, Guid[] ClubIds)? fixture = null)
     {
-        var squads = await new Pes17SquadExportService(db, clock).ExportAsync(patchVersionId, ct);
-        var json = squads.ToJson();
+        string json;
+        if (fixture is { } fx)
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            try
+            {
+                await new MatchLineupService(store).OverlayAsync(db, fx.FixtureId, fx.ClubIds, ct);
+                json = (await new Pes17SquadExportService(db, clock).ExportAsync(patchVersionId, ct)).ToJson();
+            }
+            finally
+            {
+                await tx.RollbackAsync(CancellationToken.None);   // đội hình chính giữ nguyên
+                db.ChangeTracker.Clear();
+            }
+        }
+        else json = (await new Pes17SquadExportService(db, clock).ExportAsync(patchVersionId, ct)).ToJson();
         var data = Encoding.UTF8.GetBytes(json);
         var build = new OptionFileBuild
         {

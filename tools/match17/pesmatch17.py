@@ -53,6 +53,7 @@ BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
 REC = os.environ.get("PESMATCH_REC")     # web luôn truyền; chỉ ghi khi record-mode cho phép (rec17.wanted)
 LOGO = os.environ.get("PESMATCH_LOGO")   # logo giải của trận (web, PO 22/11) → góc phải trên màn hình chơi, từ lúc giao bóng tới hết trận
 GRAPHICS = os.environ.get("PESMATCH_GRAPHICS")         # $DATA/graphics của web (PO 23/11): gói menu theo giải compe/{giải}.cpk (trang /admin/do-hoa)
+FIXTURE = os.environ.get("PESMATCH_FIXTURE")   # mã trận (Guid N): áo đấu web chọn ở store/match-kits/{trận}.json (PO 23/11, uniform())
 COMPETITION = os.environ.get("PESMATCH_COMPETITION")   # mã giải của trận (Guid dạng N); trống = giao hữu / không thuộc giải
 OVERLAY = "/bench/overlay"                # trong pes17-bench; trang Selkies đọc ở pes/overlay.json (tools/bench/pes-overlay.js)
 BOOT_TIMEOUT = 300        # từ lúc mở game tới màn chọn đội
@@ -311,6 +312,55 @@ def match_time(want: int = MATCH_TIME, level: str | None = None) -> None:
         raise NavError("nav_match_time: không chỉnh được")
     finally:
         nav.pad("B w:2.5 Left w:0.6 Left w:0.6")
+
+
+UNI_COUNT = {"home": (530, 515, 630, 560), "away": (995, 515, 1095, 560)}   # số "2/3" dưới hình cầu thủ trong menu UNIFORM
+KIT_INDEX = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5}
+
+
+def match_kits() -> dict:
+    """Áo đấu web chọn cho trận (MatchKitService): {"home":"1st","homeGk":"gk","away":"2nd",...}. Thiếu/lỗi → {}."""
+    if not FIXTURE:
+        return {}
+    store = Path(os.environ.get("PES17_STORE") or DATA / "store")
+    try:
+        d = json.loads((store / "match-kits" / f"{FIXTURE}.json").read_text())
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def uniform(kits: dict) -> None:
+    """Màn Kickoff (con trỏ ở KICKOFF): UNIFORM → dòng HOME/AWAY bấm Trái/Phải tới bộ áo web chọn (đọc số "2/3") → về KICKOFF.
+    Menu UNIFORM của game chỉ có áo cầu thủ, không có dòng áo thủ môn (game tự chọn). Lỗi thì ghi log, không chặn trận."""
+    want = {s: KIT_INDEX.get(kits.get(s) or "") for s in ("home", "away")}
+    if not any(want.values()):
+        return
+    nav.pad("Left w:0.6 Left w:0.6 A w:2.5")
+    try:
+        if "NIFORM" not in ocr.rec(nav.shot("m17_uni"), ocr.MENU_TITLE)[0].upper():
+            log("không mở được menu UNIFORM")
+            return
+        for i, side in enumerate(("home", "away")):
+            if i:
+                nav.pad("Down w:0.6")
+            w = want[side]
+            for _ in range(8):
+                m = re.search(r"(\d)\s*/\s*(\d)", ocr.rec(nav.shot("m17_uni"), UNI_COUNT[side])[0])
+                if not m:
+                    log(f"áo {side}: không đọc được số bộ áo")
+                    break
+                v, n = int(m[1]), int(m[2])
+                if not w or w > n:
+                    if w:
+                        log(f"áo {side}: game chỉ có {n} bộ, giữ bộ {v}")
+                    break
+                if v == w:
+                    break
+                nav.pad(" ".join([("Right" if v < w else "Left") + " w:0.4"] * abs(w - v)) + " w:0.3")
+        log(f"áo đấu: {kits.get('home')} / {kits.get('away')}")
+    finally:
+        nav.pad("B w:2.5 Right w:0.6 Right w:0.6")
 
 
 def coach_icon(im: Image.Image) -> int:
@@ -826,6 +876,10 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             recording, t_rec = rec17.start(container, REC, os.environ.get("PESMATCH_LIVE"), emit,
                                            board.y if board else board17.window_y(BENCH), board.file if board else None)
         if not self_started:
+            try:
+                uniform(match_kits())   # đọc lúc bấm vào trận: HLV đổi áo trên web tới phút chót vẫn kịp
+            except NavError as e:
+                log(f"chọn áo lỗi: {e}")
             nav.pad("A w:2")   # Kickoff
         pres = Presence() if both else None
         try:

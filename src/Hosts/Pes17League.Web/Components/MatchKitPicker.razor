@@ -1,0 +1,107 @@
+@* Chọn áo đấu trước trận (PO 23/11, thay "Tâm điểm đối đầu" ở trang Chuẩn bị): HLV chọn bộ áo cầu thủ + áo thủ môn của đội mình;
+   đội máy tự chọn (sân nhà 1st, sân khách 2nd, trùng màu thì đổi bộ khác — KitStore.Auto); đội người khác: HLV đó chọn ở trang của họ.
+   Lưu match-kits/{trận}.json (MatchKitService) → bộ chạy trận vào menu UNIFORM của game chọn đúng bộ, không mở lại game. *@
+@inject KitStore Kits
+@inject IOptionFileStore Store
+
+<section class="kp" aria-label="Áo đấu">
+    @foreach (var s in new[] { MatchSide.Home, MatchSide.Away })
+    {
+        var cid = s == MatchSide.Home ? Fixture.Home : Fixture.Away;
+        var list = s == MatchSide.Home ? home : away;
+        var outfield = list.Where(k => k.File != "gk").ToList();
+        var gks = list.Where(k => k.File == "gk").ToList();
+        var (kit, gk) = s == MatchSide.Home ? (choice.Home, choice.HomeGk) : (choice.Away, choice.AwayGk);
+        var mine = s == Mine && !Locked;
+        var human = s != Mine && Season.IsHuman(cid);
+        <div class="kp-side @(s == Mine ? "me" : "")">
+            <header>
+                <Crest Name="@Season.Clubs.GetValueOrDefault(cid, "?")" Logo="@Season.Logo(cid)" />
+                <span><b>@Season.Clubs.GetValueOrDefault(cid, "?")</b><small>@(s == MatchSide.Home ? "Đội nhà" : "Đội khách") · @(s == Mine ? "bạn chọn" : human ? "HLV đối thủ chọn" : "máy tự chọn")</small></span>
+            </header>
+            @if (outfield.Count == 0)
+            {
+                <p class="muted">Chưa có ảnh áo của CLB này. Game tự chọn áo.</p>
+            }
+            else
+            {
+                <div class="kp-row" role="@(mine ? "radiogroup" : null)" aria-label="Áo cầu thủ">
+                    @foreach (var k in outfield)
+                    {
+                        var on = k.File == kit;
+                        if (mine)
+                        {
+                            <button type="button" class="kp-opt @(on ? "on" : "")" role="radio" aria-checked="@(on ? "true" : "false")" @onclick="() => Pick(s, k.File)">
+                                <img src="@k.Url" width="96" height="96" alt="" loading="lazy" decoding="async" /><span>@k.Label</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <figure class="kp-opt @(on ? "on" : "off")"><img src="@k.Url" width="96" height="96" alt="" loading="lazy" decoding="async" /><figcaption>@k.Label</figcaption></figure>
+                        }
+                    }
+                    @foreach (var k in gks)
+                    {
+                        @* Menu UNIFORM của game chỉ đổi áo cầu thủ; áo thủ môn game tự lấy (gần như CLB nào cũng chỉ 1 bộ) → chỉ hiển thị. *@
+                        <figure class="kp-opt gk @(k.File == gk ? "on" : "off")" title="Áo thủ môn do game tự chọn"><img src="@k.Url" width="96" height="96" alt="" loading="lazy" decoding="async" /><figcaption>@k.Label</figcaption></figure>
+                    }
+                </div>
+            }
+        </div>
+    }
+    @if (clash)
+    {
+        <p class="kp-warn" role="status"><i class="ms" aria-hidden="true">warning</i>Áo 2 đội gần màu nhau, dễ lẫn trên sân. Nên chọn bộ khác.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SeasonInfo Season { get; set; } = null!;
+    [Parameter, EditorRequired] public FixtureView Fixture { get; set; } = null!;
+    /// <summary>Bên của HLV đang xem.</summary>
+    [Parameter] public MatchSide Mine { get; set; }
+    [Parameter] public bool Locked { get; set; }
+
+    IReadOnlyList<KitStore.Kit> home = [], away = [];
+    MatchKits choice = new();
+    bool clash;
+    MatchKitService Svc => new(Store);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        home = Kits.For(Fixture.Home);
+        away = Kits.For(Fixture.Away);
+        var saved = await Svc.GetAsync(Fixture.Id);
+        choice = Resolve(saved);
+        if (choice != saved && !Locked) await Svc.SaveAsync(Fixture.Id, choice);   // bộ chạy trận đọc file này
+    }
+
+    string? Color(MatchSide s, string? file) => (s == MatchSide.Home ? home : away).FirstOrDefault(k => k.File == file)?.Color;
+
+    /// <summary>Điền chỗ trống: bên mình mặc định như máy (tránh trùng màu), đội máy chọn lại theo áo bên kia; đội người khác giữ lựa chọn của họ.</summary>
+    MatchKits Resolve(MatchKits c)
+    {
+        var other = Mine == MatchSide.Home ? MatchSide.Away : MatchSide.Home;
+        var otherClub = other == MatchSide.Home ? Fixture.Home : Fixture.Away;
+        var myClub = Mine == MatchSide.Home ? Fixture.Home : Fixture.Away;
+        string? Get(MatchSide s) => s == MatchSide.Home ? c.Home : c.Away;
+        string? Valid(MatchSide s, string? f) => (s == MatchSide.Home ? home : away).Any(k => k.File == f && f != "gk") ? f : null;
+        var otherKit = Valid(other, Get(other));
+        var myKit = Valid(Mine, Get(Mine)) ?? Kits.Auto(myClub, Mine == MatchSide.Home, Color(other, otherKit ?? Kits.Auto(otherClub, other == MatchSide.Home, null)));
+        if (!Season.IsHuman(otherClub)) otherKit = Kits.Auto(otherClub, other == MatchSide.Home, Color(Mine, myKit));
+        string? Gk(MatchSide s, string? f) => (s == MatchSide.Home ? home : away).Any(k => k.File == "gk") ? f ?? "gk" : null;
+        var r = Mine == MatchSide.Home
+            ? new MatchKits(myKit, Gk(Mine, c.HomeGk), otherKit, Season.IsHuman(otherClub) ? c.AwayGk : Gk(other, c.AwayGk))
+            : new MatchKits(otherKit, Season.IsHuman(otherClub) ? c.HomeGk : Gk(other, c.HomeGk), myKit, Gk(Mine, c.AwayGk));
+        clash = KitStore.Clash(Color(MatchSide.Home, r.Home), Color(MatchSide.Away, r.Away));
+        return r;
+    }
+
+    async Task Pick(MatchSide s, string file)
+    {
+        if (s != Mine || Locked) return;
+        var c = s == MatchSide.Home ? choice with { Home = file } : choice with { Away = file };
+        choice = Resolve(c);
+        await Svc.SaveAsync(Fixture.Id, choice);
+    }
+}

@@ -24,7 +24,8 @@ public sealed class LineupService(ClubsDbContext db)
             return LineupError.GoalkeeperSlot;
 
         // Chỉ mục duy nhất (ClubId, SlotOrder) lọc theo LeftAt null → tạm đánh dấu A rời squad để đổi ô không trùng.
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Đã ở trong giao dịch (đội hình riêng của trận, MatchLineupService) → dùng giao dịch đó.
+        await using var tx = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
         var (slotA, slotB, joined) = (a.m.SlotOrder, b.m.SlotOrder, a.m.JoinedAt);
         a.m.LeftAt = joined;
         await db.SaveChangesAsync(ct);
@@ -34,7 +35,7 @@ public sealed class LineupService(ClubsDbContext db)
         a.m.LeftAt = null;
         (await db.Clubs.FindAsync([clubId], ct))!.SquadVersion++;
         await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        if (tx is not null) await tx.CommitAsync(ct);
         return null;
     }
 }

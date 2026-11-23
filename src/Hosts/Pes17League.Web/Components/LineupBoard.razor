@@ -14,6 +14,14 @@
 @inject MatchJobService Jobs
 
 <div class="board @(Locked ? "locked" : "")">
+    @if (FixtureId is not null)
+    {
+        <div class="lb-scope @(ownDraft ? "on" : "")">
+            <i class="ms" aria-hidden="true">@(ownDraft ? "edit_note" : "content_copy")</i>
+            <p>@(ownDraft ? "Đội hình riêng trận này. Đội hình chính không đổi." : "Đang dùng đội hình chính. Sửa ở đây chỉ áp cho trận này.")</p>
+            @if (ownDraft && !Locked) { <button type="button" class="ghost-btn" @onclick="ResetMatch">Lấy lại đội hình chính</button> }
+        </div>
+    }
     @* FM đợt 10: phong cách dựng sẵn (TacticPresets) — 1 chạm đặt sơ đồ + thiết lập + L2; chỉnh tay sau đó vẫn được. *@
     <div class="preset-bar"><span>Phong cách</span>
         @foreach (var pr in TacticPresets.All)
@@ -208,6 +216,8 @@
     [CascadingParameter] public CareerLayout? Shell { get; set; }
     [Parameter] public bool Locked { get; set; }
     [Parameter] public string? LockedMessage { get; set; }
+    /// <summary>Có = bảng chỉnh đội hình riêng của trận này (trang Chuẩn bị, PO 23/11), không đụng đội hình chính.</summary>
+    [Parameter] public Guid? FixtureId { get; set; }
     /// <summary>Sau khi đổi chỗ (trang chứa đọc lại bảng cầu thủ).</summary>
     [Parameter] public EventCallback Changed { get; set; }
 
@@ -252,12 +262,39 @@
         await JS.InvokeVoidAsync("pesLineup.attach", root, self);
     }
 
+    /// <summary>Chạy trên đội hình đang chỉnh: đội hình chính, hoặc đội hình riêng của trận (<see cref="MatchLineupService"/>).</summary>
+    async Task<T> InLineup<T>(Func<ClubsDbContext, Task<T>> op, bool save = true)
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        return FixtureId is { } f ? await new MatchLineupService(Store).EditAsync(db, f, ClubId, op, save) : await op(db);
+    }
+
+    bool ownDraft;
+
+    async Task ResetMatch()
+    {
+        if (Blocked() || FixtureId is not { } f) return;
+        await new MatchLineupService(Store).ResetAsync(f, ClubId);
+        picked = null;
+        Jobs.SquadChanged();
+        await LoadAsync();
+        await Changed.InvokeAsync();
+    }
+
     async Task LoadAsync()
     {
+        ownDraft = FixtureId is { } fx && await new MatchLineupService(Store).GetAsync(fx, ClubId) is not null;
         squad = await Q.SquadAsync(Season.Id, ClubId);
-        await using var db = await Dbs.CreateDbContextAsync();
-        var svc = new TacticsService(db, Clock);
-        tactics = await svc.GetAsync(ClubId);
+        var (t, st, slots) = await InLineup(async db =>
+        {
+            var s = new TacticsService(db, Clock);
+            var tt = await s.GetAsync(ClubId);
+            var ss = (await s.StartersAsync(Season.Id, [ClubId])).GetValueOrDefault(ClubId) ?? [];
+            var sl = FixtureId is null ? null : await db.SquadMemberships.Where(m => m.ClubId == ClubId && m.LeftAt == null).ToDictionaryAsync(m => m.PlayerId, m => m.SlotOrder);
+            return (tt, ss, sl);
+        }, save: false);
+        if (slots is not null) squad = [.. squad.Select(r => slots.TryGetValue(r.PlayerId, out var sl) ? r with { Slot = sl } : r).OrderBy(r => r.Slot)];
+        tactics = t;
         formation = tactics?.Formation;
         preset = TacticPresets.Match(tactics)?.Key;
         settings = [tactics?.BackLine, tactics?.Pressure, tactics?.OffsideTrap, tactics?.CounterAttack];
@@ -272,7 +309,7 @@
         layout = positions is null ? baseLayout
             : codes is null ? new FormationLayout(positions, baseLayout.Roles, baseLayout.Codes)
             : new FormationLayout(positions, [baseLayout.Roles[0], .. codes.Select(c => Formations.RoleName(c))], [baseLayout.Codes?[0] ?? 0, .. codes]);
-        starters = (await svc.StartersAsync(Season.Id, [ClubId])).GetValueOrDefault(ClubId) ?? [];
+        starters = st;
         jobs = Enum.GetValues<TeamJob>().ToDictionary(j => j, j => TeamJobPicker.Resolve(j, TacticsService.GetJob(tactics, j), starters));
     }
 
@@ -339,8 +376,7 @@
     {
         if (!Blocked())
         {
-            await using var db = await Dbs.CreateDbContextAsync();
-            var err = await save(new TacticsService(db, Clock));
+            var err = await InLineup(db => save(new TacticsService(db, Clock)));
             message = err is null ? null : $"Không lưu được chiến thuật: {err}";
             if (err is null) Jobs.SquadChanged();   // đang dựng sẵn trận → game cài lại ngay
         }
@@ -444,8 +480,7 @@
     async Task SwapAsync(Guid a, Guid b)
     {
         if (Blocked()) return;
-        await using var db = await Dbs.CreateDbContextAsync();
-        var err = await new LineupService(db).SwapAsync(ClubId, a, b);
+        var err = await InLineup(db => new LineupService(db).SwapAsync(ClubId, a, b));
         message = err switch { null => null, LineupError.GoalkeeperSlot => "Ô thủ môn chỉ dành cho GK.", _ => $"Không đổi được: {err}" };
         await LoadAsync();
         if (err is null)
