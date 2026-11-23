@@ -41,10 +41,54 @@
 </div>
 
 <div class="panel">
+    <h2>Đồ hoạ chung mọi trận</h2>
+    <p class="muted">Áp cho mọi trận đá trên máy game: khung giới thiệu đội hình, bảng tỉ số của game lúc chiếu lại và ăn mừng, chuyển cảnh chiếu lại, nền menu.
+        Chữ bên dưới hiện ở chuyển cảnh chiếu lại và ô logo của bảng tỉ số game. Bấm <b>Dựng gói</b> để lưu (20–40 giây). Trận sau trên máy game sẽ cài gói; game mở lại mất 1–2 phút nếu gói đổi.</p>
+    <div class="gfx">
+        <div class="gfx-frame hw" aria-label="Xem trước khung cuối của chuyển cảnh chiếu lại">
+            <i class="hw-band g"></i><i class="hw-band s"></i>
+            <div class="hw-text">
+                <b>@(string.IsNullOrWhiteSpace(line1) ? "PES 17" : line1)</b>
+                @if (!string.IsNullOrWhiteSpace(line2)) { <span>@line2</span> }
+                <em></em>
+            </div>
+            <span class="gfx-cap">Chuyển cảnh chiếu lại · khung cuối</span>
+        </div>
+        <div class="gfx-side">
+            <label>Dòng chữ lớn <input maxlength="16" @bind="line1" @bind:event="oninput" disabled="@houseBusy" placeholder="PES 17" /></label>
+            <label>Dòng chữ xanh <input maxlength="24" @bind="line2" @bind:event="oninput" disabled="@houseBusy" placeholder="Có thể để trống" /></label>
+            <div class="gfx-acts">
+                <label class="upload">@(houseBg is null ? "Tải ảnh nền menu" : "Đổi ảnh nền menu")<InputFile accept="image/png,image/jpeg,image/webp" disabled="@houseBusy" OnChange="UploadHouseBgAsync" /></label>
+                @if (houseBg is not null) { <button class="link" disabled="@houseBusy" @onclick="ClearHouseBg">Bỏ ảnh nền</button> }
+            </div>
+            <span class="muted">@(houseBg is null ? "Chưa có ảnh nền: dùng nền tối tự vẽ kèm chữ ở trên." : "Có ảnh nền tải lên (1920×1080, co phủ đầy khung).")</span>
+            <div class="gfx-acts">
+                <button class="primary" disabled="@houseBusy" @onclick="BuildHouseAsync">@(houseBusy ? "Đang dựng…" : "Dựng gói")</button>
+                @if (house is not null) { <button class="link" disabled="@houseBusy" @onclick="RemoveHouse">Bỏ gói</button> }
+            </div>
+            @if (house is null) { <span class="gfx-chip">Chưa có gói: mọi trận dùng đồ hoạ gốc PES 2017</span> }
+            else
+            {
+                <span class="gfx-chip @(house.Sha == houseInstalled ? "on" : "ok")">@(house.Sha == houseInstalled ? "Đang cài trên máy game" : $"Đã dựng {house.At.ToOffset(TimeSpan.FromHours(7)):HH:mm dd/MM} · trận sau sẽ cài")</span>
+                @if (house.Line1 != Clean.Line1 || house.Line2 != Clean.Line2 || house.Bg != (houseBg is not null)) { <span class="gfx-chip warn">Có thay đổi chưa dựng</span> }
+            }
+            @if (houseMsg is not null) { <span class="@(houseErr ? "warn" : "muted")">@houseMsg</span> }
+        </div>
+    </div>
+    @if (house is not null && (Gfx.HousePreview("wipe") is { } wp))
+    {
+        <div class="hw-prev">
+            <figure><img src="@wp" alt="8 khung của chuyển cảnh chiếu lại trên nền cỏ" loading="lazy" /><figcaption class="muted">Chuyển cảnh chiếu lại của gói đã dựng (nền cỏ là phần trong suốt, thấy trận phía sau)</figcaption></figure>
+            @if (Gfx.HousePreview("bg") is { } bp) { <figure><img src="@bp" alt="Nền menu của gói đã dựng" loading="lazy" /><figcaption class="muted">Nền menu</figcaption></figure> }
+        </div>
+    }
+</div>
+
+<div class="panel">
     <h2>Menu trong game theo giải</h2>
     <p class="muted">Mỗi giải một gói menu: chọn một bộ menu có sẵn trên máy game, tải ảnh nền riêng (màn chọn đội và trước trận, 1920×1080, ảnh được co phủ đầy khung), hoặc cả hai.
         Bấm <b>Dựng gói</b> để lưu. Khi trận của giải lên máy game, máy tự cài gói của giải. Nếu khác gói đang cài, game mở lại mất 1–2 phút. Giải chưa có gói dùng giao diện gốc.</p>
-    <p class="muted">Bảng tỉ số trong trận là của game, ảnh tải lên không đổi được. Ảnh trong menu tạm dừng mỗi bộ một bố cục nên chưa cho thay.</p>
+    <p class="muted">Gói của giải đè lên nền menu của gói chung. Ảnh trong menu tạm dừng mỗi bộ một bố cục nên chưa cho thay.</p>
     @if (packsError is not null) { <p class="warn">Không đọc được danh sách bộ menu: @packsError</p> }
     @if (comps is null) { <p class="muted">Đang tải…</p> }
     else if (comps.Count == 0) { <p>Chưa có giải.</p> }
@@ -113,6 +157,11 @@
     string? packsError, bugPath, bugMsg;
     bool bugErr;
     string corner = "tr";
+    string line1 = "PES 17", line2 = "LEAGUE", houseInstalled = "";
+    string? houseBg, houseMsg;
+    bool houseBusy, houseErr;
+    GraphicsStore.HouseBuilt? house;
+    GraphicsStore.HouseText Clean => new GraphicsStore.HouseText(line1, line2).Clamp();
     int size = 9, opacity = 85;
 
     protected override async Task OnInitializedAsync()
@@ -120,6 +169,8 @@
         var b = Gfx.BugSettings();
         (corner, size, opacity, bugPath) = (b.Corner, b.Size, b.Opacity, Gfx.BugWebPath());
         installed = Gfx.Installed();
+        var h = Gfx.House();
+        (line1, line2, houseBg, house, houseInstalled) = (h.Line1, h.Line2, Gfx.HouseBgWebPath(), Gfx.HousePack(), Gfx.HouseInstalled());
         await using var db = await Dbs.CreateDbContextAsync();
         comps = await db.Competitions.AsNoTracking().Where(c => c.Status == CompetitionStatus.Active)
             .OrderBy(c => c.Type).ThenBy(c => c.Tier).ThenBy(c => c.Name).ToListAsync();
@@ -214,6 +265,44 @@
     {
         Gfx.Remove(id);
         (state[id].Msg, state[id].Err) = ("Đã gỡ gói. Trận sau của giải dùng giao diện gốc.", false);
+    }
+
+    async Task UploadHouseBgAsync(InputFileChangeEventArgs e)
+    {
+        (houseMsg, houseErr) = (null, false);
+        try
+        {
+            await Gfx.SaveHouseBgAsync(await ReadAsync(e.File));
+            (houseBg, houseMsg) = (Gfx.HouseBgWebPath(), "Đã lưu ảnh nền. Bấm Dựng gói để đưa vào game.");
+        }
+        catch (AdminRuleException x) { (houseMsg, houseErr) = (x.Message, true); }
+    }
+
+    void ClearHouseBg()
+    {
+        Gfx.ClearHouseBg();
+        (houseBg, houseMsg, houseErr) = (null, "Đã bỏ ảnh nền. Bấm Dựng gói để cập nhật gói.", false);
+    }
+
+    async Task BuildHouseAsync()
+    {
+        (houseBusy, houseMsg, houseErr) = (true, null, false);
+        StateHasChanged();
+        try
+        {
+            house = await Gfx.BuildHouseAsync(Clean);
+            (line1, line2) = (house.Line1, house.Line2);
+            houseMsg = $"Đã dựng gói ({house.Bytes / 1048576.0:0.#} MB). Trận sau trên máy game sẽ dùng gói này.";
+        }
+        catch (AdminRuleException x) { (houseMsg, houseErr) = (x.Message, true); }
+        finally { houseBusy = false; }
+        houseInstalled = Gfx.HouseInstalled();
+    }
+
+    void RemoveHouse()
+    {
+        Gfx.RemoveHouse();
+        (house, houseMsg, houseErr) = (null, "Đã bỏ gói. Trận sau trên máy game dùng lại đồ hoạ gốc PES 2017.", false);
     }
 
     async Task UploadBug(InputFileChangeEventArgs e)

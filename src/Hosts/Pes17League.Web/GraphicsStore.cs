@@ -13,10 +13,14 @@ namespace Pes17League.Web;
 /// <item>compe/{giải}.json — bộ menu đã chọn; compe/{giải}-bg.* — ảnh nền tải lên; compe/{giải}.cpk — gói đã dựng
 /// (tools/pes17db/compe.py build). Bộ chạy trận cài gói của giải khi trận lên máy (PESMATCH_GRAPHICS, mở lại game nếu khác gói đang cài).</item>
 /// <item>packs/{bộ}.png — ảnh nền của bộ menu (compe.py preview, lưu đệm).</item>
+/// <item>house/ — đồ hoạ chung mọi trận (PO 23/11, tools/pes17db/house.py): spec.json (2 dòng chữ chuyển cảnh chiếu lại),
+/// bg.* (nền menu tải lên), wipe.png/bg.png (xem trước), house.json + ../house.cpk (gói đã dựng; bộ chạy trận cài trước trận).</item>
 /// </list>
 /// </summary>
 public sealed class GraphicsStore(string dir, string compeScript, string deployDir)
 {
+    string HouseScript => Path.Combine(Path.GetDirectoryName(compeScript)!, "house.py");
+    string HouseDir => Path.Combine(Dir, "house");
     public const string RequestPath = "/img/dohoa";
     public const long MaxBytes = 8 << 20;
     public string Dir { get; } = dir;
@@ -142,13 +146,89 @@ public sealed class GraphicsStore(string dir, string compeScript, string deployD
         return built;
     }
 
-    async Task<string> RunAsync(string[] args, CancellationToken ct)
+    // ——— đồ hoạ chung mọi trận ———
+
+    /// <param name="Line1">Dòng lớn của chuyển cảnh chiếu lại + ô logo bảng tỉ số gốc (≤ 16 ký tự).</param>
+    /// <param name="Line2">Dòng xanh bên dưới (≤ 24 ký tự, có thể trống).</param>
+    public sealed record HouseText(string Line1 = "PES 17", string Line2 = "LEAGUE")
+    {
+        public HouseText Clamp() => new(Cut(Line1, 16) is { Length: > 0 } a ? a : "PES 17", Cut(Line2, 24));
+        static string Cut(string? s, int n) { s = (s ?? "").Trim(); return s.Length > n ? s[..n] : s; }
+    }
+
+    /// <param name="Bg">Gói dùng ảnh nền tải lên (không thì nền tự vẽ theo chữ).</param>
+    public sealed record HouseBuilt(string Line1, string Line2, bool Bg, DateTimeOffset At, long Bytes, string Sha);
+
+    public HouseText House()
+    {
+        try { return (JsonSerializer.Deserialize<HouseText>(File.ReadAllText(Path.Combine(HouseDir, "spec.json")), Json) ?? new()).Clamp(); }
+        catch (Exception e) when (e is IOException or JsonException) { return new(); }
+    }
+
+    public string? HouseBgFile() => Find(HouseDir, "bg-up");
+    public string? HouseBgWebPath() => HouseBgFile() is { } f ? $"{RequestPath}/house/{Path.GetFileName(f)}?v={File.GetLastWriteTimeUtc(f).Ticks}" : null;
+
+    public Task SaveHouseBgAsync(byte[] data, CancellationToken ct = default) =>
+        Replace(HouseDir, "bg-up", LogoStore.Extension(data) ?? throw new AdminRuleException("Ảnh nền phải là PNG, JPEG hoặc WebP"), data, ct);
+
+    public void ClearHouseBg() => Delete(HouseDir, "bg-up");
+
+    /// <summary>Ảnh xem trước của gói đã dựng: wipe.png (8 khung chuyển cảnh) / bg.png (nền menu).</summary>
+    public string? HousePreview(string name)
+    {
+        var f = Path.Combine(HouseDir, name + ".png");
+        return File.Exists(f) ? $"{RequestPath}/house/{name}.png?v={File.GetLastWriteTimeUtc(f).Ticks}" : null;
+    }
+
+    public HouseBuilt? HousePack()
+    {
+        if (!File.Exists(Path.Combine(Dir, "house.cpk"))) return null;
+        try { return JsonSerializer.Deserialize<HouseBuilt>(File.ReadAllText(Path.Combine(HouseDir, "house.json")), Json); }
+        catch (Exception e) when (e is IOException or JsonException) { return null; }
+    }
+
+    /// <summary>Mã gói chung đang cài trên máy game ($DATA/pes17-deploy/house.active); "" = chưa cài.</summary>
+    public string HouseInstalled()
+    {
+        try { return File.ReadAllText(Path.Combine(deployDir, "house.active")).Trim(); }
+        catch (IOException) { return ""; }
+    }
+
+    /// <summary>Dựng gói chung (đọc file gốc trên máy game + mã hoá video, ~20–40 s). Trận sau trên máy game mới hiện.</summary>
+    public async Task<HouseBuilt> BuildHouseAsync(HouseText text, CancellationToken ct = default)
+    {
+        text = text.Clamp();
+        Directory.CreateDirectory(HouseDir);
+        WriteJson(Path.Combine(HouseDir, "spec.json"), text);
+        var bg = HouseBgFile();
+        var spec = Path.Combine(HouseDir, "build.spec.json");
+        await File.WriteAllTextAsync(spec, JsonSerializer.Serialize(new { line1 = text.Line1, line2 = text.Line2, bg }), ct);
+        var cpk = Path.Combine(Dir, "house.cpk");
+        JsonDocument res;
+        try { res = JsonDocument.Parse(await RunAsync(HouseScript, ["build", spec, cpk, HouseDir], ct)); }
+        finally { File.Delete(spec); }
+        var built = new HouseBuilt(text.Line1, text.Line2, bg is not null, DateTimeOffset.UtcNow, new FileInfo(cpk).Length,
+            res.RootElement.GetProperty("sha").GetString()!);
+        WriteJson(Path.Combine(HouseDir, "house.json"), built);
+        return built;
+    }
+
+    /// <summary>Bỏ gói chung: trận sau trên máy game trở lại đồ hoạ gốc PES 2017 (bộ chạy gỡ gói đang cài).</summary>
+    public void RemoveHouse()
+    {
+        File.Delete(Path.Combine(Dir, "house.cpk"));
+        File.Delete(Path.Combine(HouseDir, "house.json"));
+    }
+
+    Task<string> RunAsync(string[] args, CancellationToken ct) => RunAsync(compeScript, args, ct);
+
+    async Task<string> RunAsync(string script, string[] args, CancellationToken ct)
     {
         await Gate.WaitAsync(ct);
         try
         {
             var psi = new ProcessStartInfo("python3") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-            psi.ArgumentList.Add(compeScript);
+            psi.ArgumentList.Add(script);
             foreach (var a in args) psi.ArgumentList.Add(a);
             psi.Environment["PES17_DATA"] = Path.GetDirectoryName(deployDir)!;
             using var p = Process.Start(psi)!;

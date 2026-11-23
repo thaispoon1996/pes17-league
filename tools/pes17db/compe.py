@@ -124,6 +124,14 @@ def build(spec: dict, out: Path) -> dict:
     return {"sha": hashlib.sha256(data).hexdigest()[:16], "files": len(items), "bytes": len(data)}
 
 
+def extras(compe: bool) -> list[str]:
+    """Thứ tự gói của mình trong DpFileList (gói sau thắng): đội hình → đồ hoạ chung mọi trận (house.py) → đồ hoạ giải."""
+    out = ["pes17league.cpk"]
+    if (OUT / "house.active").is_file() and (OUT / "house.active").read_text().strip():
+        out.append("pes17house.cpk")
+    return out + ([NAME] if compe else [])
+
+
 def current() -> str:
     try:
         return (OUT / "compe.active").read_text().strip()
@@ -150,7 +158,7 @@ def install(path: str, restart: bool) -> dict:
         if path == "none":
             if not current():
                 return {"changed": False, "sha": ""}
-            put(dplist.build(orig, ["pes17league.cpk"]), "DpFileList.bin")   # bỏ khỏi danh sách trước rồi mới xoá gói
+            put(dplist.build(orig, extras(False)), "DpFileList.bin")   # bỏ khỏi danh sách trước rồi mới xoá gói
             sh(f"rm -f {q(DL + '/' + NAME)}")
             (OUT / "compe.active").unlink(missing_ok=True)
             sha = ""
@@ -160,7 +168,7 @@ def install(path: str, restart: bool) -> dict:
             if sha == current():
                 return {"changed": False, "sha": sha}
             put(data, NAME)
-            put(dplist.build(orig, ["pes17league.cpk", NAME]), "DpFileList.bin")
+            put(dplist.build(orig, extras(True)), "DpFileList.bin")
             (OUT / "compe.active").write_text(sha + "\n")
     if restart:
         restart_game()

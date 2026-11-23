@@ -23,7 +23,8 @@
   PESMATCH_LOGO=FILE (trận giải, PO 22/11): logo giải góc phải trên trang chơi Selkies từ lúc giao bóng tới hết trận (overlay(), tools/bench/pes-overlay.js).
   Bảng tỉ số riêng (PO 23/11, tools/board17.py): phủ bảng tỉ số game ở trang chơi + bản ghi/phát trực tiếp, logo giải nằm trong bảng
   (khi có bảng thì không đặt logo góc phải). PESMATCH_BOARD=0 tắt (chỉ để thử).
-  PESMATCH_GRAPHICS=DIR + PESMATCH_COMPETITION=GIẢI (PO 23/11): cài gói đồ hoạ menu của giải trước khi vào trận (ensure_compe(), tools/pes17db/compe.py).
+  PESMATCH_GRAPHICS=DIR + PESMATCH_COMPETITION=GIẢI (PO 23/11): cài gói đồ hoạ menu của giải trước khi vào trận (ensure_compe(), tools/pes17db/compe.py);
+  DIR/house.cpk = đồ hoạ chung mọi trận (khung đội hình, chuyển cảnh chiếu lại, nền menu; ensure_house(), tools/pes17db/house.py).
   AFK (trận 2 người): xem AFK_STALL / Presence (tools/afk17.py). Chưa có: hiệp phụ/penalty (PESMATCH_EXTRA_TIME), người ghi bàn.
   Ghi hình PESMATCH_REC=FILE.mkv (+ PESMATCH_LIVE=FILE.m3u8 xem trực tiếp), 23/11: chỉ khi $DATA/pes17-deploy/record-mode = bot|all
   (mặc định tắt, tools/rec17.py). Ghi từ lúc bấm Kickoff tới hết trận; sự kiện recording{path} / live{path}; khi ghi, "wall" = giây trong video.
@@ -622,6 +623,29 @@ def ensure_compe() -> bool:
     return False
 
 
+def ensure_house() -> bool:
+    """Gói đồ hoạ chung mọi trận (PO 23/11; tools/pes17db/house.py, web /admin/do-hoa dựng $GRAPHICS/house.cpk): có gói → cài
+    (khác gói đang cài), không có → gỡ. Trả True nếu đã đổi (mở lại game). Lỗi chỉ ghi log."""
+    if not GRAPHICS:
+        return False
+    try:
+        cpk = Path(GRAPHICS) / "house.cpk"
+        if not cpk.is_file() and not (OUT / "house.active").exists():
+            return False
+        target = str(cpk) if cpk.is_file() else "none"
+        r = subprocess.run([sys.executable, str(REPO / "tools" / "pes17db" / "house.py"), "install", target],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode:
+            log(f"gói đồ hoạ chung lỗi: {(r.stderr or r.stdout).strip()[-200:]}")
+            return False
+        if json.loads(r.stdout).get("changed"):
+            log("gói đồ hoạ chung đổi: mở lại game")
+            return True
+    except Exception as e:
+        log(f"gói đồ hoạ chung lỗi: {e}")
+    return False
+
+
 def ensure_game(squads: str, home: int, away: int) -> bool:
     """Cài đội hình nếu 2 đội của trận khác game (khởi động lại game). Trả True nếu đã cài lại."""
     if game_has(squads, home, away):
@@ -750,7 +774,8 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             threading.Thread(target=read_cmds, daemon=True).start()
         gs = game_settings()
         gfx = ensure_quality(gs.get("quality"))   # ghi trước: cài đội hình (nếu có) cũng mở lại game
-        gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active
+        gfx = ensure_house() or gfx               # đồ hoạ chung mọi trận (house.active)
+        gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active + house.active
         restarted = ensure_game(squads, home, away)
         if gfx and not restarted:
             restart_game()

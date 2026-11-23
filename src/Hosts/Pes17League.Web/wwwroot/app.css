@@ -1592,3 +1592,16 @@ body:has(.bg-stadium), body.auth:has(.bg-stadium) { background: transparent !imp
 .gfx-chip.ok { color: var(--text); }
 .gfx-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 @media (max-width: 760px) { .gfx { grid-template-columns: 1fr; } }
+/* đồ hoạ chung: khung cuối chuyển cảnh chiếu lại (= tools/pes17db/house.py wipe_frames: nền tối, vệt chéo, 2 dòng chữ) */
+.gfx-frame.hw { background: #0f131d; container-type: inline-size; }
+.hw-band { position: absolute; inset: 0; }
+.hw-band.s { background: linear-gradient(112deg, transparent 58%, #262a35 58% 63%, transparent 63%); }
+.hw-band.g { background: linear-gradient(112deg, transparent 64.5%, #00ff87 64.5% 65.3%, transparent 65.3%); }
+.hw-text { position: relative; display: grid; justify-items: center; gap: .6cqw; text-align: center; padding: 0 6%; }
+.hw-text b { font: 800 13.3cqw/1 "Barlow Condensed", "Arial Narrow", sans-serif; color: #dee1f7; text-transform: uppercase; }
+.hw-text span { font: 800 6.1cqw/1 "Barlow Condensed", "Arial Narrow", sans-serif; color: #00ff87; text-transform: uppercase; }
+.hw-text em { width: 44cqw; height: .55cqw; background: #00ff87; margin-top: 1.2cqw; }
+.hw-prev { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+.hw-prev figure { margin: 0; display: grid; gap: 6px; }
+.hw-prev img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); }
+@media (max-width: 760px) { .hw-prev { grid-template-columns: 1fr; } }
