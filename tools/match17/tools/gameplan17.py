@@ -50,8 +50,8 @@ class PlanError(Exception):
     pass
 
 
-def hand(im: Image.Image) -> tuple[str, object] | None:
-    """Vị trí bàn tay: ("pitch", (x, y)) | ("list", dòng) | None."""
+def hand(im: Image.Image, pitch_only: bool = False) -> tuple[str, object] | None:
+    """Vị trí bàn tay: ("pitch", (x, y)) | ("list", dòng) | None. pitch_only: màn không có danh sách (Player Settings)."""
     a = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2HSV)
     m = ((a[..., 2] > 235) & (a[..., 1] < 25)).astype(np.uint8)
     m[:, :80 + _DX] = 0
@@ -68,7 +68,7 @@ def hand(im: Image.Image) -> tuple[str, object] | None:
         if not pair:
             return None
         x, y = pair[0][0], pair[0][1] - 3
-    if x >= LIST_X + _DX:
+    if x >= LIST_X + _DX and not pitch_only:
         return ("list", int(round((y - ROW0) / ROWH)))
     return ("pitch", (int(x), int(y)))
 
@@ -346,16 +346,24 @@ def read_names(im: Image.Image, nodes: list[tuple[int, int]], roster: dict[int, 
     return {i: (v if vals.count(v) == 1 else None) for i, v in r.items()}
 
 
+# Toạ độ bàn tay trên sân ↔ sơ đồ (đo 23/11, sai số ≤ 1 px): x = X0 + UX·ngang, y = Y0 − UY·dọc; kéo vị trí đi đúng 1 đơn vị/lần nhấn.
+UX, UY, X0, Y0 = 2.83, 6.69, 122.3, 520.0
+ROLES = ["GK", "CB", "LB", "RB", "DMF", "CMF", "LMF", "RMF", "AMF", "LWF", "RWF", "SS", "CF"]
+ROLE_NAMES = ["goalkeeper", "centerback", "leftback", "rightback", "defensivemidfielder", "centermidfielder", "leftmidfielder",
+              "rightmidfielder", "attackingmidfielder", "leftwingforward", "rightwingforward", "secondstriker", "centerforward"]
+
+
+def target(f: list[int]) -> tuple[float, float]:
+    """Toạ độ bàn tay của ô sơ đồ [vai, dọc, ngang]."""
+    return (X0 + UX * f[2] + _DX, Y0 - UY * f[1])
+
+
 def assign(nodes: list[tuple[int, int]], formation: list[list[int]]) -> list[int]:
-    """Ghép vị trí trên màn hình với ô 0–10 của sơ đồ (_formations: [vai, dọc 0–50, ngang 0–100]): chuẩn hoá cả hai về [0,1]
-    theo khoảng của chính nó rồi ghép chi phí nhỏ nhất (11! quá nhiều → tham lam theo cặp gần nhất, đủ vì các ô cách xa nhau).
-    Trả slot_of[node]."""
+    """Ghép vị trí trên màn hình với ô 0–10 của sơ đồ theo toạ độ tuyệt đối (đơn vị sơ đồ), tham lam theo cặp gần nhất.
+    Trận này game có thể đang ở sơ đồ khác → ô nào gần chỗ nào thì nhận chỗ đó, rồi kéo về đúng toạ độ (place). Trả slot_of[node]."""
+    T = np.array([target(f) for f in formation], float)
     P = np.array(nodes, float)
-    F = np.array([[f[2], f[1]] for f in formation], float)      # ngang → x màn hình, dọc → y màn hình (lên trên = tấn công)
-    F[:, 1] = -F[:, 1]
-    norm = lambda A: (A - A.min(0)) / np.maximum(A.max(0) - A.min(0), 1e-6)
-    p, f = norm(P), norm(F)
-    cost = ((p[:, None, :] - f[None, :, :]) ** 2).sum(-1)
+    cost = (((P[:, None, :] - T[None, :, :]) / np.array([UX, UY])) ** 2).sum(-1)
     slot_of = [-1] * len(nodes)
     used = set()
     for i, j in sorted(itertools.product(range(len(nodes)), range(len(formation))), key=lambda ij: cost[ij]):
@@ -365,11 +373,117 @@ def assign(nodes: list[tuple[int, int]], formation: list[list[int]]) -> list[int
     return slot_of
 
 
+def _hold(key: str, n: int) -> None:
+    """Dời n đơn vị theo hướng key khi đang giữ A: ít thì nhấn từng nấc, nhiều thì giữ (lặp ~15 đơn vị/s sau ~0,3 s)."""
+    if n >= 5:
+        _pad(f"+{key} w:{0.3 + (n - 3) / 15:.2f} -{key} w:0.35")
+    else:
+        _pad(" ".join([f"+{key} w:0.05 -{key} w:0.3"] * n))
+
+
+def place(b: Board, formation: list[list[int]], slot_of: list[int]) -> tuple[int, int, list[str]]:
+    """Kéo từng cầu thủ (trừ thủ môn) về đúng toạ độ ô của mình (±1 đơn vị) rồi chọn đúng vai (X → Select Position).
+    Thả trùng chỗ người khác = đổi chỗ → né: ô đích đang có người thì để sau. Trả (số người đã dời, số vai đã đổi, vai không chọn được)."""
+    moved, roles, miss = 0, 0, []
+    todo = [n for n in range(len(b.nodes)) if formation[slot_of[n]][0] != 0]
+    for _ in range(3):
+        later = []
+        for n in todo:
+            tx, ty = target(formation[slot_of[n]])
+            x, y = b.nodes[n]
+            if abs(tx - x) <= UX * 1.6 and abs(ty - y) <= UY * 1.1:   # thả xong game làm tròn ±1 đơn vị
+                continue
+            if any(abs(tx - q[0]) < UX * 4 and abs(ty - q[1]) < UY * 2 for m, q in enumerate(b.nodes) if m != n):
+                later.append(n)
+                continue
+            b.go(n)
+            shirt = b.shirt.get(n)
+            _pad("+A w:1.1")
+            try:
+                for _ in range(14):
+                    h = hand(nav.shot("m17_gp"))
+                    if not h or h[0] != "pitch":
+                        raise PlanError("mất bàn tay khi kéo vị trí")
+                    ex, ey = (tx - h[1][0]) / UX, (ty - h[1][1]) / UY
+                    if abs(ex) <= 0.7 and abs(ey) <= 0.7:
+                        break
+                    if abs(ey) >= abs(ex) and round(abs(ey)) >= 1:
+                        _hold("Up" if ey < 0 else "Down", round(abs(ey)))
+                    else:
+                        _hold("Left" if ex < 0 else "Right", max(1, round(abs(ex))))
+            finally:
+                _pad("-A w:1.2")
+            h = hand(nav.shot("m17_gp"))
+            if not h or h[0] != "pitch":
+                raise PlanError("mất bàn tay sau khi kéo vị trí")
+            b.nodes[n] = h[1]
+            b.at = n
+            b.look()
+            if b.at != n or b.shirt.get(n) != shirt:
+                raise PlanError(f"kéo vị trí làm đổi người ở vị trí {n}")
+            moved += 1
+        if not later or len(later) == len(todo):
+            if later:
+                raise PlanError(f"không dời được vị trí {later} (ô đích đang có người)")
+            break
+        todo = later
+    for n in range(len(b.nodes)):
+        want = formation[slot_of[n]][0]
+        if want == 0:
+            continue
+        b.go(n)
+        if _role(b.im) == ROLES[want]:
+            continue
+        _pad("X w:1.2")
+        im = nav.shot("m17_gp")
+        rows = [(y, _key(ocr.rec(im, _box((215, y - 13, 470, y + 13)))[0]).replace("centre", "center")) for y in range(240, 520, 11)]
+        opts = []
+        for y, t in rows:   # dòng trong bảng Select Position (cách nhau 33 px, vị trí bảng tuỳ số lựa chọn)
+            sc = max(((SequenceMatcher(None, t, nm).ratio(), c) for c, nm in enumerate(ROLE_NAMES)), default=(0, None)) if len(t) >= 6 else (0, None)
+            code = sc[1] if sc[0] >= 0.8 else None
+            if code is not None and opts and opts[-1][1] == code and y - opts[-1][2] <= 11:
+                opts[-1] = ((opts[-1][3] + y) // 2, code, y, opts[-1][3])   # giữa các dòng quét cùng chữ
+            elif code is not None:
+                opts.append((y, code, y, y))
+        opts = [(y, c) for y, c, _, _ in opts]
+        codes = [c for _, c in opts]
+        cur = _role_menu_pos(im, opts)
+        if want not in codes or cur is None:
+            _pad("B w:1")
+            miss.append(f"{ROLES[want]}@{n}")
+            continue
+        d = codes.index(want) - cur
+        for _ in range(abs(d)):
+            _pad(("Down" if d > 0 else "Up") + " w:0.5")
+        _pad("A w:1.2")
+        b.look()
+        if _role(b.im) != ROLES[want]:
+            miss.append(f"{ROLES[want]}@{n}")
+        else:
+            roles += 1
+    return moved, roles, miss
+
+
+def _role(im: Image.Image) -> str:
+    """Vai của người đang trỏ (ô thông tin dưới sân: nhãn màu dưới tên)."""
+    return re.sub(r"[^A-Z]", "", ocr.rec(im, _box((155, 586, 210, 607)))[0].upper())
+
+
+def _role_menu_pos(im: Image.Image, opts: list[tuple[int, int]]) -> int | None:
+    """Dòng đang chọn trong bảng Select Position (nền tối)."""
+    if not opts:
+        return None
+    a = np.asarray(im.convert("L"), float)
+    dark = [a[y - 8:y + 8, 230 + _DX:440 + _DX].mean() for y, _ in opts]
+    return int(np.argmin(dark))
+
+
 def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | None = None, cache: Path | None = None,
           bench: list[int] | None = None) -> dict:
-    """Đang ở Lineup/Edit Position: đổi người tới khi ô k (0–10) là số áo want[k]; bench = số áo phải ngồi 12 ghế dự bị (trên vạch
-    ngăn; thứ tự trong ghế không đổi — chỉ là thứ tự hiện). Khung + tay cầm theo set_side. roster = {số áo: tên} của đội.
-    Trả {"swaps", "bench", "explored", "secs"}. Đồ thị nhảy lưu theo khung + sơ đồ ở `cache` (dò lần đầu ~1,5 phút).
+    """Đang ở Lineup/Edit Position: đổi người tới khi ô k (0–10) là số áo want[k], kéo từng người về đúng toạ độ + vai của ô
+    (formation [vai, dọc, ngang]); bench = số áo phải ngồi 12 ghế dự bị (trên vạch ngăn; thứ tự trong ghế chỉ là thứ tự hiện).
+    Khung + tay cầm theo set_side. roster = {số áo: tên} của đội. Trả {"swaps", "bench", "moved", "roles", "miss", "explored", "secs"}.
+    Đồ thị nhảy lưu theo khung + sơ đồ ở `cache` (dò lần đầu ~1,5 phút); đồ thị cũ không khớp màn hình → dò lại 1 lần.
     Lỗi → PlanError (người gọi cài lại + mở lại game như cũ)."""
     t0 = time.monotonic()
     key = json.dumps(formation) if _DX == 0 else f"away:{json.dumps(formation)}"
@@ -379,24 +493,37 @@ def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | 
             store = json.loads(cache.read_text())
         except (OSError, ValueError):
             store = {}
-    b = Board()
-    b.roster = roster
-    explored = False
-    if key in store:
-        b.load(store[key])
-        b.look()
-        if isinstance(b.at, tuple):
-            b.press("Left")
-        if len(b.nodes) != 11:   # vị trí lạ → đồ thị cũ không khớp màn hình
-            raise PlanError(f"đồ thị đã lưu không khớp ({len(b.nodes)} vị trí)")
-    else:
-        b.explore()
-        explored = True
-        if len(b.nodes) != 11:
-            raise PlanError(f"thấy {len(b.nodes)} vị trí trên sân")
+    for attempt in (0, 1):
+        b = Board()
+        b.roster = roster
+        explored = False
+        try:
+            if key in store and attempt == 0:
+                b.load(store[key])
+                b.look()
+                if isinstance(b.at, tuple):
+                    b.press("Left")
+                if len(b.nodes) != 11:   # vị trí lạ → đồ thị cũ không khớp màn hình
+                    raise PlanError(f"đồ thị đã lưu không khớp ({len(b.nodes)} vị trí)")
+            else:
+                b.explore()
+                explored = True
+                if len(b.nodes) != 11:
+                    raise PlanError(f"thấy {len(b.nodes)} vị trí trên sân")
+            r = _apply(b, want, formation, roster, bench)
+        except PlanError:
+            if attempt or explored:
+                raise
+            store.pop(key, None)   # đồ thị cũ sai (game đang ở sơ đồ khác) → dò lại
+            continue
         if cache:
-            store[key] = b.dump()
+            store[key] = b.dump()   # toạ độ mới sau khi kéo
             cache.write_text(json.dumps(store))
+        return {**r, "explored": explored or attempt == 1, "secs": round(time.monotonic() - t0, 1)}
+    raise PlanError("không áp được đội hình")
+
+
+def _apply(b: Board, want: list[int], formation: list[list[int]], roster: dict[int, str] | None, bench: list[int] | None) -> dict:
     slot_of = assign(b.nodes, formation)
     node_of = {s: n for n, s in enumerate(slot_of)}
     if roster:
@@ -451,8 +578,11 @@ def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | 
             b.go(n)
             if b.shirt.get(n) != want[slot_of[n]]:
                 raise PlanError(f"vị trí {n}: game số áo {b.shirt.get(n)}, cần {want[slot_of[n]]}")
-    moved = fix_bench(b, [x for x in (bench or [])[:VISIBLE] if x not in want[:11]]) if bench and roster else 0
-    return {"swaps": swaps, "bench": moved, "explored": explored, "secs": round(time.monotonic() - t0, 1)}
+    benched = fix_bench(b, [x for x in (bench or [])[:VISIBLE] if x not in want[:11]]) if bench and roster else 0
+    moved, roles, miss = place(b, formation, slot_of)   # sau cùng: kéo vị trí làm đồ thị nhảy cũ lệch dần
+    return {"swaps": swaps, "bench": benched, "moved": moved, "roles": roles, "miss": miss}
+
+
 
 
 def fix_bench(b: Board, wanted: list[int]) -> int:
@@ -483,6 +613,182 @@ def fix_bench(b: Board, wanted: list[int]) -> int:
         if bad:
             raise PlanError(f"ghế dự bị còn người thừa {bad}")
     return moved
+
+
+# ---- Chiến thuật ("_plan" của gói) qua GAME PLAN → Preset Tactics → Attacking/Defensive Instructions (thử 23/11) ----
+# Mỗi màn 5 dòng; dòng đang trỏ nền tối, ô mô tả trên phải ghi "Tên : Giá trị" (lựa chọn) hoặc "Tên" (thanh 10 nấc xanh).
+# Lựa chọn 2 phương án: Phải/Trái đổi qua lại. Thanh: Phải/Trái ±1 nấc. None = dòng web không chỉnh (Build Up, Attacking Zone, Pressure).
+PLAN_SCREENS = (
+    ("Attacking", 1, [("attackStyle", "attackingstyle", ("counter", "possession")), None, None,
+                      ("positioning", "positioning", ("maintain", "flexible")), ("supportRange", "support", None)]),
+    ("Defensive", 2, [("defenceStyle", "defensivestyle", ("frontline", "allout")), ("containment", "containment", ("middle", "wide")),
+                      None, ("defensiveLine", "defensiveline", None), ("compactness", "compactness", None)]),
+)
+PLAN_DESC = (388, 172, 620, 196)      # ô mô tả: "Attacking Styles : Counter Attack"
+PLAN_ROWS = (561, 588, 615, 642)      # tâm 4 dòng hiện được của danh sách dưới
+MENU_TILES = (138, 245, 353, 460, 568)   # tâm x 5 ô Main Menu (Preset Tactics … Data Management), y 560–618
+
+
+def _plain(t: str) -> str:
+    return re.sub(r"[^a-z]", "", t.lower())
+
+
+def _desc(im: Image.Image) -> tuple[str, str]:
+    t = ocr.rec(im, _box(PLAN_DESC))[0]
+    a, _, b = t.partition(":")
+    return _plain(a), _plain(b)
+
+
+def _slider(im: Image.Image) -> int | None:
+    """Số nấc sáng của thanh ở dòng đang trỏ (dòng nền tối)."""
+    g = np.asarray(im.convert("RGB")).astype(int)
+    for y in PLAN_ROWS:
+        if g[y - 3:y + 4, 74 + _DX:88 + _DX].sum(axis=2).mean() < 250:   # mép trái dòng: nền tối ≈ 70, sáng ≈ 410
+            row = g[y - 1:y + 2, 385 + _DX:598 + _DX].max(axis=0)
+            on = np.r_[False, (row[:, 2] > 150) & (row[:, 2] > row[:, 0] + 50), False].astype(int)
+            e = np.flatnonzero(np.diff(on))
+            runs = int(np.sum(e[1::2] - e[::2] >= 6))    # nấc ≈ 12 px; bỏ đầu mút thanh
+            return runs if 1 <= runs <= 10 else None
+    return None
+
+
+def set_plan(plan: dict[str, int]) -> dict:
+    """Đang ở Main Menu GAME PLAN của khung (_DX/_SLOT) → chỉnh các mục `plan` → về lại Main Menu. Trả {changed, miss}."""
+    changed, miss = 0, []
+    for _ in range(3):   # con trỏ Main Menu → Preset Tactics (ô đầu trong 5 ô biểu tượng; ô đang trỏ nền tối)
+        g = np.asarray(nav.shot("gp_menu").convert("L")).astype(int)
+        i = int(np.argmin([g[575:605, x + _DX - 30:x + _DX + 30].mean() for x in MENU_TILES]))
+        if i == 0:
+            break
+        _pad("Left w:0.6 " * i)
+    else:
+        raise PlanError("không trỏ được Preset Tactics")
+    _pad("A w:2")
+    for title, idx, rows in PLAN_SCREENS:
+        todo = [r for r in rows if r and r[0] in plan]
+        if not todo:
+            continue
+        _pad("Down w:0.6 " * idx + "A w:2")
+        if title not in ocr.rec(nav.shot("gp_ins"), _box((80, 112, 400, 140)))[0]:
+            _pad("B w:2")
+            raise PlanError(f"không mở được {title} Instructions")
+        cur = 0
+        for i, r in enumerate(rows):
+            if not r or r[0] not in plan:
+                continue
+            key, label, opts = r
+            for _ in range(i - cur):
+                _pad("Down w:0.5")
+            cur = i
+            want = plan[key]
+            ok = False
+            for _ in range(4):
+                im = nav.shot("gp_row")
+                name, val = _desc(im)
+                if label not in name:
+                    break
+                if opts:
+                    have = next((j for j, o in enumerate(opts) if o in val), None)
+                    if have == want:
+                        ok = True
+                        break
+                    _pad("Right w:0.6")
+                else:
+                    have = _slider(im)
+                    if have == want:
+                        ok = True
+                        break
+                    if have is None:
+                        break
+                    d = want - have
+                    for _ in range(abs(d)):
+                        _pad(("Right" if d > 0 else "Left") + " w:0.3")
+                    time.sleep(0.3)
+                changed += 1
+            if not ok:
+                miss.append(key)
+        _pad("B w:2")   # về danh sách Preset Tactics (con trỏ giữ ở mục vừa vào)
+        _pad("Up w:0.6 " * idx)
+    _pad("B w:2")       # về Main Menu
+    return {"changed": changed, "miss": miss}
+
+
+# ---- Đội trưởng + người đá phạt ("_jobs") qua GAME PLAN → Player Settings (thử 23/11) ----
+# Danh sách: Appoint as Captain, Long FK Taker, Short FK Taker, FK Taker 2, Left CK Taker, Right CK Taker, PK Taker, …
+# A vào mục → bàn tay trên sân (sân = sân màn Lineup dời phải 108 px), con trỏ bắt đầu ở người đang giữ việc; ô dưới trái ghi
+# "số áo Tên" người đang trỏ. A chọn → về danh sách. Chỉ người đá chính được chọn (người dự bị → bỏ qua, game tự chọn).
+JOB_ITEMS = {"captain": (0, "Captain"), "longFk": (1, "Long"), "shortFk": (2, "Short"), "leftCk": (4, "Left"),
+             "rightCk": (5, "Right"), "penalty": (6, "PK")}
+JOB_PANEL = (150, 560, 330, 592)
+JOB_DX = 108
+
+
+def _job_pick(shirt: int, at: tuple[float, float], roster: dict[int, str] | None) -> bool:
+    """Đang trong 1 mục Player Settings: dắt bàn tay tới người số `shirt` (bàn tay dự kiến ở `at`) rồi A."""
+    seen: dict[tuple[int, int], int] = {}
+    for _ in range(18):
+        im = nav.shot("gp_job")
+        if number(im, JOB_PANEL, roster) == shirt:
+            _pad("A w:1.5")
+            return True
+        h = hand(im, pitch_only=True)
+        if not h:
+            return False
+        x, y = h[1]
+        dx, dy = at[0] - x, at[1] - y   # theo px: sân dọc ngắn hơn đơn vị ngang → so px đỡ lắc trái/phải
+        keys = [k for k, _ in sorted([("Right" if dx > 0 else "Left", abs(dx)), ("Down" if dy > 0 else "Up", abs(dy))],
+                                     key=lambda k: -k[1])]
+        n = seen.get((x, y), 0)     # đã đứng ở đây → lần này thử hướng khác (trục còn lại, rồi ngược lại)
+        seen[(x, y)] = n + 1
+        _pad((keys + [k for k in DIRS if k not in keys])[n % 4] + " w:0.5")
+    return False
+
+
+def set_jobs(jobs: dict[str, int], want: list[int], formation: list[list[int]], roster: dict[int, str] | None = None) -> dict:
+    """Đang ở Main Menu GAME PLAN (con trỏ bất kỳ): giao việc {job: số áo} cho người đá chính (want[i] ở ô formation[i]) → về Main Menu."""
+    changed, miss = 0, []
+    for _ in range(3):
+        g = np.asarray(nav.shot("gp_menu").convert("L")).astype(int)
+        i = int(np.argmin([g[575:605, x + _DX - 30:x + _DX + 30].mean() for x in MENU_TILES]))
+        if i == 2:
+            break
+        _pad(("Right w:0.6 " * (2 - i)) if i < 2 else ("Left w:0.6 " * (i - 2)))
+    else:
+        raise PlanError("không trỏ được Player Settings")
+    _pad("A w:2")
+    if "Player Settings" not in ocr.rec(nav.shot("gp_ps"), _box((80, 112, 400, 140)))[0]:
+        raise PlanError("không mở được Player Settings")
+    cur = 0
+    for job, (idx, word) in sorted(JOB_ITEMS.items(), key=lambda kv: kv[1][0]):
+        if job not in jobs:
+            continue
+        shirt = jobs[job]
+        if shirt not in want:
+            miss.append(job)
+            continue
+        _pad("Down w:0.5 " * (idx - cur) if idx > cur else "Up w:0.5 " * (cur - idx) or "w:0.1")
+        cur = idx
+        ok = False
+        for attempt in range(2):
+            _pad("A w:1.5")
+            if word not in ocr.rec(nav.shot("gp_ps"), _box((80, 112, 400, 140)))[0]:
+                break
+            if number(nav.shot("gp_job"), JOB_PANEL, roster) == shirt:   # con trỏ bắt đầu ở người đang giữ việc
+                ok = True
+                _pad("B w:1.5")
+                break
+            if attempt:
+                _pad("B w:1.5")
+                break
+            tx, ty = target(formation[want.index(shirt)])
+            if not _job_pick(shirt, (tx + JOB_DX, ty), roster):
+                _pad("B w:1.5")
+                break
+            changed += 1
+        if not ok:
+            miss.append(job)
+    _pad("B w:2")   # về Main Menu
+    return {"changed": changed, "miss": miss}
 
 
 def set_side(side: str, slot: int = 0) -> None:

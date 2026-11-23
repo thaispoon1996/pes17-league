@@ -7,6 +7,7 @@
   A/Return=confirm(0)  B/Escape=back(1)  X=2 Y=3
   Up/Down/Left/Right = d-pad 12..15
   w:N = ngủ N giây
+  +A / -A = nhấn giữ / nhả nút; aN:V = trục N (0 = cần trái ngang, 1 = dọc) giá trị V (-1..1)
 """
 import asyncio, base64, hashlib, os, sys
 import websockets
@@ -54,6 +55,15 @@ async def main(slot: int):
             for k in line.split():
                 if k.startswith('w:'):
                     await asyncio.sleep(float(k[2:]))
+                    continue
+                if k.startswith('a') and ':' in k:   # a0:0.5 = cần trái ngang (0 = X, 1 = Y), giá trị -1..1; a0:0 = thả
+                    n, v = k[1:].split(':')
+                    await ws.send(f'js,a,{slot},{int(n)},{float(v)}')
+                    await asyncio.sleep(0.05)
+                    continue
+                if k[:1] in '+-' and BTN.get(k[1:]) is not None:   # +A = nhấn giữ, -A = nhả (kéo vị trí trong GAME PLAN)
+                    await ws.send(f'js,b,{slot},{BTN[k[1:]]},{1 if k[0] == "+" else 0}')
+                    await asyncio.sleep(0.15)
                     continue
                 b = BTN.get(k)
                 if b is None:

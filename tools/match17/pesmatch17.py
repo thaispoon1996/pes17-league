@@ -318,6 +318,9 @@ def match_time(want: int = MATCH_TIME, level: str | None = None) -> None:
 GP_TITLE = (80, 112, 400, 140)   # tiêu đề GAME PLAN khung đội nhà; khung đội khách dời 576 px
 
 
+GP_WORDS = ("Menu", "Lineup", "Preset", "Instructions", "Formation", "Settings", "Captain", "Taker", "Join")   # tiêu đề các màn trong GAME PLAN
+
+
 def gp_title(im: Image.Image) -> str:
     return " ".join(ocr.rec(im, (x + d, y, x2 + d, y2))[0] for x, y, x2, y2 in [GP_TITLE] for d in (0, gameplan17.AWAY_DX))   # "Main Menu" / "Lineup/Edit Position" góc trên trái màn GAME PLAN
 UNI_COUNT = {"home": (530, 515, 630, 560), "away": (995, 515, 1095, 560)}   # số "2/3" dưới hình cầu thủ trong menu UNIFORM
@@ -631,6 +634,7 @@ def heal_bench() -> bool:
 
 
 def deploy(squads: str) -> None:
+    _GP_TOUCHED.clear()   # game mở lại theo gói mới
     r = subprocess.run([str(REPO / "tools" / "pes17db" / "deploy.sh"), "--squads", squads, "--force", "--restart"],
                        capture_output=True, text=True, env={**os.environ, "PES17_DATA": str(DATA)})
     log(r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr[-300:])
@@ -767,7 +771,7 @@ def ensure_game(squads: str, home: int, away: int, plan_teams: list[int] | None 
         log("game đã có đội hình 2 đội → không cài lại")
         return False
     if plan_teams and plan_only(squads, home, away, plan_teams):
-        log("chỉ đổi đội hình đá chính → đổi trong GAME PLAN, không cài lại game")
+        log("chỉ đổi đội hình/chiến thuật đội người chơi → đổi trong GAME PLAN, không cài lại game")
         return "plan"
     deploy(squads)
     return True
@@ -794,8 +798,8 @@ def player_names() -> dict[int, str]:
 
 
 def plan_only(squads: str, home: int, away: int, teams: list[int]) -> bool:
-    """Gói đã cài (game đang chạy) và `squads` chỉ khác ở THỨ TỰ cầu thủ của `team` (cùng người, cùng số áo, cùng sơ đồ/vai/chiến
-    thuật; đội kia giống hệt) → đổi được bằng tay cầm trong GAME PLAN (gameplan17, PO 23/11 hướng B)."""
+    """Gói đã cài (game đang chạy) và `squads` chỉ khác ở thứ tự cầu thủ, sơ đồ/vai, chiến thuật, đội trưởng/đá phạt của `teams`
+    (cùng người, cùng số áo; đội kia giống hệt) → đổi được bằng tay cầm trong GAME PLAN (gameplan17, PO 23/11 hướng B)."""
     try:
         cur = json.loads((OUT / "squads.json").read_text())
         if _sha(cur) != (OUT / "deployed.squads.sha").read_text().strip():
@@ -811,18 +815,39 @@ def plan_only(squads: str, home: int, away: int, teams: list[int]) -> bool:
         elif a != b:
             return False
         for extra in ("_formations", "_jobs", "_plan"):
-            if (cur.get(extra) or {}).get(t) != (want.get(extra) or {}).get(t):
+            a2, b2 = (cur.get(extra) or {}).get(t), (want.get(extra) or {}).get(t)
+            if a2 == b2:
+                continue
+            # đội người chơi cầm: sơ đồ/vai (place), chiến thuật (set_plan), đội trưởng/đá phạt (set_jobs) chỉnh được trong GAME PLAN —
+            # trừ khi web bỏ một mục mà gói đang ghi (không biết giá trị gốc của game để trả về)
+            if int(t) not in teams or (extra != "_formations" and not set(a2 or {}) <= set(b2 or {})):
                 return False
     r = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017.exe"], capture_output=True)
     return r.returncode == 0
 
 
-def game_plan(squads: str, teams: list[tuple[int, str, int]]) -> None:
+_GP_TOUCHED: set[int] = set()   # đội đã chỉnh chiến thuật/việc trong GAME PLAN ở lần chạy này (game có thể khác gói đã cài)
+
+
+def _gp_extra(doc: dict, team: int, key: str) -> dict | None:
+    """Mục `key` ("_plan"/"_jobs") của đội cần chỉnh trong game: khác gói đã cài, hoặc đã từng chỉnh tay trong lần chạy này."""
+    want = (doc.get(key) or {}).get(str(team))
+    if not want:
+        return None
+    try:
+        cur = (json.loads((OUT / "squads.json").read_text()).get(key) or {}).get(str(team))
+    except (OSError, ValueError):
+        cur = None
+    return want if want != cur or team in _GP_TOUCHED else None
+
+
+def game_plan(squads: str, teams: list[tuple[int, str, int]], strict: bool = False) -> None:
     """Màn Kickoff (con trỏ ở KICKOFF, trong nav.session): GAME PLAN → Lineup/Edit Position → với mỗi (đội, "home"|"away", tay cầm):
     đổi người tới đúng 11 người đá chính + vị trí + 12 người ngồi ghế dự bị theo `squads` → về KICKOFF. Đọc thật số áo/tên trên
     màn hình (game có thể khác gói đã cài). Lỗi → NavError."""
     doc = json.loads(Path(squads).read_text())
     names = player_names()
+    miss: list = []
     nav.pad("Right w:0.8 A w:4")
     try:
         if "Menu" not in gp_title(nav.shot("m17_gp")):
@@ -845,8 +870,27 @@ def game_plan(squads: str, teams: list[tuple[int, str, int]]) -> None:
             gameplan17.set_side(side, slot)
             r = gameplan17.apply([shirt for _, shirt in lst[:11]], formation, roster, OUT / "gameplan-graphs.json",
                                  bench=[shirt for _, shirt in lst[11:]])
-            log(f"GAME PLAN {side}: đổi {r['swaps']} lượt + {r['bench']} ghế dự bị trong {r['secs']} s"
+            log(f"GAME PLAN {side}: đổi {r['swaps']} lượt + {r['bench']} ghế dự bị, dời {r['moved']} vị trí, {r['roles']} vai"
+                + (f" (không chọn được vai {r['miss']})" if r["miss"] else "") + f" trong {r['secs']} s"
                 + (" (dò sơ đồ lần đầu)" if r["explored"] else ""))
+            miss += r["miss"]
+            pl, jb = _gp_extra(doc, team, "_plan"), _gp_extra(doc, team, "_jobs")
+            if pl or jb:
+                t0 = time.time()
+                nav.pad("B w:2", slot)   # Lineup → Main Menu của khung mình
+                _GP_TOUCHED.add(team)
+                out = []
+                if pl:
+                    r = gameplan17.set_plan(pl)
+                    miss += r["miss"]
+                    out.append(f"chiến thuật {r['changed']} lần chỉnh" + (f" (không chỉnh được {r['miss']})" if r["miss"] else ""))
+                if jb:
+                    starters = {pid: shirt for pid, shirt in lst[:11]}   # người dự bị không giao được (game tự chọn người khác)
+                    r = gameplan17.set_jobs({j: starters[p] for j, p in jb.items() if p in starters},
+                                            [shirt for _, shirt in lst[:11]], formation, roster)
+                    miss += r["miss"]
+                    out.append(f"giao việc {r['changed']} lần" + (f" (không giao được {r['miss']})" if r["miss"] else ""))
+                log(f"GAME PLAN {side}: " + ", ".join(out) + f" trong {time.time() - t0:.0f} s")
     except gameplan17.PlanError as e:
         raise NavError(f"game_plan: {e}") from e
     finally:
@@ -858,15 +902,18 @@ def game_plan(squads: str, teams: list[tuple[int, str, int]]) -> None:
             im = nav.shot("m17_gp")
             title = {sd: ocr.rec(im, (GP_TITLE[0] + d, GP_TITLE[1], GP_TITLE[2] + d, GP_TITLE[3]))[0]
                      for sd, d in (("home", 0), ("away", gameplan17.AWAY_DX))}
-            if not any("Menu" in t or "Lineup" in t for t in title.values()):
+            inside = {sd: any(w in t for w in GP_WORDS) for sd, t in title.items()}
+            if not any(inside.values()):
                 break
-            busy = [sl for sd, sl in sides.items() if "Lineup" in title[sd]]
+            busy = [sl for sd, sl in sides.items() if inside[sd] and "Main Menu" not in title[sd]]
             for sl in busy or sorted(sides.values()):
                 nav.pad("B w:2", sl)
         if not kickoff_screen(nav.shot("m17_gp")):
             nav.pad("Left w:0.8")
     if not kickoff_screen(nav.shot("m17_gp")):
         raise NavError("game_plan: không về được màn Kickoff")
+    if strict and miss:
+        raise NavError(f"game_plan: không chỉnh được {miss}")
 
 
 def read_cmds() -> None:
@@ -1028,7 +1075,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             """Màn Kickoff: đổi người trong GAME PLAN (~20–60 s); lỗi → cài lại gói + mở lại game như cũ (must) / bỏ qua."""
             try:
                 with nav.session():
-                    game_plan(path, plan)
+                    game_plan(path, plan, strict=must)
             except NavError as e:
                 if not must:
                     log(f"GAME PLAN lỗi ({e}) → bỏ qua")
