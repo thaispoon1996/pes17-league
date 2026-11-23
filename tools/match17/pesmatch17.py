@@ -47,6 +47,7 @@ from PIL import Image, ImageChops, ImageStat   # noqa: E402
 REPO = ROOT.parents[1]
 DATA = Path(os.environ.get("PES17_DATA") or (Path(os.environ["PES17_STORE"]).parent if os.environ.get("PES17_STORE") else Path.home() / "pes17league-data"))
 OUT = DATA / "pes17-deploy"
+SKIP_INTRO = os.environ.get("PESMATCH_SKIP_INTRO", "1") != "0"   # bấm Start bỏ phim mở màn (23/11, tắt: =0)
 LOCK = Path(os.environ.get("PESMATCH_LOCK") or OUT / "match.lock")   # web truyền đường dẫn để tự xoá khi dừng bộ chạy ngang (PO 22/11)
 WAIT_GO = os.environ.get("PESMATCH_WAIT_GO") == "1"
 WARM = os.environ.get("PESMATCH_WARM") == "1"
@@ -113,12 +114,35 @@ def is_ask(im: Image.Image) -> bool:
 
 # ---------- đi menu ----------
 
+_TAB_X, _TAB_BASE = (183, 413, 642, 871, 1101), (186, 186, 170, 171, 189)
+
+
+def main_menu_step(im) -> str | None:
+    """Menu chính (5 tab HOME…EXTRAS): phím để tới ô Exhibition Match (ô đầu tab HOME), None nếu không phải menu chính.
+    Con trỏ có thể bị để ở tab/ô khác (vd. myClub → hộp lỗi mạng, 23/11). Không bấm Trái ở ô đầu: game nhảy sang tab
+    trước (EXTRAS) và A sẽ mở Apply Live Update. Tab đang chọn sáng hơn ~30; ô đang chọn tối (<80) còn ô khác ~190."""
+    tabs = ocr.rec(im, (70, 118, 1215, 146))[0].replace(" ", "")
+    if not ("HOME" in tabs and "EXTRAS" in tabs):
+        return None
+    g = im.convert("L")
+    mean = lambda box: ImageStat.Stat(g.crop(box)).mean[0]
+    lit = [mean((x - 80, 124, x + 80, 140)) - b for x, b in zip(_TAB_X, _TAB_BASE)]
+    tab = max(range(5), key=lit.__getitem__)
+    if tab != 0:
+        return "LB w:1.2" if tab <= 2 else "RB w:1.2"
+    dark = [mean((x, 360, x + 300, 440)) for x in (90, 480, 870)]
+    k = min(range(3), key=dark.__getitem__)
+    if dark[k] > 120:
+        return "Up w:0.5"   # ô đang chọn ở hàng dưới
+    return "A w:3" if k == 0 else " ".join(["Left w:0.5"] * k)
+
+
 def to_team_select(both: bool = False, away: bool = False, fresh: bool = False) -> None:
     """Tới danh sách giải bên nhà của màn Select Team, qua màn chọn tay cầm đúng 1 lần (xếp P1/P2, xem arrange_pads).
     Chỉ bấm A khi không nhận ra màn (tiêu đề, hộp thoại mạng, menu chính).
     fresh: game vừa khởi động → không thể đang đá/ở menu hết trận, bỏ OCR HUD/menu (~2,5 s mỗi lần bấm). Game crash lúc khởi động → mở lại (tối đa 2 lần)."""
     end = time.monotonic() + BOOT_TIMEOUT
-    stage, arranged, backs, restarts, dead = None, False, 0, 0, 0
+    stage, arranged, backs, restarts, dead, blind = None, False, 0, 0, 0, 0
     while time.monotonic() < end:
         im = nav.shot("m17_nav")
         kind, key, _ = header(im, "home")
@@ -157,7 +181,13 @@ def to_team_select(both: bool = False, away: bool = False, fresh: bool = False) 
         if stage != "menu":
             stage = "menu"
             emit(event="stage", stage="menu")
-        nav.pad("A w:3")
+        if (go := main_menu_step(im)) is not None:
+            nav.pad(go)
+            continue
+        blind += 1
+        # A mãi không ra màn quen (vd. ai đó để game ở System Settings: A không đi đâu, 23/11) → xen B để lùi về menu chính.
+        # Đường thường (tiêu đề → menu chính → chọn đội) chỉ cần vài lần A nên không bị chậm.
+        nav.pad("B w:2" if blind > 6 and blind % 3 == 0 else "A w:3")
     raise NavError("nav_timeout: không tới được màn chọn đội")
 
 
@@ -1024,6 +1054,29 @@ def leave_match() -> None:
         log(f"không thoát được trận: {e}")
 
 
+def skip_intro(limit: float = 150) -> None:
+    """Sau Kickoff: bấm Start bỏ qua phim mở màn (sân, đường hầm, ra sân, 2 bảng đội hình, bắt tay) → tới thẳng tư thế giao bóng.
+    Đo 23/11: Sẵn sàng → giao bóng ~95 s, bỏ qua còn ~35 s. A không bỏ qua được. Không bấm trên màn tải (Game Tips: phải đợi tải xong)
+    và dừng khi thấy sân 2 khung liền (tư thế giao bóng / đang đá). Start lỡ rơi đúng lúc vào tư thế → mở Pause Menu → B đóng lại."""
+    end, seen, hi, n = time.monotonic() + limit, False, 0, 0
+    with nav.session():
+        while time.monotonic() < end:
+            im = nav.shot("m17_intro")
+            tips = "Tips" in ocr.rec(im, (520, 185, 760, 230))[0]
+            seen = seen or tips
+            hi = hi + 1 if grass(im) > 4800 else 0
+            if hi >= 2:
+                break
+            if seen and not tips and not hi:
+                nav.pad("Start w:0.3")
+                n += 1
+            time.sleep(0.8)
+        time.sleep(1.5)
+        if "Pause" in ((ocr.menu(nav.shot("m17_intro")) or {}).get("title") or ""):
+            nav.pad("B w:1.5")
+    log(f"bỏ qua phim mở màn: {n} lần Start")
+
+
 def wait_pitch() -> None:
     """Trận 2 người: sau Kickoff chờ thấy sân (phim chào sân/đứng chờ giao bóng) → stage pitch (web cấp vé + link cho 2 người)."""
     end, seen = time.monotonic() + 180, 0
@@ -1117,6 +1170,11 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             except NavError as e:
                 log(f"chọn áo lỗi: {e}")
             nav.pad("A w:2")   # Kickoff
+        if SKIP_INTRO:
+            try:
+                skip_intro()
+            except Exception as e:   # bỏ qua không được thì xem phim như cũ
+                log(f"bỏ qua phim mở màn lỗi: {e}")
         pres = Presence() if both else None
         try:
             if both:
