@@ -2,7 +2,8 @@
 # Cửa sổ game không viền (PO 23/11): bỏ thanh tiêu đề Openbox → game phủ trọn 1280x720, người chơi Selkies thấy cả khung hình.
 # Luật Openbox cho class pes2017.exe ghi vào /config/.config/openbox/rc.xml (volume máy game, giữ qua khởi động lại container;
 # lấy rc.xml hệ thống + 1 luật). Luật chỉ xét lúc cửa sổ hiện → có hiệu lực khi game mở lại.
-# Bộ chạy không phải đo lại toạ độ: tools/match17/tools/shot.sh tự co ảnh về khung cũ (game 1284x700 ở y=23).
+# Game tự khoá cỡ 1284x700 (không phủ trọn được, đo 23/11) → nằm ở 0,0, dải đen 20px dưới đáy. Bộ chạy không phải đo lại toạ độ:
+# tools/match17/tools/shot.sh dời ảnh về khung cũ (game ở y=23).
 #   tools/bench/borderless.sh on | off | status
 set -euo pipefail
 C="${PES17_BENCH:-pes17-bench}"

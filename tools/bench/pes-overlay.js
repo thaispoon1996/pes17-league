@@ -1,4 +1,5 @@
-// Logo giải góc phải trên khung game ở trang chơi Selkies (PO duyệt 22/11, kiểu A: logo trơn, không nền).
+// Logo giải góc phải trên khung game ở trang chơi Selkies (PO duyệt 22/11, kiểu A: logo trơn, không nền). Từ 23/11 trận có bảng tỉ số riêng
+// (khối dưới) thì logo nằm trong bảng, bộ chạy không đặt logo góc này.
 // Bộ chạy trận (tools/match17/pesmatch17.py overlay()) ghi /bench/overlay/overlay.json = {"logo": "logo-<sha>.png"} lúc giao bóng, {} khi hết trận;
 // trang đọc ở pes/overlay.json (Dockerfile: pes → /bench/overlay). Logo nằm cạnh canvas (cùng khối cha) để vẫn thấy khi toàn màn hình,
 // không bắt chuột/chạm. Vị trí theo khung hình thật (1280×720): cách trên 5,3%, cách phải 1,25%, cao 10%.
@@ -44,6 +45,53 @@
   document.addEventListener('fullscreenchange', place);
   setInterval(place, 1000);   // selkies đổi cỡ canvas không báo sự kiện
   setInterval(poll, 5000);
+  poll();
+})();
+
+// Bảng tỉ số riêng (PO 23/11): bộ chạy trận (tools/match17/tools/board17.py) ghi pes/board.png + overlay.json
+// {"board": {"v": số lần vẽ, "box": [x, y, w, h] theo màn hình thật 1280×720}} khi HUD game hiện, {"board": null} khi ẩn / hết trận.
+// Ảnh phủ đúng chỗ bảng tỉ số của game. Đọc 1 lần/giây khi có bảng (5 giây khi không); ảnh mới tải xong mới thay → không nháy.
+(() => {
+  const img = new Image();
+  img.alt = '';
+  img.decoding = 'async';
+  img.setAttribute('aria-hidden', 'true');
+  Object.assign(img.style, { position: 'absolute', zIndex: '2', pointerEvents: 'none', userSelect: 'none', display: 'none' });
+  let box = null, v = -1, timer;
+
+  const place = () => {
+    const c = document.getElementById('videoCanvas');
+    if (!box || !c || !c.parentElement || !img.naturalWidth) { img.style.display = 'none'; return; }
+    if (img.parentElement !== c.parentElement) c.parentElement.appendChild(img);
+    const bw = c.width || 1280, bh = c.height || 720, cw = c.offsetWidth, ch = c.offsetHeight;
+    if (cw < 50 || ch < 50) { img.style.display = 'none'; return; }
+    const k = Math.min(cw / bw, ch / bh), w = bw * k, h = bh * k;
+    const x = c.offsetLeft + (cw - w) / 2, y = c.offsetTop + (ch - h) / 2, s = w / 1280;   // box theo màn 1280×720
+    Object.assign(img.style, { left: `${x + box[0] * s}px`, top: `${y + box[1] * s}px`, width: `${box[2] * s}px`, height: `${box[3] * s}px`, display: 'block' });
+  };
+
+  const poll = async () => {
+    try {
+      const r = await fetch(`pes/overlay.json?t=${Date.now()}`, { cache: 'no-store' });
+      const b = (r.ok ? await r.json() : {}).board;
+      if (b && Array.isArray(b.box) && b.box.length === 4 && Number.isFinite(b.v)) {
+        if (b.v !== v) {
+          const next = new Image();
+          next.onload = () => { img.src = next.src; box = b.box; place(); };
+          next.src = `pes/board.png?v=${b.v}`;
+          v = b.v;
+        } else { box = b.box; }
+      } else { box = null; v = -1; }
+    } catch { /* chưa có file / mạng chập chờn: giữ như cũ */ }
+    place();
+    clearTimeout(timer);
+    timer = setTimeout(poll, box ? 1000 : 5000);
+  };
+
+  img.addEventListener('load', place);
+  window.addEventListener('resize', place);
+  document.addEventListener('fullscreenchange', place);
+  setInterval(place, 1000);
   poll();
 })();
 

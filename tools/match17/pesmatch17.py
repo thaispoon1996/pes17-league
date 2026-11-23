@@ -21,6 +21,8 @@
   error{reason}. Bàn thắng in ngay trước "end", đã khớp tỷ số cuối (ghi kết quả nguồn Memory đòi khớp).
   ratings{home:[{shirt,rating}],away:[...]} đọc từ bảng Player Rankings ở menu hết trận (11 người đầu mỗi bên).
   PESMATCH_LOGO=FILE (trận giải, PO 22/11): logo giải góc phải trên trang chơi Selkies từ lúc giao bóng tới hết trận (overlay(), tools/bench/pes-overlay.js).
+  Bảng tỉ số riêng (PO 23/11, tools/board17.py): phủ bảng tỉ số game ở trang chơi + bản ghi/phát trực tiếp, logo giải nằm trong bảng
+  (khi có bảng thì không đặt logo góc phải). PESMATCH_BOARD=0 tắt (chỉ để thử).
   PESMATCH_GRAPHICS=DIR + PESMATCH_COMPETITION=GIẢI (PO 23/11): cài gói đồ hoạ menu của giải trước khi vào trận (ensure_compe(), tools/pes17db/compe.py).
   AFK (trận 2 người): xem AFK_STALL / Presence (tools/afk17.py). Chưa có: hiệp phụ/penalty (PESMATCH_EXTRA_TIME), người ghi bàn.
   Ghi hình PESMATCH_REC=FILE.mkv (+ PESMATCH_LIVE=FILE.m3u8 xem trực tiếp), 23/11: chỉ khi $DATA/pes17-deploy/record-mode = bot|all
@@ -37,6 +39,7 @@ import m17nav as nav   # noqa: E402
 import loop            # noqa: E402
 import m17ocr as ocr   # noqa: E402
 import rec17           # noqa: E402
+import board17         # noqa: E402
 from PIL import Image, ImageChops, ImageStat   # noqa: E402
 
 REPO = ROOT.parents[1]
@@ -371,8 +374,10 @@ class Match:
     bảng số Half Time/Time Up → A; menu nghỉ (đồng hồ 45:00) → A (ô 2nd Half chọn sẵn); menu hết trận → tỷ số cuối.
     Replay/cận cảnh tự qua, máy không bấm gì khi đang đá (cả trận BOT lẫn trận có người)."""
 
-    def __init__(self, human: str | None, presence: "Presence | None" = None, t0: float | None = None):
+    def __init__(self, human: str | None, presence: "Presence | None" = None, t0: float | None = None,
+                 board: "board17.Board | None" = None):
         self.human = human
+        self.board = board         # bảng tỉ số riêng: hiện khi thấy HUD game, ẩn khi HUD ẩn 2 nhịp liền (ăn mừng, chiếu lại, menu)
         self.t0 = t0               # mốc 0 của bản ghi hình (rec17.start): có → "wall" = giây trong video, không thì tính từ giao bóng
         self.presence = presence   # trận 2 người: đo AFK
         self.halftime = None
@@ -424,6 +429,13 @@ class Match:
         self.hud, self.pending, self.seen = cur, None, 0
         self.old_seen = self.wall()
 
+    def shown(self) -> tuple[int, int]:
+        """Tỉ số cho bảng riêng: HUD vừa đọc thấy hơn 1 bàn (chưa đủ nhịp để ghi bàn) thì hiện luôn — bảng game đã đổi,
+        bảng riêng không được chậm hơn; nhảy lạ (đọc sai "10-0") thì giữ tỉ số đã chốt."""
+        if self.pending and sorted(c - o for c, o in zip(self.pending, self.hud)) == [0, 1]:
+            return self.pending
+        return self.hud
+
     def final_goals(self, hg: int, ag: int) -> list[dict]:
         """Bàn HUD bắt được, cắt/bù cho khớp tỷ số cuối (bàn bù: phút 90)."""
         out = []
@@ -434,7 +446,7 @@ class Match:
 
     def run(self) -> tuple[int, int]:
         last_play = progress = time.monotonic()   # progress: lần cuối đồng hồ game nhích (hoặc đang nghỉ giữa hiệp)
-        last_press, last_min = 0.0, None
+        last_press, last_min, misses = 0.0, None, 0
         while True:
             try:
                 im = nav.shot("m17_live")
@@ -446,6 +458,8 @@ class Match:
             h = ocr.hud(im)
             if self.presence and now - progress > AFK_STALL:
                 raise NavError(afk_reason(self.presence))
+            if not h and self.board and (misses := misses + 1) >= 2:
+                self.board.hide()
             if h:
                 last_play = now
                 self.halftime = None   # hết nghỉ giữa hiệp
@@ -454,9 +468,12 @@ class Match:
                 if self.kick is None:
                     self.kick = now
                     emit(event="kickoff")
-                    if LOGO:
+                    if LOGO and not self.board:
                         overlay(LOGO)
                 self.on_hud(h)
+                misses = 0
+                if self.board:
+                    self.board.show(self.shown(), self.minute)
             elif now - last_play > (NO_PITCH_TIMEOUT if not self.human
                                     else HUMAN_PREMATCH_TIMEOUT if not self.kick or self.halftime else NO_PITCH_TIMEOUT):
                 raise NavError("no_progress: quá lâu không thấy HUD trận")
@@ -670,6 +687,18 @@ def overlay(logo: str | None) -> None:
         log(f"logo giải lỗi: {e}")
 
 
+def make_board(home: int, away: int) -> "board17.Board | None":
+    """Bảng tỉ số riêng của trận (mã 3 chữ từ Team.raw, logo giải PESMATCH_LOGO). Lỗi → None: trận vẫn đá, trang chơi thấy bảng gốc của game."""
+    if os.environ.get("PESMATCH_BOARD") == "0":
+        return None
+    try:
+        cs = board17.codes(DATA / "pesdb" / "Team.raw", [home, away])
+        return board17.Board(BENCH, OVERLAY, OUT / "board", cs.get(home, ""), cs.get(away, ""), LOGO, log)
+    except Exception as e:
+        log(f"bảng tỉ số lỗi: {e}")
+        return None
+
+
 def grass(im: Image.Image) -> int:
     """Điểm màu cỏ (lưới 8 px, tối đa 5750) — chịu được bóng râm khán đài (loop.green_pitch thì không). Sân ~5600, menu < 400."""
     n = 0
@@ -743,15 +772,17 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             if WAIT_GO or WARM:
                 self_started = wait_go(squads, home, away, setup)
         emit(event="stage", stage="loading")
+        board = make_board(home, away)
         if REC and rec17.wanted(OUT, human):
-            recording, t_rec = rec17.start(container, REC, os.environ.get("PESMATCH_LIVE"), emit)
+            recording, t_rec = rec17.start(container, REC, os.environ.get("PESMATCH_LIVE"), emit,
+                                           board.y if board else board17.window_y(BENCH), board.file if board else None)
         if not self_started:
             nav.pad("A w:2")   # Kickoff
         pres = Presence() if both else None
         try:
             if both:
                 wait_pitch()
-            m = Match(human, pres, t_rec)
+            m = Match(human, pres, t_rec, board)
             hg, ag = m.run()
         except NavError as e:
             if str(e).startswith("afk"):
@@ -762,7 +793,9 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             recording = None
             if pres:
                 pres.close()
-            if LOGO:
+            if board:
+                board.close()
+            elif LOGO:
                 overlay(None)
         try:
             emit(event="ratings", **ocr.rankings(nav.shot("m17_ft")))

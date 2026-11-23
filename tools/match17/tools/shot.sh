@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Chụp màn hình game (pes17-bench :1) → tools/match17/screens/<tên>.png (xwd trong container, convert trên máy chủ)
 # Mọi toạ độ/mẫu (m17ocr, score, pick, m17nav, templates/) đo trên khung cũ: cửa sổ có thanh tiêu đề Openbox, game 1284x700 ở y=23.
-# Cửa sổ không viền (PO 23/11, tools/bench/openbox-rc.xml: game phủ 1280x720 từ y=0) → co ảnh về đúng khung cũ, khỏi đo lại.
+# Cửa sổ không viền (PO 23/11, tools/bench/borderless.sh): game tự khoá cỡ 1284x700 → nằm ở y=0, dải đen 20px dưới đáy
+# (đo 23/11: hàng 0 = đường viền xám 1px Openbox = hàng 23 của khung cũ) → dời xuống 23px là đúng khung cũ, khỏi đo lại.
+# Nếu sau này game phủ trọn 1280x720 (H ≥ 718) → co về 1284x700 rồi dời.
 set -euo pipefail
 NAME="${1:-shot_$(date -u +%H%M%S)}"
 OUT="$(cd "$(dirname "$0")/.." && pwd)/screens"; mkdir -p "$OUT"
@@ -11,6 +13,8 @@ docker exec -u abc -e DISPLAY=:1 pes17-bench sh -c 'xwininfo -name "Pro Evolutio
   | { read -r Y H
       if [ "$Y" = 0 ] && [ "$H" -ge 718 ]; then
         convert xwd:- -resize '1284x700!' -background black -splice 0x23 -crop 1280x720+0+0 +repage "$TMP"
+      elif [ "$Y" = 0 ] && [ "$H" -gt 0 ]; then
+        convert xwd:- -crop 1280x697+0+0 +repage -background black -splice 0x23 "$TMP"
       else
         convert xwd:- "$TMP"
       fi; }
