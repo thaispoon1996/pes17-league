@@ -5,9 +5,9 @@ Container ffmpeg (pes17league-rec:local, tools/rec) dùng chung mạng với pes
 720p 30 khung/s, x264 veryfast CRF 20 (PES6 dùng 16: ~1,1 GB/trận BOT đo 23/11; 20 ≈ nửa dung lượng, đoạn bàn thắng vốn mã lại CRF 20), GOP 60 = 2 s (khớp đoạn HLS 2 s). Tiếng AAC 128k từ output.monitor (game có tiếng từ 23/11).
 Lỗi chỉ báo sự kiện recording_error / live_error / audio_error, trận vẫn đá.
 
-Bật/tắt (PO quyết, mặc định TẮT): file $DATA/pes17-deploy/record-mode = off | hot | bot | all
-  hot (PO 23/11 chọn): chỉ trận cầu đinh — web truyền PESMATCH_HOT=1 (HotMatchService: 2 đội top 4 BXH / top 4 sức mạnh, bán kết, chung kết);
-       web còn đá thật 1 trận cầu đinh BOT mỗi khung career để phát trực tiếp (MatchJobService.HotLive).
+Bật/tắt (PO quyết, mặc định TẮT): file $DATA/pes17-deploy/record-mode = off | hot | live | bot | all
+  hot (PO 23/11 chọn): chỉ trận cầu đinh — web truyền PESMATCH_HOT=1 (HotMatchService: 2 đội top 4 BXH / top 4 sức mạnh, bán kết, chung kết).
+  live: như hot + web đá thật 1 trận cầu đinh BOT mỗi khung career để phát trực tiếp (MatchJobService.HotLive; người chơi chờ trận đó).
   bot: chỉ trận máy đá với máy (không ai chơi → không giành CPU của người chơi); all: mọi trận.
   PESMATCH_REC_MODE (biến môi trường) đè file — chỉ để thử.
 """
@@ -31,12 +31,12 @@ def mode(deploy_dir: Path) -> str:
         except OSError:
             m = "off"
     m = m.strip().lower()
-    return m if m in ("hot", "bot", "all") else "off"
+    return m if m in ("hot", "live", "bot", "all") else "off"
 
 
 def wanted(deploy_dir: Path, human: str | None) -> bool:
     m = mode(deploy_dir)
-    return m == "all" or (m == "bot" and human is None) or (m == "hot" and os.environ.get("PESMATCH_HOT") == "1")
+    return m == "all" or (m == "bot" and human is None) or (m in ("hot", "live") and os.environ.get("PESMATCH_HOT") == "1")
 
 
 def _exec(c: str, cmd: str) -> subprocess.CompletedProcess:

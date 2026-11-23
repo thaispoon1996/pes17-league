@@ -212,20 +212,21 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     });
 
     /// <summary>
-    /// Chế độ ghi hình (file record-mode cạnh match.lock, tools/match17/tools/rec17.py): "hot" (PO 23/11) = chỉ ghi trận cầu đinh, và mỗi khung career
-    /// đá thật 1 trận cầu đinh BOT trên máy game (phát ở trang Trực tiếp). Đọc mỗi lần dùng: đổi file là có hiệu lực, không cần khởi động lại web.
+    /// Chế độ ghi hình (file record-mode cạnh match.lock, tools/match17/tools/rec17.py): "hot" (PO 23/11) = chỉ ghi trận cầu đinh;
+    /// "live" = như hot + mỗi khung career đá thật 1 trận cầu đinh BOT trên máy game để phát ở trang Trực tiếp (người bấm Tiếp tục chờ ~15 phút/trận).
+    /// Đọc mỗi lần dùng: đổi file là có hiệu lực, không cần khởi động lại web.
     /// </summary>
     public string RecordMode
     {
         get
         {
             if (o.LockFile is null || o.RecordingDir is null) return "off";
-            try { return File.ReadAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(o.LockFile))!, "record-mode")).Trim().ToLowerInvariant() is ("bot" or "all" or "hot") and var m ? m : "off"; }
+            try { return File.ReadAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(o.LockFile))!, "record-mode")).Trim().ToLowerInvariant() is ("bot" or "all" or "hot" or "live") and var m ? m : "off"; }
             catch (IOException) { return "off"; }
         }
     }
 
-    public bool HotLive => RecordMode == "hot";
+    public bool HotLive => RecordMode == "live";
 
     /// <summary>Trận cầu đinh BOT trong lúc "Tiếp tục" career: đá thật (COM–COM), ghi hình + HLS; không ghi được kết quả thì career mô phỏng trận đó.</summary>
     private async Task PlayHotAsync(HotFixture h, CancellationToken ct)

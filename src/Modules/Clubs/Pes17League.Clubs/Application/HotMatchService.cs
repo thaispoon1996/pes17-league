@@ -14,7 +14,7 @@ public sealed record HotFixture(Guid FixtureId, Guid MatchdayId, int Matchday, G
 /// Trận cầu đinh (PO 23/11: "chỉ trận cầu đinh giữa các đội mạnh, top đầu"):
 /// trận vòng tròn khi 2 đội đều đã đá ≥ <see cref="MinPlayed"/> trận → cả 2 trong top <see cref="Top"/> BXH giải;
 /// đầu mùa / vòng loại trực tiếp → cả 2 trong top <see cref="Top"/> sức mạnh (OVR đội hình) của giải; bán kết, chung kết luôn tính.
-/// Dùng cho: ghi hình chỉ trận cầu đinh (record-mode = hot), mỗi khung chọn 1 trận BOT đá thật trên máy game + phát trực tiếp
+/// Dùng cho: ghi hình chỉ trận cầu đinh (record-mode = hot), record-mode = live: mỗi khung chọn 1 trận BOT đá thật trên máy game + phát trực tiếp
 /// (<see cref="PickLiveAsync"/>), trang Trực tiếp liệt kê trận sắp tới.
 /// </summary>
 public sealed class HotMatchService(ClubsDbContext db, IOptionFileStore store, TimeProvider clock)

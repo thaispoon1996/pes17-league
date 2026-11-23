@@ -12,7 +12,7 @@
 <PageTitle>Trực tiếp</PageTitle>
 
 @* Trực tiếp (PO 07/11, mở lại PO 23/11 "giữa các đội mạnh, top đầu, tạo thêm 1 trang trực tiếp"): hình + tiếng trận đang đá trên máy game
-   (HLS từ bản ghi hình, chậm ~10 s; tự phát tắt tiếng), nhiều người xem cùng lúc, chỉ xem. record-mode = hot: chỉ trận cầu đinh được ghi/phát
+   (HLS từ bản ghi hình, chậm ~10 s; tự phát tắt tiếng), nhiều người xem cùng lúc, chỉ xem. record-mode = hot: chỉ trận cầu đinh được ghi/phát; live: thêm 1 trận cầu đinh BOT/khung đá thật
    (HotMatchService), mỗi khung career đá thật 1 trận cầu đinh BOT. Không hiện tỷ số/diễn biến riêng: sự kiện tới trước hình ~10 s → lộ bàn thắng. *@
 <style>
     .lvp .lv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -201,7 +201,8 @@
     string IdleText => Jobs.RecordMode switch
     {
         "off" => "Ghi hình đang tắt nên chưa phát trận nào.",
-        "hot" => "Trận cầu đinh (2 đội top đầu) được đá thật trên máy game và phát ở đây. Trận kế tiếp nằm ở danh sách bên cạnh.",
+        "hot" => "Trận cầu đinh (2 đội top đầu) đá trên máy game sẽ phát ở đây.",
+        "live" => "Trận cầu đinh (2 đội top đầu) được đá thật trên máy game và phát ở đây. Trận kế tiếp nằm ở danh sách bên cạnh.",
         _ => "Trận được ghi hình sẽ phát ở đây khi đang đá.",
     };
 
