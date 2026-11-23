@@ -427,9 +427,10 @@ def place(b: Board, formation: list[list[int]], slot_of: list[int]) -> tuple[int
                 raise PlanError(f"không dời được vị trí {later} (ô đích đang có người)")
             break
         todo = later
+    over = nav.shot("m17_gp")   # nhãn vai trên sân đọc 1 lượt; chỉ trỏ vào người đọc không ra / lệch vai (trỏ từng người ~3 s/người)
     for n in range(len(b.nodes)):
         want = formation[slot_of[n]][0]
-        if want == 0:
+        if want == 0 or _badge(over, b.nodes[n]) == ROLES[want]:
             continue
         b.go(n)
         if _role(b.im) == ROLES[want]:
@@ -464,6 +465,12 @@ def place(b: Board, formation: list[list[int]], slot_of: list[int]) -> tuple[int
     return moved, roles, miss
 
 
+def _badge(im: Image.Image, node: tuple[int, int]) -> str:
+    """Nhãn vai in trên sân cạnh người ở `node` (toạ độ bàn tay): "CB 82" nằm bên trái-trên chỗ bàn tay ~ (x-60..x-18, y-9..y+7)."""
+    x, y = node
+    return re.sub(r"[^A-Z]", "", ocr.rec(im, (x - 62, y - 10, x - 16, y + 8))[0].upper())
+
+
 def _role(im: Image.Image) -> str:
     """Vai của người đang trỏ (ô thông tin dưới sân: nhãn màu dưới tên)."""
     return re.sub(r"[^A-Z]", "", ocr.rec(im, _box((155, 586, 210, 607)))[0].upper())
@@ -493,13 +500,22 @@ def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | 
             store = json.loads(cache.read_text())
         except (OSError, ValueError):
             store = {}
+    graphs = store.get(key) or []
+    if isinstance(graphs, dict):   # bản cũ: 1 đồ thị/sơ đồ
+        graphs = [graphs]
+    good = None
+    if graphs:   # nhiều bố cục cho cùng sơ đồ (bố cục game tự xếp lúc chọn đội, bố cục sau khi kéo) → chọn cái có nhãn vai đúng chỗ
+        im = nav.shot("m17_gp")
+        score = [sum(_badge(im, tuple(q)) in ROLES for q in g["nodes"]) for g in graphs]
+        best = max(range(len(graphs)), key=lambda i: score[i])
+        good = graphs[best] if score[best] >= 9 else None
     for attempt in (0, 1):
         b = Board()
         b.roster = roster
         explored = False
         try:
-            if key in store and attempt == 0:
-                b.load(store[key])
+            if good and attempt == 0:
+                b.load(good)
                 b.look()
                 if isinstance(b.at, tuple):
                     b.press("Left")
@@ -514,10 +530,13 @@ def apply(want: list[int], formation: list[list[int]], roster: dict[int, str] | 
         except PlanError:
             if attempt or explored:
                 raise
-            store.pop(key, None)   # đồ thị cũ sai (game đang ở sơ đồ khác) → dò lại
+            if good in graphs:
+                graphs.remove(good)   # đồ thị cũ sai (game đang ở bố cục khác) → dò lại
             continue
         if cache:
-            store[key] = b.dump()   # toạ độ mới sau khi kéo
+            new = json.loads(json.dumps([b.pre, b.dump()] if b.pre["nodes"] != b.dump()["nodes"] else [b.dump()]))   # lúc vào + sau khi kéo
+            keep = [g for g in graphs if all(g["nodes"] != n["nodes"] for n in new)]
+            store[key] = (new + keep)[:4]
             cache.write_text(json.dumps(store))
         return {**r, "explored": explored or attempt == 1, "secs": round(time.monotonic() - t0, 1)}
     raise PlanError("không áp được đội hình")
@@ -579,6 +598,7 @@ def _apply(b: Board, want: list[int], formation: list[list[int]], roster: dict[i
             if b.shirt.get(n) != want[slot_of[n]]:
                 raise PlanError(f"vị trí {n}: game số áo {b.shirt.get(n)}, cần {want[slot_of[n]]}")
     benched = fix_bench(b, [x for x in (bench or [])[:VISIBLE] if x not in want[:11]]) if bench and roster else 0
+    b.pre = json.loads(json.dumps(b.dump()))   # chép (place sửa b.nodes tại chỗ); đổi người không dời vị trí → bố cục lúc vào màn
     moved, roles, miss = place(b, formation, slot_of)   # sau cùng: kéo vị trí làm đồ thị nhảy cũ lệch dần
     return {"swaps": swaps, "bench": benched, "moved": moved, "roles": roles, "miss": miss}
 

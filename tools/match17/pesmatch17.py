@@ -321,6 +321,18 @@ GP_TITLE = (80, 112, 400, 140)   # tiêu đề GAME PLAN khung đội nhà; khun
 GP_WORDS = ("Menu", "Lineup", "Preset", "Instructions", "Formation", "Settings", "Captain", "Taker", "Join")   # tiêu đề các màn trong GAME PLAN
 
 
+def _gp_wait(word: str, secs: float) -> bool:
+    """Chờ tiêu đề màn GAME PLAN có `word` (thay cho chờ cố định: màn mở nhanh chậm tuỳ lúc)."""
+    end = time.monotonic() + secs
+    while True:
+        if word in gp_title(nav.shot("m17_gp")):
+            time.sleep(0.4)   # tiêu đề hiện trước khi màn nhận nút
+            return True
+        if time.monotonic() > end:
+            return False
+        time.sleep(0.3)
+
+
 def gp_title(im: Image.Image) -> str:
     return " ".join(ocr.rec(im, (x + d, y, x2 + d, y2))[0] for x, y, x2, y2 in [GP_TITLE] for d in (0, gameplan17.AWAY_DX))   # "Main Menu" / "Lineup/Edit Position" góc trên trái màn GAME PLAN
 UNI_COUNT = {"home": (530, 515, 630, 560), "away": (995, 515, 1095, 560)}   # số "2/3" dưới hình cầu thủ trong menu UNIFORM
@@ -848,12 +860,12 @@ def game_plan(squads: str, teams: list[tuple[int, str, int]], strict: bool = Fal
     doc = json.loads(Path(squads).read_text())
     names = player_names()
     miss: list = []
-    nav.pad("Right w:0.8 A w:4")
+    nav.pad("Right w:0.6 A w:1.5")
     try:
-        if "Menu" not in gp_title(nav.shot("m17_gp")):
+        if not _gp_wait("Menu", 6):
             raise NavError("game_plan: không mở được GAME PLAN")
-        nav.pad("A w:2")
-        if "Lineup" not in gp_title(nav.shot("m17_gp")):
+        nav.pad("A w:0.8")
+        if not _gp_wait("Lineup", 4):
             raise NavError("game_plan: không mở được Lineup/Edit Position")
         for team, side, slot in teams:
             lst, formation = doc[str(team)], doc["_formations"][str(team)]
@@ -938,10 +950,11 @@ def wait_go(squads: str, home: int, away: int, setup, replan=None, plan_teams: l
             pass
         on_kick = kickoff_screen(nav.shot("m17_wait"))
         if on_kick and latest != squads:
-            if replan and all(has_formation(latest, t) for t in plan_teams) and (game_has(latest, home, away) or plan_only(latest, home, away, plan_teams)):
+            same = game_has(latest, home, away)
+            if replan and all(has_formation(latest, t) for t in plan_teams) and (same or plan_only(latest, home, away, plan_teams)):
                 log("đội hình đổi → kiểm/đổi trong GAME PLAN")
-                replan(latest, not game_has(latest, home, away))
-            elif not game_has(latest, home, away):
+                replan(latest, not same)
+            elif not same:
                 log("đội hình 2 đội đổi → cài lại game")
                 deploy(latest)
                 setup(True)
@@ -1050,6 +1063,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         # Không mở lại game → đội hình trong game có thể đã khác gói (trận trước đổi trong GAME PLAN, game tự thay người) → luôn kiểm
         # trong GAME PLAN (đã đúng: ~8 s). "plan" = bắt buộc (lỗi thì cài lại game); còn lại lỗi chỉ ghi log.
         must = restarted == "plan"
+        # Web giống gói đã cài vẫn kiểm: chọn đội ở menu, game tự đổi người/sơ đồ của gói (vd. thủ môn xếp đá DMF, thử 23/11) → ~30 s
         pending = squads if plan and restarted is not True and all(has_formation(squads, t) for t in plan_teams) else None
         restarted = restarted is True
         if healed and not restarted:   # game vừa mở lại cùng container → đã nạp gói mới nhất trên đĩa
