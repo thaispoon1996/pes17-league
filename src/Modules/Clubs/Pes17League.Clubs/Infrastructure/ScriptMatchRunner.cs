@@ -56,6 +56,7 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         {
             psi.Environment["PESMATCH_GRAPHICS"] = Path.GetFullPath(graphicsDir);
             psi.Environment["PESMATCH_COMPETITION"] = r.CompetitionId?.ToString("N") ?? "";
+            psi.Environment["PESMATCH_COMPETITION_NAME"] = r.CompetitionName ?? "";   // thay chữ "Exhibition" trên dải tiêu đề (tools/pes17db/compename.py)
         }
 
         using var p = Process.Start(psi)!;

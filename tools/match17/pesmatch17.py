@@ -646,6 +646,29 @@ def ensure_house() -> bool:
     return False
 
 
+def ensure_name() -> bool:
+    """Tên giải thay chữ "Exhibition" trên dải tiêu đề (PO 23/11; tools/pes17db/compename.py, file chữ của game).
+    Trận có giải → cài gói chữ tên giải; trận không giải → gỡ. Trả True nếu đã đổi (game chỉ đọc chữ lúc mở → mở lại game).
+    Lỗi chỉ ghi log."""
+    if not GRAPHICS:
+        return False
+    name = os.environ.get("PESMATCH_COMPETITION_NAME", "").strip()
+    if not name and not (OUT / "name.active").exists():
+        return False
+    try:
+        r = subprocess.run([sys.executable, str(REPO / "tools" / "pes17db" / "compename.py"), "install", name or "none"],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode:
+            log(f"tên giải lỗi: {(r.stderr or r.stdout).strip()[-200:]}")
+            return False
+        if json.loads(r.stdout).get("changed"):
+            log(f"tên giải đổi ({name or 'Exhibition'}): mở lại game")
+            return True
+    except Exception as e:
+        log(f"tên giải lỗi: {e}")
+    return False
+
+
 def ensure_game(squads: str, home: int, away: int) -> bool:
     """Cài đội hình nếu 2 đội của trận khác game (khởi động lại game). Trả True nếu đã cài lại."""
     if game_has(squads, home, away):
@@ -775,6 +798,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         gs = game_settings()
         gfx = ensure_quality(gs.get("quality"))   # ghi trước: cài đội hình (nếu có) cũng mở lại game
         gfx = ensure_house() or gfx               # đồ hoạ chung mọi trận (house.active)
+        gfx = ensure_name() or gfx                # tên giải trên dải tiêu đề (name.active)
         gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active + house.active
         restarted = ensure_game(squads, home, away)
         if gfx and not restarted:

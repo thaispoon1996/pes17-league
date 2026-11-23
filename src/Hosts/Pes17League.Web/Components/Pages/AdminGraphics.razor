@@ -88,6 +88,8 @@
     <h2>Menu trong game theo giải</h2>
     <p class="muted">Mỗi giải một gói menu: chọn một bộ menu có sẵn trên máy game, tải ảnh nền riêng (màn chọn đội và trước trận, 1920×1080, ảnh được co phủ đầy khung), hoặc cả hai.
         Bấm <b>Dựng gói</b> để lưu. Khi trận của giải lên máy game, máy tự cài gói của giải. Nếu khác gói đang cài, game mở lại mất 1–2 phút. Giải chưa có gói dùng giao diện gốc.</p>
+    <p class="muted">Dải tiêu đề trên khung giới thiệu đội hình tự hiện tên giải (thay chữ "Exhibition"), lấy theo tên giải trên web. Trận giao hữu vẫn là "Exhibition".
+        Chữ này game chỉ đọc lúc mở, nên khi trận sau khác giải trận trước, game mở lại mất 1–2 phút.</p>
     <p class="muted">Gói của giải đè lên nền menu của gói chung. Ảnh trong menu tạm dừng mỗi bộ một bố cục nên chưa cho thay.</p>
     @if (packsError is not null) { <p class="warn">Không đọc được danh sách bộ menu: @packsError</p> }
     @if (comps is null) { <p class="muted">Đang tải…</p> }

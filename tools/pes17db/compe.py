@@ -129,6 +129,8 @@ def extras(compe: bool) -> list[str]:
     out = ["pes17league.cpk"]
     if (OUT / "house.active").is_file() and (OUT / "house.active").read_text().strip():
         out.append("pes17house.cpk")
+    if (OUT / "name.active").is_file() and (OUT / "name.active").read_text().strip():
+        out.append("pes17name.cpk")   # tên giải trên dải tiêu đề (compename.py)
     return out + ([NAME] if compe else [])
 
 

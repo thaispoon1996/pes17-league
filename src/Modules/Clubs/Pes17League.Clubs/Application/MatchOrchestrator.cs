@@ -19,7 +19,7 @@ public enum MatchSide { Home, Away }
 /// <param name="CompetitionId">Giải của trận (PO 23/11): bộ chạy cài gói đồ hoạ menu của giải (trang /admin/do-hoa) trước khi vào trận.</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
     bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null,
-    string? CompetitionLogo = null, bool Hot = false, Guid? CompetitionId = null);
+    string? CompetitionLogo = null, bool Hot = false, Guid? CompetitionId = null, string? CompetitionName = null);
 
 /// <summary>Báo "đội hình vừa đổi" trong lúc game dựng sẵn chờ Sẵn sàng (gộp nhiều lần báo thành 1).</summary>
 public sealed class SquadSync
@@ -338,10 +338,10 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         var index = await db.ClubPesMappings.Where(m => m.PatchVersionId == season.PatchVersionId && (m.ClubId == f.HomeClubId || m.ClubId == f.AwayClubId))
             .ToDictionaryAsync(m => m.ClubId, m => m.PesClubIndex, ct);
         var comp = f.CompetitionEditionId is { } ed
-            ? await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select new { c.Id, c.LogoPath }).SingleOrDefaultAsync(ct)
+            ? await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select new { c.Id, c.LogoPath, c.Name }).SingleOrDefaultAsync(ct)
             : null;
         return new MatchRunRequest(fixtureId, container, await store.ReadAsync(build.StoragePath!, ct), index[f.HomeClubId], index[f.AwayClubId], humanSide,
-            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: comp?.LogoPath, Hot: await HotAsync(db, fixtureId, ct), CompetitionId: comp?.Id);
+            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: comp?.LogoPath, Hot: await HotAsync(db, fixtureId, ct), CompetitionId: comp?.Id, CompetitionName: comp?.Name);
     }
 
     /// <summary>Trận cầu đinh? Lỗi tính BXH/sức mạnh thì coi như không (chỉ ảnh hưởng ghi hình).</summary>
