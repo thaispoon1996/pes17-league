@@ -15,9 +15,10 @@ public enum MatchSide { Home, Away }
 /// <param name="Sync">Cùng <paramref name="Refresh"/> (PES17, PO 21/11): HLV sửa đội hình trong lúc chờ → bộ chạy dựng lại ảnh chụp và
 /// gửi "sync FILE" để game cài lại ngay, lúc bấm Sẵn sàng thường không phải khởi động lại game nữa.</param>
 /// <param name="CompetitionLogo">Logo giải của trận (đường dẫn web /img/upload/…, PO 22/11): hiện góc phải trên màn hình chơi (stream).</param>
+/// <param name="Hot">Trận cầu đinh (<see cref="HotMatchService"/>, PO 23/11): record-mode = hot thì chỉ ghi hình + phát trực tiếp trận này.</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
     bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null,
-    string? CompetitionLogo = null);
+    string? CompetitionLogo = null, bool Hot = false);
 
 /// <summary>Báo "đội hình vừa đổi" trong lúc game dựng sẵn chờ Sẵn sàng (gộp nhiều lần báo thành 1).</summary>
 public sealed class SquadSync
@@ -339,7 +340,14 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             ? await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select c.LogoPath).SingleOrDefaultAsync(ct)
             : null;
         return new MatchRunRequest(fixtureId, container, await store.ReadAsync(build.StoragePath!, ct), index[f.HomeClubId], index[f.AwayClubId], humanSide,
-            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: logo);
+            ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: logo, Hot: await HotAsync(db, fixtureId, ct));
+    }
+
+    /// <summary>Trận cầu đinh? Lỗi tính BXH/sức mạnh thì coi như không (chỉ ảnh hưởng ghi hình).</summary>
+    private async Task<bool> HotAsync(ClubsDbContext db, Guid fixtureId, CancellationToken ct)
+    {
+        try { return await new HotMatchService(db, store, clock).IsHotAsync(fixtureId, ct); }
+        catch (Exception e) when (e is not OperationCanceledException) { return false; }
     }
 
     /// <summary>ID PES → cầu thủ theo patch của mùa; số áo (chụp màn) → cầu thủ đang ở CLB. Không ghép được thì bỏ dòng đó.</summary>

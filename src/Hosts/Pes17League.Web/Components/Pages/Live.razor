@@ -1,64 +1,252 @@
 @page "/truc-tiep"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
 @implements IAsyncDisposable
 @inject MatchJobService Jobs
 @inject LeagueQueries Q
 @inject IJSRuntime JS
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject IOptionFileStore Store
+@inject TimeProvider Clock
 
-@* Xem trực tiếp (PO 07/11): hình + tiếng trận đang đá (HLS từ bản ghi hình, chậm ~10 s; tự phát tắt tiếng), nhiều người xem cùng lúc, chỉ xem — không gửi phím vào game.
-   Không hiện tỷ số/diễn biến riêng: sự kiện tới trước hình ~10 s → lộ bàn thắng. Trận xong → link trang trận. *@
-<section class="hero">
-    <span class="pill"><span class="ms ic" aria-hidden="true">live_tv</span>Trực tiếp</span>
-    <h1>@(cur is null ? "Chưa có trận đang đá" : OnAir ? "Đang đá" : "Sắp đá")</h1>
-</section>
-@if (cur is { } m)
-{
-    var f = m.Fixture; var s = m.Season;
-    <section class="scoreboard">
-        <div class="side"><Crest Name="@s.Clubs[f.Home]" Logo="@s.Logo(f.Home)" Large="true" /><b>@s.Clubs[f.Home]</b></div>
-        <div class="big">vs</div>
-        <div class="side"><Crest Name="@s.Clubs[f.Away]" Logo="@s.Logo(f.Away)" Large="true" /><b>@s.Clubs[f.Away]</b></div>
-        <p class="match-meta">@(m.Edition is { } ed ? $"{ed.Name} · " : "")@m.Round · vòng @f.Matchday</p>
-    </section>
-    @if (OnAir)
-    {
-        <section class="panel highlight"><video @ref="video" muted autoplay playsinline controls></video></section>
-        <p class="hl-doc muted">Hình chậm khoảng 10 giây so với trận thật · bấm 🔊 trên video để nghe tiếng · chỉ xem, không điều khiển được trận.</p>
-    }
-    else
-    {
-        <section class="panel"><p>@StageText(Jobs.Stage)</p></section>
-    }
-}
-else
-{
-    <section class="panel">
-        <p class="muted">@(Jobs.Running ? "Đang chuẩn bị trận…" : "Khi có trận đang đá (BOT hoặc trận của người chơi), hình hiện ở đây.")</p>
-        <a class="btn" href="lich">Lịch thi đấu →</a>
-    </section>
-}
-@if (done is { Fixture.Status: FixtureStatus.Played } d)
-{
-    var f = d.Fixture; var s = d.Season;
-    <section class="panel">
-        <p>Trận vừa xong: <b>@s.Clubs[f.Home] @f.HomeGoals – @f.AwayGoals @s.Clubs[f.Away]</b>
-            @if (f.HomePenalties is { } ph) { <small>(pen @ph–@f.AwayPenalties)</small> }
-        </p>
-        <a class="btn" href="tran/@f.Id"><span class="ms ic" aria-hidden="true">bar_chart</span>Thống kê</a>
-    </section>
-}
+<PageTitle>Trực tiếp</PageTitle>
+
+@* Trực tiếp (PO 07/11, mở lại PO 23/11 "giữa các đội mạnh, top đầu, tạo thêm 1 trang trực tiếp"): hình + tiếng trận đang đá trên máy game
+   (HLS từ bản ghi hình, chậm ~10 s; tự phát tắt tiếng), nhiều người xem cùng lúc, chỉ xem. record-mode = hot: chỉ trận cầu đinh được ghi/phát
+   (HotMatchService), mỗi khung career đá thật 1 trận cầu đinh BOT. Không hiện tỷ số/diễn biến riêng: sự kiện tới trước hình ~10 s → lộ bàn thắng. *@
+<style>
+    .lvp .lv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .lvp .lv-head h1 { margin: 0; font: 800 clamp(34px, 5vw, 48px)/.95 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .lvp .lv-lamp { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 12px; border: 1px solid #2c303b; background: #1c1f2a;
+        font: 800 17px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #9ba7b5; }
+    .lvp .lv-lamp::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #2c303b; }
+    .lvp .lv-lamp.on { color: #ff4d5e; border-color: rgba(255,77,94,.5); }
+    .lvp .lv-lamp.on::before { background: #ff4d5e; box-shadow: 0 0 10px #ff4d5e; animation: lv-pulse 1.4s ease-in-out infinite; }
+    .lvp .lv-lamp.prep { color: #ffb95f; }
+    .lvp .lv-lamp.prep::before { background: #ffb95f; }
+    @@keyframes lv-pulse { 50% { opacity: .25; } }
+    @@media (prefers-reduced-motion: reduce) { .lvp .lv-lamp.on::before { animation: none; } }
+    .lvp .lv-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    /* Màn hình phát: khung 16:9, video khi đang phát, "bảng chờ" khi không. */
+    .lvp .lv-screen { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 1px solid #2c303b; background:
+        repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 2px, transparent 2px 4px), radial-gradient(120% 90% at 50% 110%, rgba(0,255,135,.12), transparent 60%), #0b0f18; }
+    .lvp .lv-screen video { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; }
+    .lvp .lv-card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center; }
+    .lvp .lv-card b { font: 800 clamp(26px, 4.4vw, 44px)/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .lvp .lv-card span { color: #9ba7b5; max-width: 46ch; font-size: 14px; }
+    .lvp .lv-card .ms { font-size: 44px; color: #2c303b; }
+    .lvp .lv-card.prep .ms { color: #ffb95f; }
+    /* Dải dưới màn hình kiểu truyền hình: không có tỷ số (lộ bàn trước hình), chỉ 2 đội + giải + lý do cầu đinh. */
+    .lvp .lv-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin-top: 10px; padding: 12px 14px; border-radius: 12px;
+        background: #1c1f2a; border: 1px solid #2c303b; }
+    .lvp .lv-team { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .lvp .lv-team.away { flex-direction: row-reverse; text-align: right; }
+    .lvp .lv-team b { font: 800 clamp(20px, 3vw, 30px)/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lvp .lv-vs { font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #9ba7b5; }
+    .lvp .lv-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; color: #9ba7b5; font-size: 14px; }
+    .lvp .lv-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: rgba(255,185,95,.12); color: #ffb95f; font-size: 13px; }
+    .lvp .lv-chip .ms { font-size: 16px; }
+    .lvp .lv-chip.me { background: rgba(0,255,135,.12); color: #00ff87; }
+    .lvp .lv-note { color: #9ba7b5; font-size: 13px; margin: 8px 0 0; }
+    .lvp .lv-side h2 { margin: 0 0 10px; font: 800 24px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .lvp .lv-side section + section { margin-top: 22px; }
+    .lvp .lv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .lvp .lv-item { padding: 10px 12px; border-radius: 12px; background: #1c1f2a; border: 1px solid #2c303b; }
+    .lvp .lv-when { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: #9ba7b5; font-size: 12px; margin-bottom: 6px; }
+    .lvp .lv-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: center; }
+    .lvp .lv-pair span { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; color: #dee1f7; font-size: 14px; }
+    .lvp .lv-pair span:last-child { flex-direction: row-reverse; text-align: right; }
+    .lvp .lv-pair em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lvp .lv-pair small { color: #9ba7b5; font-weight: 400; flex: none; }
+    .lvp .lv-pair .crest { width: 24px; height: 24px; flex: none; font-size: 9px; }
+    .lvp .lv-pair b { font: 800 18px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #9ba7b5; }
+    .lvp .lv-pair b.sc { font-size: 22px; color: #dee1f7; }
+    .lvp .lv-why { margin: 6px 0 0; color: #ffb95f; font-size: 12px; }
+    .lvp a.lv-item { display: block; color: inherit; text-decoration: none; }
+    .lvp a.lv-item:hover, .lvp a.lv-item:focus-visible { border-color: rgba(0,255,135,.45); outline: none; }
+    .lvp .lv-empty { color: #9ba7b5; font-size: 14px; margin: 0; }
+    .lvp .lv-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 12px; border: 1px solid #2c303b; background: #262a35;
+        color: #dee1f7; font: 800 16px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; text-decoration: none; }
+    .lvp .lv-btn .ms { font-size: 18px; }
+    .lvp .lv-side .lv-btn { margin-top: 12px; }
+    .lvp .lv-btn:focus-visible { outline: 2px solid #00ff87; outline-offset: 2px; }
+    @@media (max-width: 900px) { .lvp .lv-grid { grid-template-columns: minmax(0, 1fr); } .lvp .lv-bar { padding: 10px; } }
+</style>
+
+<div class="lvp">
+    <div class="lv-head">
+        <h1>Trực tiếp</h1>
+        <span class="lv-lamp @(OnAir ? "on" : cur is not null ? "prep" : "")">@(OnAir ? "Đang phát" : cur is not null ? "Sắp phát" : "Không có trận")</span>
+    </div>
+    <div class="lv-grid">
+        <div>
+            <div class="lv-screen">
+                @if (OnAir)
+                {
+                    <video @ref="video" muted autoplay playsinline controls></video>
+                }
+                else if (cur is not null)
+                {
+                    <div class="lv-card prep"><span class="ms" aria-hidden="true">sports_soccer</span><b>Sắp lên sóng</b><span>@StageText(Jobs.Stage)</span></div>
+                }
+                else
+                {
+                    <div class="lv-card">
+                        <span class="ms" aria-hidden="true">live_tv</span>
+                        <b>Chưa có trận đang phát</b>
+                        <span>@IdleText</span>
+                    </div>
+                }
+            </div>
+            @if (cur is { } m)
+            {
+                var f = m.Fixture; var s = m.Season;
+                <div class="lv-bar">
+                    <div class="lv-team"><Crest Name="@s.Clubs[f.Home]" Logo="@s.Logo(f.Home)" Large="true" /><b>@s.Clubs[f.Home]</b></div>
+                    <div class="lv-vs">vs</div>
+                    <div class="lv-team away"><Crest Name="@s.Clubs[f.Away]" Logo="@s.Logo(f.Away)" Large="true" /><b>@s.Clubs[f.Away]</b></div>
+                </div>
+                <p class="lv-meta">
+                    <span>@(m.Edition is { } ed ? $"{ed.Name} · " : "")@m.Round · khung @f.Matchday</span>
+                    @if (curHot is { } h) { <span class="lv-chip"><span class="ms" aria-hidden="true">local_fire_department</span>@h.Reason</span> }
+                </p>
+                @if (OnAir)
+                {
+                    <p class="lv-note">Hình chậm khoảng 10 giây so với trận thật. Bấm loa trên video để nghe tiếng. Chỉ xem, không điều khiển được trận.</p>
+                }
+            }
+            @if (done is { Fixture.Status: FixtureStatus.Played } d)
+            {
+                var f = d.Fixture; var s = d.Season;
+                <p class="lv-meta">Trận vừa xong: <b>@s.Clubs[f.Home] @f.HomeGoals – @f.AwayGoals @s.Clubs[f.Away]</b>
+                    @if (f.HomePenalties is { } ph) { <small>(pen @ph–@f.AwayPenalties)</small> }
+                    <a class="lv-btn" href="tran/@f.Id"><span class="ms" aria-hidden="true">bar_chart</span>Xem thống kê</a>
+                </p>
+            }
+        </div>
+        <div class="lv-side">
+            <section>
+                <h2>Trận cầu đinh sắp tới</h2>
+                @if (upcoming is null)
+                {
+                    <p class="lv-empty">Đang tải…</p>
+                }
+                else if (upcoming.Count == 0)
+                {
+                    <p class="lv-empty">3 khung tới chưa có trận nào giữa 2 đội top @HotMatchService.Top.</p>
+                }
+                else
+                {
+                    <ul class="lv-list">
+                        @foreach (var h in upcoming)
+                        {
+                            <li class="lv-item">
+                                <div class="lv-when"><span>Khung @h.Matchday · @h.Competition</span>@if (h.Human) { <span class="lv-chip me">Trận của bạn</span> }</div>
+                                <div class="lv-pair">
+                                    <span><Crest Name="@h.HomeName" Logo="@logos.GetValueOrDefault(h.Home)" /><em>@h.HomeName</em>@if (h.HomePos is { } hp) { <small>#@hp</small> }</span>
+                                    <b>vs</b>
+                                    <span><Crest Name="@h.AwayName" Logo="@logos.GetValueOrDefault(h.Away)" /><em>@h.AwayName</em>@if (h.AwayPos is { } ap) { <small>#@ap</small> }</span>
+                                </div>
+                                <p class="lv-why">@h.Reason</p>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+            <section>
+                <h2>Đã phát</h2>
+                @if (recent is { Count: > 0 })
+                {
+                    <div class="lv-list">
+                        @foreach (var r in recent)
+                        {
+                            <a class="lv-item" href="tran/@r.Id">
+                                <div class="lv-when"><span>Khung @r.Matchday · @r.Competition</span><span>@r.PlayedAt?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM HH:mm")</span></div>
+                                <div class="lv-pair">
+                                    <span><Crest Name="@r.Home" Logo="@r.HomeLogo" /><em>@r.Home</em></span>
+                                    <b class="sc">@r.HomeGoals–@r.AwayGoals</b>
+                                    <span><Crest Name="@r.Away" Logo="@r.AwayLogo" /><em>@r.Away</em></span>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                    <a class="lv-btn" href="ban-thang"><span class="ms" aria-hidden="true">movie</span>Bàn thắng & highlight</a>
+                }
+                else
+                {
+                    <p class="lv-empty">Chưa có trận nào được ghi hình.</p>
+                }
+            </section>
+        </div>
+    </div>
+</div>
 
 @code {
     MatchPage? cur, done;
     Guid? doneId;
+    HotFixture? curHot;
     ElementReference video;
     string? playing;   // playlist đang phát ở trình duyệt
+    IReadOnlyList<HotFixture>? upcoming;
+    Dictionary<Guid, string?> logos = [];
+    List<Recent>? recent;
+
+    record Recent(Guid Id, int Matchday, string Competition, string Home, string Away, string? HomeLogo, string? AwayLogo, int? HomeGoals, int? AwayGoals, DateTimeOffset? PlayedAt);
+
+    /// <summary>Danh sách cầu đinh tính BXH + sức mạnh (vài trăm ms) → dùng chung cho mọi người xem 2 phút.</summary>
+    static (DateTimeOffset At, IReadOnlyList<HotFixture> Hot, Dictionary<Guid, string?> Logos)? cache;
 
     bool OnAir => cur is not null && Jobs.Running && Jobs.LiveFixtureId == cur.Fixture.Id;
+
+    string IdleText => Jobs.RecordMode switch
+    {
+        "off" => "Ghi hình đang tắt nên chưa phát trận nào.",
+        "hot" => "Trận cầu đinh (2 đội top đầu) được đá thật trên máy game và phát ở đây. Trận kế tiếp nằm ở danh sách bên cạnh.",
+        _ => "Trận được ghi hình sẽ phát ở đây khi đang đá.",
+    };
 
     protected override async Task OnInitializedAsync()
     {
         Jobs.Changed += OnJob;
         await SyncAsync();
+        await LoadListsAsync();
+    }
+
+    async Task LoadListsAsync()
+    {
+        await using var db = await Dbs.CreateDbContextAsync();
+        var now = Clock.GetUtcNow();
+        if (cache is not { } c || now - c.At > TimeSpan.FromMinutes(2))
+        {
+            var season = await db.Seasons.AsNoTracking().Where(s => s.Status == SeasonStatus.Active).OrderBy(s => s.Number).Select(s => (Guid?)s.Id).FirstOrDefaultAsync();
+            IReadOnlyList<HotFixture> hot = [];
+            if (season is { } sid)
+            {
+                var mds = await db.Matchdays.AsNoTracking().Where(m => m.SeasonId == sid && m.Status != MatchdayStatus.Completed && m.Status != MatchdayStatus.Settled)
+                    .OrderBy(m => m.Number).Take(3).Select(m => m.Id).ToListAsync();
+                try { hot = [.. (await new HotMatchService(db, Store, Clock).ForMatchdaysAsync(mds, true)).Where(h => h.Status == FixtureStatus.Scheduled).Take(8)]; }
+                catch (Exception e) when (e is not OperationCanceledException) { hot = []; }
+            }
+            var ids = hot.SelectMany(h => new[] { h.Home, h.Away }).Distinct().ToList();
+            var lg = await db.Clubs.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.LogoPath);
+            cache = c = (now, hot, lg);
+        }
+        (upcoming, logos) = (c.Hot, c.Logos);
+        var rows = await (from a in db.MatchAttempts.AsNoTracking()
+                          where a.RecordingPath != null && a.Outcome == MatchAttemptOutcome.Finished
+                          join f in db.Fixtures on a.FixtureId equals f.Id
+                          where f.Status == FixtureStatus.Played
+                          join md in db.Matchdays on f.MatchdayId equals md.Id
+                          join h in db.Clubs on f.HomeClubId equals h.Id
+                          join w in db.Clubs on f.AwayClubId equals w.Id
+                          join e in db.Editions on f.CompetitionEditionId equals e.Id into ee
+                          from e in ee.DefaultIfEmpty()
+                          join co in db.Competitions on e.CompetitionId equals co.Id into cc
+                          from co in cc.DefaultIfEmpty()
+                          orderby f.PlayedAt descending
+                          select new Recent(f.Id, md.Number, co != null ? co.Name : "Giao hữu", h.Name, w.Name, h.LogoPath, w.LogoPath, f.HomeGoals, f.AwayGoals, f.PlayedAt))
+            .Take(12).ToListAsync();
+        recent = [.. rows.DistinctBy(r => r.Id).Take(6)];
     }
 
     /// <summary>Trận đang đá = trận của bước hiện tại khi việc còn chạy; đổi trận / việc dừng → trận trước thành "vừa xong".</summary>
@@ -69,6 +257,15 @@ else
         {
             if (cur is not null) doneId = cur.Fixture.Id;
             cur = id is { } i ? await Q.MatchAsync(i) : null;
+            curHot = null;
+            if (id is { } hid)
+                try
+                {
+                    await using var db = await Dbs.CreateDbContextAsync();
+                    var md = await db.Fixtures.AsNoTracking().Where(f => f.Id == hid).Select(f => f.MatchdayId).SingleAsync();
+                    curHot = (await new HotMatchService(db, Store, Clock).ForMatchdaysAsync([md], false)).FirstOrDefault(h => h.FixtureId == hid);
+                }
+                catch (Exception e) when (e is not OperationCanceledException) { }
         }
         var d = doneId ?? (Jobs.Running ? null : Jobs.CurrentFixtureId);
         if (d != done?.Fixture.Id || done is { Fixture.Status: not FixtureStatus.Played }) done = d is { } j ? await Q.MatchAsync(j) : null;
@@ -81,8 +278,8 @@ else
         "teams" => "Đang chọn đội…",
         "ready" => "Chờ người chơi bấm Sẵn sàng…",
         "loading" => "Đang tải trận, hình hiện khi bóng lăn…",
-        "kickoff" => "Trận đang đá nhưng không có hình trực tiếp (ghi hình lỗi?).",
-        "fulltime" => "Hết giờ — đang đọc thống kê.",
+        "kickoff" => "Trận đang đá nhưng không có hình trực tiếp (trận này không được ghi hình).",
+        "fulltime" => "Hết giờ, đang đọc thống kê.",
         _ => "Đang chuẩn bị trận…",
     };
 
@@ -99,7 +296,13 @@ else
         catch (JSDisconnectedException) { }
     }
 
-    void OnJob() => InvokeAsync(async () => { await SyncAsync(); StateHasChanged(); });
+    void OnJob() => InvokeAsync(async () =>
+    {
+        var was = done?.Fixture.Id;
+        await SyncAsync();
+        if (done?.Fixture.Id != was) await LoadListsAsync();   // trận vừa xong → cập nhật "Đã phát"
+        StateHasChanged();
+    });
 
     public async ValueTask DisposeAsync()
     {

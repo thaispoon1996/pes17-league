@@ -20,6 +20,7 @@ namespace Pes17League.Clubs.Infrastructure;
 /// <paramref name="liveDir"/>: có (cùng ghi hình) → thêm HLS xem trực tiếp (PESMATCH_LIVE) {liveDir}/{fixture}.m3u8, sự kiện "live" khi bắt đầu ghi.
 /// <paramref name="logoDir"/>: thư mục logo tải lên (LogoStore) — trận có <see cref="MatchRunRequest.CompetitionLogo"/> và file có thật
 /// → PESMATCH_LOGO = đường dẫn file (bộ chạy PES17 đặt logo lên màn hình chơi).
+/// <see cref="MatchRunRequest.Hot"/>: PESMATCH_HOT=1 (trận cầu đinh, PO 23/11).
 /// <paramref name="lockFile"/>: khoá "đang đá" của bộ chạy (PESMATCH_LOCK, nội dung "PID trận"). Bộ chạy bị dừng ngang (web dừng ngay sau "end",
 /// huỷ, lỗi) không kịp tự xoá → xoá hộ khi khoá còn ghi PID của nó, kẻo sync.sh tưởng vẫn đang đá (PO 22/11).
 /// </summary>
@@ -48,6 +49,7 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         if (logoDir is not null && r.CompetitionLogo is { Length: > 0 } logo && Path.Combine(Path.GetFullPath(logoDir), Path.GetFileName(logo)) is var lf && File.Exists(lf))
             psi.Environment["PESMATCH_LOGO"] = lf;
         if (lockFile is not null) psi.Environment["PESMATCH_LOCK"] = Path.GetFullPath(lockFile);
+        if (r.Hot) psi.Environment["PESMATCH_HOT"] = "1";   // trận cầu đinh: record-mode = hot chỉ ghi trận này (tools/match17/tools/rec17.py)
 
         using var p = Process.Start(psi)!;
         var pid = p.Id;

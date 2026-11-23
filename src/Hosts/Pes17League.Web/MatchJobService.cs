@@ -205,11 +205,35 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     {
         await using var db = await dbs.CreateDbContextAsync(ct);
         var career = new Pes17CareerService(db, store, clock);
-        var r = await career.ContinueAsync(maxSlots, Write, includeMine, mineNow, ct);
+        var r = await career.ContinueAsync(maxSlots, Write, includeMine, mineNow, ct, HotLive ? PlayHotAsync : null);
         foreach (var e in r.Errors.Take(5)) Write($"LỖI {e}");
         Write($"Xong: mô phỏng {r.Simulated} trận" + (r.SeasonFinished ? " — mùa giải đã kết thúc." : "."));
         if (r.MyFixtureId is { } f) Write($"Tới trận của bạn: {Name(f)}");
     });
+
+    /// <summary>
+    /// Chế độ ghi hình (file record-mode cạnh match.lock, tools/match17/tools/rec17.py): "hot" (PO 23/11) = chỉ ghi trận cầu đinh, và mỗi khung career
+    /// đá thật 1 trận cầu đinh BOT trên máy game (phát ở trang Trực tiếp). Đọc mỗi lần dùng: đổi file là có hiệu lực, không cần khởi động lại web.
+    /// </summary>
+    public string RecordMode
+    {
+        get
+        {
+            if (o.LockFile is null || o.RecordingDir is null) return "off";
+            try { return File.ReadAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(o.LockFile))!, "record-mode")).Trim().ToLowerInvariant() is ("bot" or "all" or "hot") and var m ? m : "off"; }
+            catch (IOException) { return "off"; }
+        }
+    }
+
+    public bool HotLive => RecordMode == "hot";
+
+    /// <summary>Trận cầu đinh BOT trong lúc "Tiếp tục" career: đá thật (COM–COM), ghi hình + HLS; không ghi được kết quả thì career mô phỏng trận đó.</summary>
+    private async Task PlayHotAsync(HotFixture h, CancellationToken ct)
+    {
+        _names[h.FixtureId] = $"{h.HomeName} – {h.AwayName}";
+        var r = await Orchestrator().PlayFixtureAsync(h.FixtureId, null, ct: ct);
+        Write(r.Played ? $"Trận cầu đinh đã ghi kết quả: {h.HomeName} – {h.AwayName}." : $"Trận cầu đinh chưa ghi được kết quả ({r.LastError}) — mô phỏng thay.");
+    }
 
     /// <summary>Đang đá BOT → admin được chen ngang (<see cref="PlayHumanNowAsync"/>).</summary>
     public bool CanPreemptBots => Running && Title == "Đá các trận BOT";

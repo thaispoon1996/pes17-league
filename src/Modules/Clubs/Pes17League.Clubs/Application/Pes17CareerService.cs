@@ -110,9 +110,12 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
     /// <paramref name="includeMine"/> = mô phỏng luôn trận của người chơi ở mọi khung (chạy thử cả mùa / "Chờ 1 vòng" khi chưa có CLB);
     /// <paramref name="mineNow"/> = chỉ mô phỏng trận của người chơi ở khung đang mở (người chọn "Mô phỏng"), rồi chạy tiếp như thường.
     /// Đầu mỗi khung chạy chợ BOT (<see cref="BotMarketService"/>, chỉ khi chợ mở, mỗi khung 1 lần).
+    /// <paramref name="playLive"/> (PO 23/11, trận cầu đinh): có → trước khi mô phỏng phần còn lại của khung, trận cầu đinh BOT của khung
+    /// (<see cref="HotMatchService.PickLiveAsync"/>, sau trận của người chơi) được đá thật trên máy game + phát trực tiếp; không ghi được kết quả thì mô phỏng như thường.
+    /// Không dùng khi <paramref name="includeMine"/> (chạy thử cả mùa).
     /// </summary>
     public async Task<CareerContinueResult> ContinueAsync(int maxSlots = 500, Action<string>? progress = null, bool includeMine = false,
-        bool mineNow = false, CancellationToken ct = default)
+        bool mineNow = false, CancellationToken ct = default, Func<HotFixture, CancellationToken, Task>? playLive = null)
     {
         var sim = new MatchSimService(db, store, clock);
         var market = new BotMarketService(db, clock);
@@ -140,6 +143,12 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
                 progress?.Invoke($"Khung {md.Number}: trận của bạn {await ScoreLineAsync(myFixture, ct)}{(m.Settled ? ", đã chốt khung" : "")}");
                 if (m.SeasonFinished) return new(simulated, slots, null, true, errors);
             }
+            if (!settled && playLive is not null && !includeMine && await LiveCandidateAsync(md.Id, progress, ct) is { } hot)
+            {
+                progress?.Invoke($"Khung {md.Number}: trận cầu đinh {hot.HomeName} – {hot.AwayName} ({hot.Reason}) đá thật trên máy game, xem ở trang Trực tiếp");
+                await playLive(hot, ct);
+                db.ChangeTracker.Clear();   // trận vừa ghi kết quả ở DbContext khác → bỏ bản đang theo dõi (kẻo mô phỏng đè lên)
+            }
             if (!settled)
             {
                 var r = await sim.SimulateMatchdayAsync(md.Id, ct: ct);
@@ -154,6 +163,13 @@ public sealed class Pes17CareerService(ClubsDbContext db, IOptionFileStore store
             if (!settled) return new(simulated, slots, null, false, [.. errors, $"Khung {md.Number} chưa chốt được (còn trận đang đá dở hoặc lỗi ghi kết quả)"]);
         }
         return new(simulated, slots, null, false, errors);
+    }
+
+    /// <summary>Trận cầu đinh BOT của khung để đá thật; lỗi tính BXH thì bỏ qua (khung vẫn mô phỏng như thường).</summary>
+    private async Task<HotFixture?> LiveCandidateAsync(Guid matchdayId, Action<string>? progress, CancellationToken ct)
+    {
+        try { return await new HotMatchService(db, store, clock).PickLiveAsync(matchdayId, ct); }
+        catch (Exception e) when (e is not OperationCanceledException) { progress?.Invoke($"LỖI chọn trận cầu đinh: {e.Message}"); return null; }
     }
 
     /// <summary>"Chủ 2–1 Khách" (kèm luân lưu nếu có).</summary>

@@ -209,7 +209,7 @@ app.MapPost("/dang-ky", async (HttpContext ctx, IDbContextFactory<ClubsDbContext
     await ctx.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(
         [new(ClaimTypes.Name, m.Username), new(ClaimTypes.GivenName, m.DisplayName), new(CurrentUser.ManagerClaim, m.Id.ToString())], CookieAuthenticationDefaults.AuthenticationScheme)),
         new AuthenticationProperties { IsPersistent = true });
-    return Results.Redirect("/nguoi-choi/" + m.Username);
+    return Results.Redirect("/su-nghiep");   // PO 23/11: tạo tài khoản xong vào thẳng career (chọn CLB), không rơi về trang người chơi kiểu cũ
 }).DisableAntiforgery();
 app.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.Redirect(authOff ? "/" : "/login"); }).DisableAntiforgery();
 
