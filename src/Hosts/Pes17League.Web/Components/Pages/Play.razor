@@ -111,13 +111,25 @@
                 @* Nút nổi trên thanh dưới như trang chủ career: điện thoại nhỏ vẫn thấy ngay. *@
                 <div class="cx-cta-dock">
                     <a class="cx-cta" href="@Jobs.PlayLink" data-stream>
-                        <span><b>Mở màn hình game</b><small>Tải xong sẽ tự mở, nhớ xoay ngang điện thoại</small></span>
+                        @if (Jobs.Stage is "loading" or "kickoff")
+                        {
+                            @* 24/11: rớt kết nối/quay lại trang này → vào lại màn hình game; quá 5 phút chưa giao bóng thì máy huỷ trận. *@
+                            <span><b>Vào màn hình game</b><small>Trận đang chờ bạn giao bóng · quá 5 phút máy tự huỷ</small></span>
+                        }
+                        else
+                        {
+                            <span><b>Mở màn hình game</b><small>Tải xong sẽ tự mở, nhớ xoay ngang điện thoại</small></span>
+                        }
                         <i class="ms fill" aria-hidden="true">live_tv</i>
                     </a>
                 </div>
             }
             else
             {
+                @if (Jobs.Log.Any(l => l.Contains("no_kickoff")))
+                {
+                    <p class="muted">Trận đã sẵn sàng nhưng 5 phút không có ai giao bóng (chưa mở hoặc mất kết nối màn hình game). Bấm Chuẩn bị lại, khi trận tải xong nhớ ở lại màn hình game.</p>
+                }
                 <div class="cx-acts">
                     <a class="cx-btn ghost" href="su-nghiep">Về trang chủ</a>
                     @if (Jobs.HumanFixture is { } hf) { <a class="cx-btn gold" href="chuan-bi/@hf.FixtureId">Chuẩn bị lại</a> }

@@ -143,6 +143,30 @@
   bar.innerHTML = `<button type="button" id="pes-fs" title="Toàn màn hình" aria-label="Toàn màn hình">${svg(FS_IN)}</button>`
     + `<button type="button" id="pes-lag" title="Giảm giật: giảm dung lượng hình (8 Mbps) cho mạng yếu" aria-label="Giảm giật">${svg(BOLT)}</button>`
     + `<button type="button" id="pes-snd" aria-label="Tiếng game">${svg(VOL_ON)}</button>`;
+  // Tay cầm ảo (24/11): Selkies có sẵn tay cầm cảm ứng nhưng nút bật nằm ở thanh bên (SELKIES_UI_SHOW_SIDEBAR=false) → đội nhà
+  // trên điện thoại không có gì để bấm. Thêm nút ở thanh này + tự hiện ở lần chạm đầu; kiểu "modern" (2 cần, L1/R1/L2/R2, Start).
+  // Người 2 (#player2…) đã có nút nổi riêng của Selkies → bỏ qua.
+  const touch = !/^#player\d/.test(location.hash) && (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
+  let padOn = false, padSet = false;
+  const PAD = 'M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z';
+  const setPad = v => {
+    padOn = v;
+    const payload = { targetDivId: 'touch-gamepad-host', visible: v, initialProfileName: 'modern' };
+    window.postMessage({ type: padSet ? 'TOUCH_GAMEPAD_VISIBILITY' : 'TOUCH_GAMEPAD_SETUP', payload }, window.location.origin);
+    padSet = true;
+    if (padBtn) padBtn.setAttribute('aria-pressed', String(v));
+  };
+  let padBtn = null;
+  if (touch) {
+    bar.insertAdjacentHTML('beforeend', `<button type="button" id="pes-pad" title="Tay cầm ảo" aria-label="Tay cầm ảo" aria-pressed="false">${svg(PAD)}</button>`);
+    padBtn = bar.querySelector('#pes-pad');
+    padBtn.addEventListener('click', e => { e.stopPropagation(); setPad(!padOn); say(padOn ? 'Tay cầm ảo: BẬT (bánh răng góc trên để đổi kiểu)' : 'Tay cầm ảo: TẮT'); });
+    const first = e => {   // chạm vào thanh nút thì để nút tự xử lý
+      if (padSet || bar.contains(e.target) || !document.getElementById('touch-gamepad-host')) return;
+      setPad(true); document.removeEventListener('touchstart', first);
+    };
+    document.addEventListener('touchstart', first, { passive: true });
+  }
   const toast = document.createElement('div');
   toast.id = 'pes-toast';
   toast.setAttribute('role', 'status');

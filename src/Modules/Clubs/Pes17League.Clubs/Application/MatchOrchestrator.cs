@@ -228,6 +228,8 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             }
             error = outcome.Error ?? "Không rõ lỗi";
             await svc.EndAttemptAsync(start.AttemptId!.Value, MatchAttemptOutcome.Crashed, outcome.RecordingPath, ct);
+            // người chơi không giao bóng (vắng/rớt mạng): thử lại cũng chỉ chờ tiếp → dừng, để HLV bấm Chuẩn bị lại (24/11)
+            if (error.StartsWith("no_kickoff") || error.StartsWith("human_timeout")) return (new FixtureRunReport(fixtureId, false, attempt, error), null);
         }
         return (new FixtureRunReport(fixtureId, false, max, error), null);
     }

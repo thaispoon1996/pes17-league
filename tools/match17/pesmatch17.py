@@ -61,6 +61,9 @@ OVERLAY = "/bench/overlay"                # trong pes17-bench; trang Selkies đ�
 BOOT_TIMEOUT = 300        # từ lúc mở game tới màn chọn đội
 NO_PITCH_TIMEOUT = 600    # quá 10 phút không thấy HUD trận → treo
 HUMAN_PREMATCH_TIMEOUT = 1800
+# Trận có người: vào tư thế giao bóng mà 5 phút không ai giao → huỷ, thoát trận (24/11: 18:05 người chơi rớt kết nối, máy đứng chờ 30 phút
+# rồi 2 lần thử lại vướng "game đang đá"). Nghỉ giữa hiệp vẫn chờ HUMAN_PREMATCH_TIMEOUT.
+HUMAN_KICKOFF_TIMEOUT = int(os.environ.get("PESMATCH_KICKOFF_TIMEOUT", "300"))
 HUMAN_HALFTIME_TIMEOUT = 600   # trận có người: nghỉ giữa hiệp quá 10 phút → máy bấm 2nd Half
 GOAL_LAG = 1.5   # mốc bàn = lần cuối thấy tỷ số cũ + 1,5 s (1 nhịp đọc HUD ~3 s; Match.old_seen)
 # Luật AFK (giống PES6, PO 17/11; PES17 18/11): trận 2 người, chưa giao bóng hoặc đồng hồ đứng quá 5 phút (không tính nghỉ giữa hiệp)
@@ -578,6 +581,8 @@ class Match:
                 misses = 0
                 if self.board:
                     self.board.show(self.shown(), self.minute)
+            elif self.human and not self.kick and now - last_play > HUMAN_KICKOFF_TIMEOUT:
+                raise NavError(f"no_kickoff: {HUMAN_KICKOFF_TIMEOUT // 60} phút chưa giao bóng (chưa vào màn hình game?)")
             elif now - last_play > (NO_PITCH_TIMEOUT if not self.human
                                     else HUMAN_PREMATCH_TIMEOUT if not self.kick or self.halftime else NO_PITCH_TIMEOUT):
                 raise NavError("no_progress: quá lâu không thấy HUD trận")
@@ -1194,8 +1199,8 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             m = Match(human, pres, t_rec, board)
             hg, ag = m.run()
         except NavError as e:
-            if str(e).startswith("afk"):
-                leave_match()   # huỷ/xử thua vì AFK: bỏ trận đang dở để trận sau vào được màn chọn đội
+            if str(e).startswith(("afk", "no_kickoff", "no_progress")):
+                leave_match()   # huỷ/xử thua vì AFK/treo: bỏ trận đang dở để lần sau vào được màn chọn đội (không vướng "game đang đá")
             raise
         finally:
             rec17.stop(recording)   # trước "end": web dừng bộ chạy ngay sau "end"
