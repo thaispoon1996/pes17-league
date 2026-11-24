@@ -73,6 +73,8 @@ T0 = time.monotonic()
 
 def emit(**kw) -> None:
     print(json.dumps(kw, ensure_ascii=False), flush=True)
+    if kw.get("event") in ("error", "stage"):   # web chỉ giữ sự kiện trong bộ nhớ → ghi cả vào stderr (docker logs) để tra lỗi sau (24/11)
+        log(f"{kw['event']}: {kw.get('reason') or kw.get('stage')}")
 
 
 def log(msg: str) -> None:
