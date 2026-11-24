@@ -118,15 +118,16 @@
 
   const css = document.createElement('style');
   css.textContent = `
-#pes-bar{position:absolute;z-index:3;display:flex;gap:6px;padding:4px;border-radius:12px;background:rgba(15,19,29,.72);
+#pes-bar{position:absolute;z-index:5;display:flex;gap:6px;padding:4px;border-radius:12px;background:rgba(15,19,29,.72);
   border:1px solid #2c303b;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:opacity .4s;font-family:system-ui,sans-serif}
 #pes-bar.idle{opacity:.18}
+#pes-bar button[hidden]{display:none}
 #pes-bar button{display:flex;align-items:center;justify-content:center;width:40px;height:34px;padding:0;border:0;border-radius:9px;background:transparent;
   color:#dee1f7;font:800 13px/1 "Barlow Condensed",system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
 #pes-bar button:hover{background:#262a35}
 #pes-bar button[aria-pressed=true]{color:#00ff87;background:rgba(0,255,135,.12)}
 #pes-bar svg{width:20px;height:20px;fill:currentColor;flex:none}
-#pes-toast{position:absolute;z-index:3;padding:8px 12px;text-align:center;border-radius:10px;background:rgba(15,19,29,.9);border:1px solid #2c303b;
+#pes-toast{position:absolute;z-index:5;padding:8px 12px;text-align:center;border-radius:10px;background:rgba(15,19,29,.9);border:1px solid #2c303b;
   color:#dee1f7;font:13px/1.4 system-ui,sans-serif;max-width:280px;pointer-events:none;transition:opacity .3s;opacity:0}
 @media (prefers-reduced-motion:reduce){#pes-bar,#pes-toast{transition:none}}`;
   document.head.appendChild(css);
@@ -143,29 +144,198 @@
   bar.innerHTML = `<button type="button" id="pes-fs" title="Toàn màn hình" aria-label="Toàn màn hình">${svg(FS_IN)}</button>`
     + `<button type="button" id="pes-lag" title="Giảm giật: giảm dung lượng hình (8 Mbps) cho mạng yếu" aria-label="Giảm giật">${svg(BOLT)}</button>`
     + `<button type="button" id="pes-snd" aria-label="Tiếng game">${svg(VOL_ON)}</button>`;
-  // Tay cầm ảo (24/11): Selkies có sẵn tay cầm cảm ứng nhưng nút bật nằm ở thanh bên (SELKIES_UI_SHOW_SIDEBAR=false) → đội nhà
-  // trên điện thoại không có gì để bấm. Thêm nút ở thanh này + tự hiện ở lần chạm đầu; kiểu "modern" (2 cần, L1/R1/L2/R2, Start).
-  // Người 2 (#player2…) đã có nút nổi riêng của Selkies → bỏ qua.
+  // Tay cầm ảo PES (24/11): đội nhà trên điện thoại vốn không có gì để bấm (nút tay cầm cảm ứng của Selkies nằm ở thanh bên,
+  // SELKIES_UI_SHOW_SIDEBAR=false). Lớp nút riêng: cần analog nổi bên trái (chạm đâu cũng thành tâm cần), cụm nút bên phải ghi
+  // việc trong trận (đi bóng / phòng ngự). Trượt ngón qua lại giữa các nút được (vd giữ TỐC ĐỘ rồi lăn sang SÚT).
+  // Báo cho Selkies như 1 tay cầm chuẩn (navigator.getGamepads) — Selkies tự đọc và gửi về máy như tay cầm thật.
+  // Phím PES 2017 mặc định (tay cầm Xbox): A chuyền/ép, B sút/xoạc, X chuyền bổng-tạt/gọi đồng đội ép, Y chọc khe/thủ môn lao ra,
+  // RB chạy nhanh, LB đổi người, Start tạm dừng. Người 2 (#player2…) đã có nút nổi riêng của Selkies → bỏ qua.
   const touch = !/^#player\d/.test(location.hash) && (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
-  let padOn = false, padSet = false;
+  let padOn = false, padBtn = null;
   const PAD = 'M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z';
-  const setPad = v => {
-    padOn = v;
-    const payload = { targetDivId: 'touch-gamepad-host', visible: v, initialProfileName: 'modern' };
-    window.postMessage({ type: padSet ? 'TOUCH_GAMEPAD_VISIBILITY' : 'TOUCH_GAMEPAD_SETUP', payload }, window.location.origin);
-    padSet = true;
-    if (padBtn) padBtn.setAttribute('aria-pressed', String(v));
-  };
-  let padBtn = null;
+  let setPad = () => {};
   if (touch) {
-    bar.insertAdjacentHTML('beforeend', `<button type="button" id="pes-pad" title="Tay cầm ảo" aria-label="Tay cầm ảo" aria-pressed="false">${svg(PAD)}</button>`);
+    const ID = 'PES17 Touch Pad';
+    const gp = { id: ID, index: 0, connected: true, mapping: 'standard', axes: [0, 0, 0, 0], timestamp: performance.now(),
+      buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+    let live = false;   // đã báo "gamepadconnected" → từ đó luôn có mặt (ẩn = nhả hết nút)
+    const prev = navigator.getGamepads ? navigator.getGamepads.bind(navigator) : () => [];
+    navigator.getGamepads = () => {
+      const a = Array.from(prev() || []).slice(0, 4);
+      while (a.length < 4) a.push(null);
+      if (!live) return a;
+      const i = a.findIndex(g => !g || g.id === ID);
+      if (i >= 0) { gp.index = i; a[i] = gp; }
+      return a;
+    };
+
+    const BTNS = [   // b = số nút chuẩn W3C; vị trí tính từ góc phải/dưới (px ở màn cao 390, tự co theo màn)
+      { b: 0, k: 'A', t: 'Chuyền', s: 'Ép người', c: 'a', r: 104, y: 34, d: 84 },
+      { b: 1, k: 'B', t: 'Sút', s: 'Xoạc', c: 'b', r: 18, y: 104, d: 76 },
+      { b: 3, k: 'Y', t: 'Chọc khe', s: 'Thủ môn ra', c: 'n', r: 112, y: 140, d: 68 },
+      { b: 2, k: 'X', t: 'Tạt bổng', s: 'Gọi ép', c: 'n', r: 202, y: 94, d: 68 },
+      { b: 5, k: 'RB', t: 'Tốc độ', c: 'rb', r: 196, y: 14, w: 84, h: 62 },
+      { b: 4, k: 'LB', t: 'Đổi người', c: 'lb', r: 22, y: 206, w: 92, h: 46 },
+    ];
+    const fcss = document.createElement('link');
+    fcss.rel = 'stylesheet';
+    fcss.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&display=swap';
+    document.head.appendChild(fcss);
+    const pcss = document.createElement('style');
+    pcss.textContent = `
+#pes-pad-root{position:absolute;inset:0;z-index:4;display:none;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#pes-pad-root.on{display:block}
+#pes-pad-root .pz{position:absolute;right:0;bottom:0;width:300px;height:270px;transform-origin:100% 100%}
+#pes-pad-root .pb{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;box-sizing:border-box;
+  border-radius:50%;border:2px solid rgba(222,225,247,.55);background:rgba(15,19,29,.42);color:#dee1f7;
+  font:800 16px/1 "Barlow Condensed","Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.02em;text-align:center;
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+#pes-pad-root .pb small{font:600 9.5px/1.1 system-ui,sans-serif;text-transform:none;letter-spacing:0;color:#9ba7b5;max-width:90%}
+#pes-pad-root .pb i{position:absolute;left:-4px;top:-4px;width:18px;height:18px;border-radius:50%;background:#262a35;border:1px solid #2c303b;
+  color:#9ba7b5;font:700 9px/18px system-ui,sans-serif;font-style:normal;text-align:center}
+#pes-pad-root .pb.rb i,#pes-pad-root .pb.lb i{width:auto;padding:0 4px;border-radius:9px;left:-6px;top:-8px}
+#pes-pad-root .pb.a{border-color:#00ff87;font-size:19px}
+#pes-pad-root .pb.b{border-color:#ff4d5e;font-size:20px}
+#pes-pad-root .pb.rb,#pes-pad-root .pb.lb{border-radius:12px}
+#pes-pad-root .pb.rb{border-color:#ffb95f;color:#ffb95f}
+#pes-pad-root .pb.lb{border-color:#00ff87;color:#00ff87}
+#pes-pad-root .pb.on{background:#dee1f7;color:#0f131d}
+#pes-pad-root .pb.a.on,#pes-pad-root .pb.lb.on{background:#00ff87}
+#pes-pad-root .pb.b.on{background:#ff4d5e}
+#pes-pad-root .pb.rb.on{background:#ffb95f;color:#0f131d}
+#pes-pad-root .pb.on small{color:#0f131d}
+#pes-pad-root .stk{position:absolute;width:124px;height:124px;margin:-62px 0 0 -62px;border-radius:50%;border:2px solid rgba(222,225,247,.35);
+  background:rgba(15,19,29,.3);pointer-events:none}
+#pes-pad-root .stk b{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(222,225,247,.5)}
+#pes-pad-root .stk.on{border-color:rgba(0,255,135,.7)}
+#pes-pad-root .stk.on b{background:#00ff87}
+#pes-pad-root .stk span{position:absolute;left:0;right:0;top:calc(100% + 6px);text-align:center;color:#9ba7b5;
+  font:800 12px/1 "Barlow Condensed","Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em}
+#pes-pad-root .stk.on span{display:none}`;
+    document.head.appendChild(pcss);
+
+    const root = document.createElement('div');
+    root.id = 'pes-pad-root';
+    root.setAttribute('aria-hidden', 'true');   // chỉ để chạm khi chơi; bàn phím/tay cầm thật dùng như cũ
+    root.innerHTML = `<div class="stk"><b></b><span>Di chuyển</span></div><div class="pz">`
+      + BTNS.map(x => `<div class="pb ${x.c}" data-b="${x.b}" style="right:${x.r}px;bottom:${x.y}px;width:${x.w || x.d}px;height:${x.h || x.d}px">`
+        + `<i>${x.k}</i>${x.t}${x.s ? `<small>${x.s}</small>` : ''}</div>`).join('') + `</div>`;
+    const zone = root.querySelector('.pz'), stk = root.querySelector('.stk'), knob = stk.querySelector('b');
+    const els = [...root.querySelectorAll('[data-b]')];
+    const R = 50, DEAD = 0.12;
+    let stickId = null, sx = 0, sy = 0, rest = { x: 0, y: 0 };
+    const ptrs = new Map();
+
+    const rect = () => root.getBoundingClientRect();
+    const fit = () => {   // co cụm nút theo chiều cao màn (thiết kế cho 390 px); cần analog về chỗ nghỉ
+      const r = rect();
+      if (!r.height) return;
+      const k = Math.max(0.7, Math.min(1.25, r.height / 390));
+      zone.style.transform = `scale(${k})`;
+      rest = { x: 30 + 100 * k, y: r.height - 40 - 90 * k };
+      if (stickId === null) { stk.style.left = `${rest.x}px`; stk.style.top = `${rest.y}px`; }
+    };
+    const setAxes = (x, y) => {
+      gp.axes[0] = Math.abs(x) < DEAD ? 0 : x; gp.axes[1] = Math.abs(y) < DEAD ? 0 : y;
+      knob.style.transform = `translate(${x * R}px,${y * R}px)`;
+      gp.timestamp = performance.now();
+    };
+    const press = () => {
+      const down = new Set();
+      for (const p of ptrs.values()) {
+        const el = document.elementFromPoint(p.x, p.y)?.closest?.('[data-b]');
+        if (el && root.contains(el)) down.add(+el.dataset.b);
+      }
+      let fresh = false;
+      for (const el of els) {
+        const b = +el.dataset.b, on = down.has(b);
+        if (gp.buttons[b].pressed !== on) {
+          gp.buttons[b] = { pressed: on, touched: on, value: on ? 1 : 0 };
+          el.classList.toggle('on', on);
+          fresh = fresh || on;
+        }
+      }
+      gp.timestamp = performance.now();
+      if (fresh && navigator.vibrate) try { navigator.vibrate(8); } catch { /* iPhone không có */ }
+    };
+    const release = () => {
+      ptrs.clear(); stickId = null; stk.classList.remove('on'); setAxes(0, 0); press(); fit();
+    };
+    root.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const r = rect(), x = e.clientX - r.left, y = e.clientY - r.top;
+      const onBtn = e.target.closest?.('[data-b]');
+      if (!onBtn && stickId === null && x < r.width * 0.5) {
+        stickId = e.pointerId; sx = x; sy = y;
+        stk.style.left = `${x}px`; stk.style.top = `${y}px`; stk.classList.add('on'); setAxes(0, 0);
+        return;
+      }
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); press();
+    });
+    root.addEventListener('pointermove', e => {
+      e.preventDefault(); e.stopPropagation();
+      if (e.pointerId === stickId) {
+        const r = rect();
+        let dx = (e.clientX - r.left - sx) / R, dy = (e.clientY - r.top - sy) / R;
+        const m = Math.hypot(dx, dy);
+        if (m > 1) { dx /= m; dy /= m; }
+        setAxes(dx, dy);
+      } else if (ptrs.has(e.pointerId)) { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); press(); }
+    });
+    const up = e => {
+      e.stopPropagation();
+      if (e.pointerId === stickId) { stickId = null; stk.classList.remove('on'); setAxes(0, 0); fit(); }
+      else if (ptrs.delete(e.pointerId)) press();
+    };
+    ['pointerup', 'pointercancel'].forEach(t => root.addEventListener(t, up));
+    // chạm không lọt xuống khung game (Selkies coi chạm là chuột) và không cuộn/phóng trang
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'mousedown', 'mouseup', 'click', 'contextmenu'].forEach(t =>
+      root.addEventListener(t, e => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); }, { passive: false }));
+
+    const mount = () => {
+      const c = document.getElementById('videoCanvas');
+      const host = c?.parentElement || document.body;
+      if (root.parentElement !== host) host.appendChild(root);
+      fit();
+    };
+    setPad = v => {
+      padOn = v;
+      if (v && !live) {
+        live = true;
+        const ev = new Event('gamepadconnected'); ev.gamepad = gp; window.dispatchEvent(ev);
+      }
+      if (!v) release();
+      mount();
+      root.classList.toggle('on', v);
+      fit();
+      if (padBtn) padBtn.setAttribute('aria-pressed', String(v));
+      const st = bar.querySelector('#pes-start');
+      if (st) st.hidden = !v;
+      place();
+    };
+    bar.insertAdjacentHTML('beforeend', `<button type="button" id="pes-pad" title="Nút chơi trên màn hình" aria-label="Nút chơi trên màn hình" aria-pressed="false">${svg(PAD)}</button>`);
     padBtn = bar.querySelector('#pes-pad');
-    padBtn.addEventListener('click', e => { e.stopPropagation(); setPad(!padOn); say(padOn ? 'Tay cầm ảo: BẬT (bánh răng góc trên để đổi kiểu)' : 'Tay cầm ảo: TẮT'); });
-    const first = e => {   // chạm vào thanh nút thì để nút tự xử lý
-      if (padSet || bar.contains(e.target) || !document.getElementById('touch-gamepad-host')) return;
+    // Tạm dừng (Start) đặt trên thanh trên cùng: góc trái là bảng tỉ số của game, không che. Chỉ hiện khi bật nút chơi.
+    const PAUSE = 'M6 5h4v14H6zm8 0h4v14h-4z';
+    bar.insertAdjacentHTML('beforeend', `<button type="button" id="pes-start" title="Tạm dừng (Start)" aria-label="Tạm dừng" hidden>${svg(PAUSE)}</button>`);
+    const startBtn = bar.querySelector('#pes-start');
+    const hold = on => e => {
+      e.preventDefault(); e.stopPropagation();
+      gp.buttons[9] = { pressed: on, touched: on, value: on ? 1 : 0 }; gp.timestamp = performance.now();
+      startBtn.setAttribute('aria-pressed', String(on));
+    };
+    startBtn.addEventListener('pointerdown', hold(true));
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => startBtn.addEventListener(t, hold(false)));
+    startBtn.addEventListener('click', e => e.stopPropagation());
+    padBtn.addEventListener('click', e => { e.stopPropagation(); setPad(!padOn); say(padOn ? 'Nút chơi: BẬT' : 'Nút chơi: TẮT (dùng tay cầm hoặc bàn phím)'); });
+    const first = e => {   // điện thoại: lần chạm đầu bật nút chơi (chạm vào thanh nút thì để nút tự xử lý)
+      if (padOn || bar.contains(e.target)) return;
       setPad(true); document.removeEventListener('touchstart', first);
     };
     document.addEventListener('touchstart', first, { passive: true });
+    window.addEventListener('resize', () => { if (padOn) { release(); mount(); } });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+    setInterval(() => { if (padOn) mount(); }, 1000);
   }
   const toast = document.createElement('div');
   toast.id = 'pes-toast';
