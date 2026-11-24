@@ -9,3 +9,7 @@ COPY pes-overlay.js /usr/share/selkies/selkies-dashboard/pes-overlay.js
 RUN sed -i 's#</body>#<script src="pes-overlay.js"></script></body>#' /usr/share/selkies/selkies-dashboard/index.html \
  && grep -q 'pes-overlay.js' /usr/share/selkies/selkies-dashboard/index.html \
  && ln -s /bench/overlay /usr/share/selkies/selkies-dashboard/pes
+# 24/11: người chơi rớt kết nối khi đang giữ nút/cần → tay cầm ảo selkies kẹt trạng thái (cầu thủ tự chạy, menu tự chuyển) → nhả hết khi client đóng.
+# Sửa trên container đang chạy: docker cp + chạy script rồi s6-svc -r svc-selkies — game MẤT tay cầm, phải mở lại game (restart_game).
+COPY selkies-padfix.py /tmp/selkies-padfix.py
+RUN /lsiopy/bin/python3 /tmp/selkies-padfix.py
