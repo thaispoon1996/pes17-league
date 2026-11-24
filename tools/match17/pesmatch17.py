@@ -702,6 +702,14 @@ def teams_part(doc: dict, home: int, away: int) -> str:
     return json.dumps(part, sort_keys=True)
 
 
+def same_teams(a: str, b: str, home: int, away: int) -> bool:
+    """2 file squads có cùng phần của 2 đội trận này (cầu thủ, số áo, thứ tự, sơ đồ, vai, chiến thuật)."""
+    try:
+        return teams_part(json.loads(Path(a).read_text()), home, away) == teams_part(json.loads(Path(b).read_text()), home, away)
+    except (OSError, ValueError):
+        return False
+
+
 def game_has(squads: str, home: int, away: int) -> bool:
     """Game đang chạy và gói đã cài (squads.json khớp deployed.squads.sha) có đúng phần 2 đội của `squads`."""
     try:
@@ -981,6 +989,8 @@ def wait_go(squads: str, home: int, away: int, setup, replan=None, plan_teams: l
         except queue.Empty:
             pass
         on_kick = kickoff_screen(nav.shot("m17_wait"))
+        if latest != squads and same_teams(latest, squads, home, away):
+            squads = latest   # web gửi file mới (mỗi lần bấm Sẵn sàng) nhưng 2 đội y nguyên → khỏi kiểm lại GAME PLAN (~30 s, 24/11)
         if on_kick and latest != squads:
             same = game_has(latest, home, away)
             if replan and all(has_formation(latest, t) for t in plan_teams) and (same or plan_only(latest, home, away, plan_teams)):

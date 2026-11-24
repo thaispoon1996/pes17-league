@@ -91,7 +91,9 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     // Giây còn lại tới giao bóng tính từ lúc vào mỗi bước. Mặc định đo 05/11 (4 trận BOT: boot→menu ~28 s, menu→chọn đội ~50,
     // chọn đội→tải ~35–50, tải→giao bóng ~21); sau mỗi trận PO vào được tới giao bóng thì chỉnh dần theo thực đo (chỉ trong bộ nhớ).
     // "warm" (vào trận nhanh, PO 16/11): tính từ lúc bấm Sẵn sàng; thử pestest-1 16/11: go → chọn xong 2 đội 39 s (ghi bộ nhớ 2 s).
-    private static readonly Dictionary<string, double> Eta = new() { [""] = 245, ["boot"] = 240, ["menu"] = 235, ["warm"] = 220, ["teams"] = 215, ["ready"] = 150, ["loading"] = 150 };   // đo PES17 19/11 (1 trận BOT), tự học thêm sau mỗi trận
+    // Đo lại 24/11 (trận người chơi Villa–Everton, đã bỏ save Edit + bỏ phim mở màn): khởi động 11 s, menu 14 s, chọn đội + kiểm GAME PLAN ~55 s,
+    // bấm Sẵn sàng → chọn áo ~14 s → tải + bỏ phim mở màn 40–55 s → đứng giao bóng.
+    private static readonly Dictionary<string, double> Eta = new() { [""] = 150, ["boot"] = 145, ["menu"] = 135, ["warm"] = 65, ["teams"] = 120, ["ready"] = 65, ["loading"] = 60 };   // tự học thêm sau mỗi trận
     private readonly Dictionary<string, DateTimeOffset> _stageTimes = [];
 
     /// <summary>Ước lượng giây từ lúc bấm Sẵn sàng tới giao bóng.</summary>
