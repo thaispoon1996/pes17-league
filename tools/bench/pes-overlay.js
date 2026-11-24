@@ -3,6 +3,26 @@
 // Bộ chạy trận (tools/match17/pesmatch17.py overlay()) ghi /bench/overlay/overlay.json = {"logo": "logo-<sha>.png"} lúc giao bóng, {} khi hết trận;
 // trang đọc ở pes/overlay.json (Dockerfile: pes → /bench/overlay). Logo nằm cạnh canvas (cùng khối cha) để vẫn thấy khi toàn màn hình,
 // không bắt chuột/chạm. Vị trí theo khung hình thật (1280×720): cách trên 5,3%, cách phải 1,25%, cao 10%.
+// PO 24/11 "không có tiếng": Selkies tạo AudioContext lúc nối, chỉ resume() khi có gói tiếng (không trong thao tác chạm) → iPhone giữ "suspended";
+// nút chơi chặn chạm nên Selkies không thấy thao tác. Ghi lại mọi AudioContext, resume() trong mọi lần chạm/bấm (pha capture, trước khi bị chặn).
+// iPhone gạt im lặng tắt cả Web Audio → audioSession "playback" (Safari 16.4+) để vẫn có tiếng như video.
+(() => {
+  const list = [];
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (AC) {
+    const Tracked = class extends AC { constructor(...a) { super(...a); list.push(this); } };
+    window.AudioContext = Tracked;
+    if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  }
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* trình duyệt chưa hỗ trợ */ }
+  const unlock = () => {
+    for (const c of list) if (c.state === 'suspended' || c.state === 'interrupted') c.resume().catch(() => {});
+  };
+  ['pointerdown', 'touchend', 'click', 'keydown'].forEach(t => window.addEventListener(t, unlock, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(unlock, 300); });
+  window.pesAudio = list;   // để kiểm thử
+})();
+
 (() => {
   const img = new Image();
   img.alt = '';
@@ -174,8 +194,9 @@
       { b: 1, k: 'B', t: 'Sút', s: 'Xoạc', c: 'b', r: 18, y: 104, d: 76 },
       { b: 3, k: 'Y', t: 'Chọc khe', s: 'Thủ môn ra', c: 'n', r: 112, y: 140, d: 68 },
       { b: 2, k: 'X', t: 'Tạt bổng', s: 'Gọi ép', c: 'n', r: 202, y: 94, d: 68 },
-      { b: 5, k: 'RB', t: 'Tốc độ', c: 'rb', r: 196, y: 14, w: 84, h: 62 },
-      { b: 4, k: 'LB', t: 'Đổi người', c: 'lb', r: 22, y: 206, w: 92, h: 46 },
+      // PO 24/11: đổi chỗ Tốc độ ↔ Đổi người (Tốc độ lên góc trên phải, Đổi người xuống cạnh nút Chuyền)
+      { b: 5, k: 'RB', t: 'Tốc độ', c: 'rb', r: 18, y: 200, w: 84, h: 62 },
+      { b: 4, k: 'LB', t: 'Đổi người', c: 'lb', r: 196, y: 22, w: 92, h: 46 },
     ];
     const fcss = document.createElement('link');
     fcss.rel = 'stylesheet';
@@ -211,7 +232,12 @@
 #pes-pad-root .stk.on b{background:#00ff87}
 #pes-pad-root .stk span{position:absolute;left:0;right:0;top:calc(100% + 6px);text-align:center;color:#9ba7b5;
   font:800 12px/1 "Barlow Condensed","Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em}
-#pes-pad-root .stk.on span{display:none}`;
+#pes-pad-root .stk.on span{display:none}
+#pes-pad-root .top{position:absolute;right:max(10px,env(safe-area-inset-right));top:max(10px,env(safe-area-inset-top));display:flex;gap:8px}
+#pes-pad-root .pt{display:flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:12px;border:2px solid rgba(222,225,247,.45);
+  background:rgba(15,19,29,.55);color:#dee1f7;font:800 15px/1 "Barlow Condensed","Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+#pes-pad-root .pt svg{width:16px;height:16px;fill:currentColor;flex:none}
+#pes-pad-root .pt.on{background:#dee1f7;color:#0f131d}`;
     document.head.appendChild(pcss);
 
     const root = document.createElement('div');
@@ -219,7 +245,10 @@
     root.setAttribute('aria-hidden', 'true');   // chỉ để chạm khi chơi; bàn phím/tay cầm thật dùng như cũ
     root.innerHTML = `<div class="stk"><b></b><span>Di chuyển</span></div><div class="pz">`
       + BTNS.map(x => `<div class="pb ${x.c}" data-b="${x.b}" style="right:${x.r}px;bottom:${x.y}px;width:${x.w || x.d}px;height:${x.h || x.d}px">`
-        + `<i>${x.k}</i>${x.t}${x.s ? `<small>${x.s}</small>` : ''}</div>`).join('') + `</div>`;
+        + `<i>${x.k}</i>${x.t}${x.s ? `<small>${x.s}</small>` : ''}</div>`).join('') + `</div>`
+      // PO 24/11: Tạm dừng + Bỏ qua. Trong PES17 cả hai là nút Start: đang đá = tạm dừng, phim/replay/cận cảnh = bỏ qua.
+      + `<div class="top"><div class="pt" data-b="9">${svg('M6 5h4v14H6zm8 0h4v14h-4z')}Tạm dừng</div>`
+      + `<div class="pt" data-b="9">${svg('M5 5l8 7-8 7zm8 0l8 7-8 7z')}Bỏ qua</div></div>`;
     const zone = root.querySelector('.pz'), stk = root.querySelector('.stk'), knob = stk.querySelector('b');
     const els = [...root.querySelectorAll('[data-b]')];
     const R = 50, DEAD = 0.12;
@@ -241,17 +270,18 @@
       gp.timestamp = performance.now();
     };
     const press = () => {
-      const down = new Set();
+      const hit = new Set();
       for (const p of ptrs.values()) {
         const el = document.elementFromPoint(p.x, p.y)?.closest?.('[data-b]');
-        if (el && root.contains(el)) down.add(+el.dataset.b);
+        if (el && root.contains(el)) hit.add(el);
       }
+      const down = new Set([...hit].map(el => +el.dataset.b));
       let fresh = false;
-      for (const el of els) {
-        const b = +el.dataset.b, on = down.has(b);
+      for (const el of els) el.classList.toggle('on', hit.has(el));
+      for (const b of new Set(els.map(el => +el.dataset.b))) {
+        const on = down.has(b);
         if (gp.buttons[b].pressed !== on) {
           gp.buttons[b] = { pressed: on, touched: on, value: on ? 1 : 0 };
-          el.classList.toggle('on', on);
           fresh = fresh || on;
         }
       }
@@ -309,24 +339,10 @@
       root.classList.toggle('on', v);
       fit();
       if (padBtn) padBtn.setAttribute('aria-pressed', String(v));
-      const st = bar.querySelector('#pes-start');
-      if (st) st.hidden = !v;
       place();
     };
     bar.insertAdjacentHTML('beforeend', `<button type="button" id="pes-pad" title="Nút chơi trên màn hình" aria-label="Nút chơi trên màn hình" aria-pressed="false">${svg(PAD)}</button>`);
     padBtn = bar.querySelector('#pes-pad');
-    // Tạm dừng (Start) đặt trên thanh trên cùng: góc trái là bảng tỉ số của game, không che. Chỉ hiện khi bật nút chơi.
-    const PAUSE = 'M6 5h4v14H6zm8 0h4v14h-4z';
-    bar.insertAdjacentHTML('beforeend', `<button type="button" id="pes-start" title="Tạm dừng (Start)" aria-label="Tạm dừng" hidden>${svg(PAUSE)}</button>`);
-    const startBtn = bar.querySelector('#pes-start');
-    const hold = on => e => {
-      e.preventDefault(); e.stopPropagation();
-      gp.buttons[9] = { pressed: on, touched: on, value: on ? 1 : 0 }; gp.timestamp = performance.now();
-      startBtn.setAttribute('aria-pressed', String(on));
-    };
-    startBtn.addEventListener('pointerdown', hold(true));
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => startBtn.addEventListener(t, hold(false)));
-    startBtn.addEventListener('click', e => e.stopPropagation());
     padBtn.addEventListener('click', e => { e.stopPropagation(); setPad(!padOn); say(padOn ? 'Nút chơi: BẬT' : 'Nút chơi: TẮT (dùng tay cầm hoặc bàn phím)'); });
     const first = e => {   // điện thoại: lần chạm đầu bật nút chơi (chạm vào thanh nút thì để nút tự xử lý)
       if (padOn || bar.contains(e.target)) return;
