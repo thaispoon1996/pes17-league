@@ -486,5 +486,66 @@
   sync(); wake();
 })();
 
-// Lớp lọc cỏ xanh đậm (PO 24/11) ĐÃ BỎ (PO 25/11): nó phân loại từng điểm ảnh nên các khối lệch màu nhẹ của hình nén
-// (H.264) bị khuếch đại thành mảng vàng/chữ nhật trên cỏ. Muốn đổi màu cỏ phải đổi trong game, không tô trên trình duyệt.
+// Cỏ xanh đậm cho dịu mắt (PO 24/11, giữ lại 25/11). Chỉ tô lại khung hình đã giải mã, không đụng game và không đụng bộ nhận sân.
+// Cỏ = xanh át đỏ/xanh dương. Vạch = điểm sáng ít lệch màu, xử lý trước để không bị kéo thành cỏ.
+(() => {
+  const vs = 'attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
+  // PO 25/11 (lần 3): xét "có phải cỏ" theo TRUNG BÌNH VÙNG ~40 px (9 mẫu), không theo từng điểm ảnh. Khối nén H.264 lệch màu nhẹ
+  // (16 px) không đổi được trung bình vùng → không còn mảng vàng/chữ nhật. Chỉ nhân sáng/màu (không kéo về một màu cố định).
+  // Điểm trắng (vạch vôi, áo trắng, chữ) giữ nguyên độ sáng.
+  const fs = `precision mediump float;varying vec2 v;uniform sampler2D t;uniform vec2 px;
+float grass(vec3 a){return smoothstep(0.,.07,a.g-max(a.r,a.b)*1.05)*smoothstep(.07,.15,a.g);}
+void main(){vec3 c=texture2D(t,v).rgb;vec2 d=px*20.;vec3 m=vec3(0.);
+for(int i=-1;i<=1;i++)for(int j=-1;j<=1;j++)m+=texture2D(t,v+vec2(float(i),float(j))*d).rgb;
+float g=grass(m/9.);float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b));
+float w=smoothstep(.45,.6,mn)*(1.-smoothstep(.12,.24,mx-mn));
+c*=mix(vec3(1.),vec3(.62,.76,.58),g*(1.-w));c=mix(c,vec3(1.),.35*w*g);
+gl_FragColor=vec4(c,1.);}`;
+  const out = document.createElement('canvas');
+  out.id = 'pes-pitch';
+  // videoCanvas z-index 2 → lớp lọc cũng 2, đứng sau nó trong DOM nên nằm trên (z 1 cũ bị khung hình che, không thấy gì); logo/bảng tỉ số chèn sau vẫn nằm trên.
+  Object.assign(out.style, { position: 'absolute', zIndex: '2', pointerEvents: 'none', display: 'none' });
+  const gl = out.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false });
+  if (!gl) return;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+  gl.useProgram(prog);
+  const pxLoc = gl.getUniformLocation(prog, 'px');
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  let tw = 0, th = 0;
+  const frame = () => {
+    requestAnimationFrame(frame);
+    const src = document.getElementById('videoCanvas');
+    if (!src || !src.parentElement || src.width < 100 || src.height < 100) { out.style.display = 'none'; return; }
+    if (out.parentElement !== src.parentElement) src.parentElement.appendChild(out);
+    out.style.left = src.offsetLeft + 'px';
+    out.style.top = src.offsetTop + 'px';
+    out.style.width = src.offsetWidth + 'px';
+    out.style.height = src.offsetHeight + 'px';
+    out.style.display = 'block';
+    if (tw !== src.width || th !== src.height) {
+      tw = out.width = src.width; th = out.height = src.height;
+      gl.viewport(0, 0, tw, th);
+      gl.uniform2f(pxLoc, 1 / tw, 1 / th);
+    }
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, src);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  };
+  requestAnimationFrame(frame);
+})();
