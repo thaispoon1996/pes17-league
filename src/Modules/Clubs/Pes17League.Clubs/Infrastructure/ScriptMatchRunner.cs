@@ -119,6 +119,7 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         string? recording = null;
         var moments = new List<RunMoment>();
         List<MemoryBlock>? stats = null;
+        var kicked = false;
         try
         {
             while (await p.StandardOutput.ReadLineAsync(ct) is { } line)
@@ -128,6 +129,9 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
                 onEvent?.Invoke(r, e.Clone());
                 switch (e.GetProperty("event").GetString())
                 {
+                    case "kickoff":
+                        kicked = true;
+                        break;
                     case "goal":
                         goals.Add(new RunGoal(e.GetProperty("side").GetString() == "home" ? MatchSide.Home : MatchSide.Away,
                             e.GetProperty("half").GetInt32() + 1, e.GetProperty("minute").GetInt32(), e.GetProperty("wall").GetDouble(),
@@ -153,12 +157,12 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
                         break;
                     case "end":
                         return new MatchRunOutcome(true, e.GetProperty("home").GetInt32(), e.GetProperty("away").GetInt32(), goals, RecordingPath: recording, Ratings: ratings,
-                            Penalties: penalties, Moments: moments, StatsBlocks: stats);
+                            Penalties: penalties, Moments: moments, StatsBlocks: stats, KickedOff: true);
                     case "error":
-                        return new MatchRunOutcome(false, 0, 0, goals, e.GetProperty("reason").GetString(), recording);
+                        return new MatchRunOutcome(false, 0, 0, goals, e.GetProperty("reason").GetString(), recording, KickedOff: kicked);
                 }
             }
-            return new MatchRunOutcome(false, 0, 0, goals, "script_exited", recording);
+            return new MatchRunOutcome(false, 0, 0, goals, "script_exited", recording, KickedOff: kicked);
         }
         finally
         {

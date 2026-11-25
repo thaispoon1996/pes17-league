@@ -43,7 +43,7 @@ public sealed record RunRating(MatchSide Side, int Slot, int? PesPlayerId, int? 
 /// <param name="StatsBlocks">Khối bộ nhớ thống kê lúc hết giờ (<see cref="MatchStatsDecoder"/>); null = không đọc được (không ảnh hưởng kết quả trận).</param>
 public sealed record MatchRunOutcome(bool Finished, int HomeGoals, int AwayGoals, IReadOnlyList<RunGoal> Goals, string? Error = null, string? RecordingPath = null,
     IReadOnlyList<RunRating>? Ratings = null, (int Home, int Away)? Penalties = null, IReadOnlyList<RunMoment>? Moments = null,
-    IReadOnlyList<MemoryBlock>? StatsBlocks = null);
+    IReadOnlyList<MemoryBlock>? StatsBlocks = null, bool KickedOff = false);
 
 /// <param name="VideoOffsetSec">Vị trí pha bóng trong bản ghi hình.</param>
 /// <param name="Caption">Chữ trên video, vd "MCI 0–1 MUN · 11' Sesko — Bàn thắng".</param>
@@ -224,12 +224,15 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
                 error = $"Ghi kết quả lỗi: {r.Error}";   // vd bàn thắng đọc được không khớp tỷ số → chạy lại
                 await using var db2 = dbFactory();
                 await new CompetitionService(db2, store, clock).EndAttemptAsync(start.AttemptId!.Value, MatchAttemptOutcome.Crashed, outcome.RecordingPath, ct);
+                if (humanSide is not null) return (new FixtureRunReport(fixtureId, false, attempt, error), null);   // trận có người: không đá lại thay HLV (PO 25/11)
                 continue;
             }
             error = outcome.Error ?? "Không rõ lỗi";
             await svc.EndAttemptAsync(start.AttemptId!.Value, MatchAttemptOutcome.Crashed, outcome.RecordingPath, ct);
             // người chơi không giao bóng (vắng/rớt mạng): thử lại cũng chỉ chờ tiếp → dừng, để HLV bấm Chuẩn bị lại (24/11)
             if (error.StartsWith("no_kickoff") || error.StartsWith("human_timeout")) return (new FixtureRunReport(fixtureId, false, attempt, error), null);
+            // PO 25/11: trận có người đã giao bóng rồi mới lỗi → không tự vào lại trận không người (giữ máy hàng chục phút), trả máy để HLV chuẩn bị lại
+            if (humanSide is not null && outcome.KickedOff) return (new FixtureRunReport(fixtureId, false, attempt, error), null);
         }
         return (new FixtureRunReport(fixtureId, false, max, error), null);
     }

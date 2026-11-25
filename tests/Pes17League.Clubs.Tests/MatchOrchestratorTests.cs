@@ -279,6 +279,27 @@ public class MatchOrchestratorTests
         Assert.Equal(2, await db.MatchAttempts.CountAsync(a => a.Outcome == MatchAttemptOutcome.Crashed));
     }
 
+    /// <summary>PO 25/11: trận có người lỗi sau giao bóng → không tự đá lại (trả máy); lỗi trước giao bóng (đi menu) → vẫn thử lại.</summary>
+    [DbFact]
+    public async Task Human_fixture_not_retried_after_kickoff()
+    {
+        await using var t = await TestDb.CreateAsync();
+        var (_, md1, club) = await SetupAsync(t, 2, human: true);
+        Guid fixture; MatchSide side;
+        await using (var db = t.Context())
+        {
+            var f = await db.Fixtures.SingleAsync(x => x.MatchdayId == md1);
+            (fixture, side) = (f.Id, f.HomeClubId == club ? MatchSide.Home : MatchSide.Away);
+        }
+        var kicked = new FakeRunner((_, _) => Task.FromResult(new MatchRunOutcome(false, 0, 0, [], "no_progress", KickedOff: true)));
+        var r1 = await new MatchOrchestrator(t.Context, t.Store, t.Clock, kicked, new() { MaxAttempts = 3 }).PlayFixtureAsync(fixture, side);
+        Assert.Equal((false, 1), (r1.Played, kicked.Calls.Count));
+
+        var menu = new FakeRunner((_, n) => Task.FromResult(n < 2 ? new MatchRunOutcome(false, 0, 0, [], "nav_pick_home") : new MatchRunOutcome(true, 1, 0, [new RunGoal(MatchSide.Home, 1, 10, 100, null)])));
+        var r2 = await new MatchOrchestrator(t.Context, t.Store, t.Clock, menu, new() { MaxAttempts = 3 }).PlayFixtureAsync(fixture, side);
+        Assert.Equal((true, 2), (r2.Played, menu.Calls.Count));
+    }
+
     /// <summary>8 CLB, 2 container song song: 4 trận, ≤ 2 trận cùng lúc, vòng chốt đúng 1 lần.</summary>
     [DbFact]
     public async Task Parallel_containers_settle_round_once()

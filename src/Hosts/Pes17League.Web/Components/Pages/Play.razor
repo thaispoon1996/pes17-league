@@ -6,6 +6,7 @@
 @inject NavigationManager Nav
 @inject IDbContextFactory<ClubsDbContext> Dbs
 @inject IJSRuntime JS
+@inject CurrentUser Me
 
 @* Màn chờ trận của PO (PO duyệt 03/11): game khởi động + tự đi menu; tới lúc tải trận thì tự mở stream để vào đá luôn.
    Hết giờ (PO 04/11): stream tự quay về đây → "đang đọc kết quả" rồi tỷ số, bàn thắng, điểm cầu thủ đội mình.
@@ -123,6 +124,13 @@
                         <i class="ms fill" aria-hidden="true">live_tv</i>
                     </a>
                 </div>
+                @* PO 25/11: HLV tự huỷ trận đang vào/đang đá → bộ chạy dừng ngay, trả máy; trận về lịch (chuẩn bị lại sau). *@
+                @if (!guest)
+                {
+                    <div class="cx-acts">
+                        <button type="button" class="cx-btn ghost" data-confirm="Huỷ trận này và trả máy? Trận về lịch, chuẩn bị lại sau." data-confirm-ok="Huỷ trận" @onclick="Jobs.Cancel"><i class="ms" aria-hidden="true">close</i>Huỷ trận (trả máy)</button>
+                    </div>
+                }
             }
             else
             {
@@ -249,7 +257,7 @@ else
     static readonly (string Key, string Text)[] Steps =
         [("boot", "Khởi động game"), ("menu", "Vào menu"), ("teams", "Chọn đội"), ("ready", "Sẵn sàng"), ("loading", "Tải trận")];
     static int Index(string? stage) => stage is "kickoff" or "fulltime" ? Steps.Length : Array.FindIndex(Steps, s => s.Key == stage);
-    bool left;
+    bool left, guest = true;
     Timer? tick;
     Result? result;
     Head? head;
@@ -265,6 +273,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         Jobs.Changed += OnJob;
+        guest = await Me.IsGuestAsync();
         tick = new Timer(_ => { if (Jobs.SecondsToKickoff is not null) InvokeAsync(StateHasChanged); }, null, 1000, 1000);
         await LoadResultAsync();
     }

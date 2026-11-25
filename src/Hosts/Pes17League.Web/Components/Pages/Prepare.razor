@@ -131,6 +131,7 @@
         {
             <p>Đội hình đã chốt, game đang vào trận.</p>
             <a class="btn primary wide" href="vao-tran"><span class="ms ic" aria-hidden="true">live_tv</span>Màn hình chờ vào trận</a>
+            <button class="wide" data-confirm="Huỷ trận này và trả máy? Trận về lịch, chuẩn bị lại sau." data-confirm-ok="Huỷ trận" @onclick="Jobs.Cancel"><span class="ms ic" aria-hidden="true">close</span>Huỷ trận (trả máy)</button>
         }
         else if (Jobs.Running)
         {
