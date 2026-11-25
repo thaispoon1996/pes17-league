@@ -56,7 +56,7 @@ public sealed record LiveStore(string Dir)
 /// Nhật ký sống từ sự kiện JSON của pesmatch.py; trang đăng ký <see cref="Changed"/> để vẽ lại.
 /// </summary>
 public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOptionFileStore store, TimeProvider clock, MatchJobOptions o, ILogger<MatchJobService> log,
-    IArticleWriter articles, IFrameGrabber frames, NewsStore news, StreamPass pass)
+    IArticleWriter articles, IFrameGrabber frames, NewsStore news, StreamPass pass, VenueService venues)
 {
     private readonly object _gate = new();
     private readonly List<string> _log = [];
@@ -360,7 +360,8 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
 
     private MatchOrchestrator Orchestrator() =>
         new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, OnEvent, o.RecordingDir, o.LiveDir, logoDir: o.LogoDir, lockFile: o.LockFile, graphicsDir: o.GraphicsDir),
-            new MatchOrchestratorOptions { FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null, MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
+            new MatchOrchestratorOptions { FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null, MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir,
+                Conditions = venues.ConditionsAsync },   // sân HLV chọn + thời tiết thật (PO 25/11)
             null,   // PO 12/11: bỏ highlight từng trận; bàn thắng cắt từ bản ghi trong RoundReelService (đoạn từng bàn + clip vòng)
             new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));
 
@@ -369,7 +370,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     public MatchOrchestrator DuelOrchestrator(string container, Action<MatchRunRequest, JsonElement> onEvent) =>
         new(() => dbs.CreateDbContext(), store, clock, new ScriptMatchRunner(o.Script, o.WorkDir, onEvent, o.RecordingDir, logoDir: o.LogoDir, lockFile: o.LockFile, graphicsDir: o.GraphicsDir),
             new MatchOrchestratorOptions { Containers = [container], FreeDiskBytes = o.RecordingDir is { } rec ? () => FreeBytes(rec) : null,
-                MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir },
+                MinFreeDiskBytes = (long)o.MinFreeDiskGb << 30, StatsDir = o.StatsDir, Conditions = venues.ConditionsAsync },
             null, new MatchPress(() => dbs.CreateDbContext(), articles, frames, news.Dir, clock));
 
     /// <summary>Số byte trống của ổ chứa <paramref name="dir"/> (thư mục chưa tạo → thư mục cha gần nhất).</summary>

@@ -49,7 +49,7 @@ FILES=("common/etc/pesdb/PlayerAssignment.bin=$OUT/PlayerAssignment.bin")
 python3 "$H/cpk.py" build "$OUT/template.cpk" "$OUT/pes17league.cpk" "${FILES[@]}"
 # gói đồ hoạ giải đang cài (compe.py, PO 23/11) giữ nguyên trong danh sách
 # + gói đồ hoạ chung mọi trận (house.py, PO 23/11) trước gói giải
-EXTRA=(pes17league.cpk); [ -s "$OUT/house.active" ] && EXTRA+=(pes17house.cpk); [ -s "$OUT/name.active" ] && EXTRA+=(pes17name.cpk); [ -s "$OUT/compe.active" ] && EXTRA+=(pes17compe.cpk)
+EXTRA=(pes17league.cpk); [ -s "$OUT/house.active" ] && EXTRA+=(pes17house.cpk); [ -s "$OUT/ads.active" ] && EXTRA+=(pes17ads.cpk); [ -s "$OUT/name.active" ] && EXTRA+=(pes17name.cpk); [ -s "$OUT/compe.active" ] && EXTRA+=(pes17compe.cpk)
 python3 "$H/dplist.py" "$ORIG" "$OUT/DpFileList.bin" "${EXTRA[@]}"
 put() { docker exec -i -u abc "$BENCH" sh -c 'cat > "$1.new" && mv "$1.new" "$1"' sh "$DL/$2" < "$1"; }
 put "$OUT/pes17league.cpk" pes17league.cpk

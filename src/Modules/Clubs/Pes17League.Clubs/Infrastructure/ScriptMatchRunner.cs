@@ -52,6 +52,7 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         if (logoDir is not null && r.CompetitionLogo is { Length: > 0 } logo && Path.Combine(Path.GetFullPath(logoDir), Path.GetFileName(logo)) is var lf && File.Exists(lf))
             psi.Environment["PESMATCH_LOGO"] = lf;
         if (lockFile is not null) psi.Environment["PESMATCH_LOCK"] = Path.GetFullPath(lockFile);
+        if (r.Conditions is { Length: > 0 } cond) psi.Environment["PESMATCH_CONDITIONS"] = cond;   // sân + giờ/mùa/thời tiết (pesmatch17 match_conditions)
         if (r.Hot) psi.Environment["PESMATCH_HOT"] = "1";   // trận cầu đinh: record-mode = hot chỉ ghi trận này (tools/match17/tools/rec17.py)
         if (graphicsDir is not null)
         {

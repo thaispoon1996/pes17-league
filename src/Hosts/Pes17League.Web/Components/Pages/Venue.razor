@@ -1,0 +1,305 @@
+@page "/san-van-dong"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject CurrentUser Me
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject VenueService Venues
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Sân vận động</PageTitle>
+
+@* Sân + thời tiết trận (PO 25/11): HLV chọn sân cho trận sân nhà (40 sân có trong game + "sân nhà theo game"); mặc định = sân thật
+   của CLB nếu game có. Thời tiết/giờ/mùa không chọn được: lấy theo thời tiết lúc này ngoài đời tại sân nhà CLB (VenueService).
+   Biển quảng cáo: tối đa 6 tấm chữ hoặc ảnh (8:1), dựng gói tools/pes17db/ads.py; bộ chạy cài trước trận sân nhà. *@
+@if (!loaded) { return; }
+@if (clubId is not { } club) { <NoClubNote /> return; }
+@{ var cur = VenueService.ById(chosen); }
+<div class="vn">
+    <header class="vn-head">
+        <h1>Sân vận động</h1>
+        <p>Sân cho các trận sân nhà của <b>@clubName</b>. Trận sân khách đá ở sân đội chủ nhà chọn.</p>
+    </header>
+
+    <section class="vn-now" aria-label="Sân và thời tiết trận sân nhà kế tiếp">
+        <figure class="vn-hero">
+            <img src="@VenueService.Thumb(chosen)" alt="@(cur?.Name ?? "Sân nhà theo game")" width="560" height="272" />
+            <figcaption>
+                <span class="vn-tag">Đang dùng</span>
+                <b>@(cur?.Name ?? "Sân nhà theo game")</b>
+                <small>@(cur is null ? "Game tự xếp sân nhà cho đội" : cur.City)@(chosen == real && real != VenueService.HomeField ? " · sân thật của CLB" : "")</small>
+            </figcaption>
+        </figure>
+        <div class="vn-wx">
+            <h2><i class="ms" aria-hidden="true">partly_cloudy_day</i>Thời tiết tự động</h2>
+            @if (wx is { } w)
+            {
+                <div class="vn-wx-now">
+                    <i class="ms fill" aria-hidden="true">@w.Icon</i>
+                    <span><b>@w.TempC.ToString("0")°</b><small>@w.Label · @(w.IsDay ? "ban ngày" : "ban đêm")</small></span>
+                </div>
+                <p class="vn-wx-at">Lúc này tại @(geo?.City ?? geo?.Venue ?? clubName)</p>
+                <ul class="vn-game" aria-label="Trong game">
+                    <li><small>Thời tiết</small>@(w.Weather == "rainy" ? "Mưa" : "Khô ráo")</li>
+                    <li><small>Giờ</small>@(w.Time == "day" ? "Ngày" : "Đêm")</li>
+                    <li><small>Mùa</small>@(w.Season == "winter" ? "Đông" : "Hè")</li>
+                </ul>
+                @if (w.Snow) { <p class="vn-warn"><i class="ms" aria-hidden="true">ac_unit</i>Game không có tuyết, trận sẽ đá dưới mưa.</p> }
+            }
+            else
+            {
+                <p class="vn-wx-at">Chưa lấy được thời tiết ở sân nhà CLB. Trận sẽ dùng thời tiết mặc định của game.</p>
+            }
+            <small class="vn-hint"><i class="ms" aria-hidden="true">info</i>Lấy lại đúng lúc vào trận. Dưới 12° là mùa đông: khán giả mặc áo ấm.</small>
+        </div>
+    </section>
+
+    <section class="vn-ads" aria-labelledby="vn-ads">
+        <div class="vn-pick-head">
+            <h2 id="vn-ads">Biển quảng cáo</h2>
+            <span class="vn-ads-state @(ads is null ? null : "on")">@(ads is null ? "Đang dùng biển gốc của game" : $"Đang dùng {ads.Count} tấm của CLB")</span>
+        </div>
+        <p class="vn-note">Biển chạy quanh sân trong các trận sân nhà. Tối đa @VenueService.AdSlots tấm, mỗi tấm là một dòng chữ hoặc một ảnh ngang (tỉ lệ 8:1, ví dụ 1024×128).</p>
+        <ol class="vn-boards">
+            @for (var n = 0; n < edit.Count; n++)
+            {
+                var k = n;
+                var b = edit[k];
+                <li class="vn-board">
+                    <div class="vn-board-face" style="@(b.Image is null ? $"background:{b.Bg};color:{b.Fg}" : null)">
+                        @if (b.Image is not null) { <img src="@Venues.AdsWeb(club, b.Image)" alt="Ảnh tấm @(k + 1)" /> }
+                        else { <span>@(string.IsNullOrWhiteSpace(b.Text) ? "Nhập chữ" : b.Text)</span> }
+                    </div>
+                    <div class="vn-board-ctl">
+                        @if (b.Image is null)
+                        {
+                            <input type="text" maxlength="40" value="@b.Text" placeholder="Chữ trên biển" aria-label="Chữ tấm @(k + 1)"
+                                   @oninput="e => edit[k] = edit[k] with { Text = e.Value?.ToString() }" />
+                            <div class="vn-swatch" role="radiogroup" aria-label="Màu tấm @(k + 1)">
+                                @foreach (var (bg, fg) in VenueService.AdColors)
+                                {
+                                    var on = b.Bg == bg && b.Fg == fg;
+                                    <button type="button" role="radio" aria-checked="@(on ? "true" : "false")" class="@(on ? "on" : null)" style="background:@bg;color:@fg"
+                                            aria-label="Nền @bg chữ @fg" @onclick="() => edit[k] = edit[k] with { Bg = bg, Fg = fg }">A</button>
+                                }
+                            </div>
+                        }
+                        <div class="vn-board-act">
+                            <label class="cx-btn ghost sm vn-up"><i class="ms" aria-hidden="true">image</i>@(b.Image is null ? "Dùng ảnh" : "Đổi ảnh")
+                                <InputFile accept="image/png,image/jpeg,image/webp" OnChange="e => Upload(club, k, e)" disabled="@busy" /></label>
+                            @if (b.Image is not null) { <button type="button" class="cx-btn ghost sm" @onclick="() => edit[k] = edit[k] with { Image = null }">Dùng chữ</button> }
+                            @if (edit.Count > 1) { <button type="button" class="cx-btn ghost sm" aria-label="Bỏ tấm @(k + 1)" @onclick="() => edit.RemoveAt(k)"><i class="ms" aria-hidden="true">delete</i></button> }
+                        </div>
+                    </div>
+                </li>
+            }
+        </ol>
+        <div class="vn-ads-act">
+            @if (edit.Count < VenueService.AdSlots)
+            {
+                <button type="button" class="cx-btn ghost" @onclick="AddBoard"><i class="ms" aria-hidden="true">add</i>Thêm tấm</button>
+            }
+            <button type="button" class="cx-btn gold" disabled="@busy" @onclick="() => SaveAds(club)">@(busy ? "Đang dựng biển…" : "Lưu biển quảng cáo")</button>
+            @if (ads is not null)
+            {
+                <button type="button" class="cx-btn ghost" disabled="@busy" data-confirm="Bỏ biển của CLB và dùng lại biển gốc của game?" data-confirm-ok="Dùng biển gốc"
+                        @onclick="() => ClearAds(club)">Dùng biển gốc</button>
+            }
+        </div>
+        @if (adsMsg is not null) { <p class="@(adsErr ? "vn-err" : "vn-saved")" role="status"><i class="ms" aria-hidden="true">@(adsErr ? "error" : "check_circle")</i>@adsMsg</p> }
+        <small class="vn-hint"><i class="ms" aria-hidden="true">info</i>Áp dụng từ trận sân nhà kế tiếp. Khi trận trước dùng biển khác, game mở lại trước trận (thêm khoảng 1 phút).</small>
+    </section>
+
+    <section class="vn-pick" aria-labelledby="vn-pick">
+        <div class="vn-pick-head">
+            <h2 id="vn-pick">Chọn sân</h2>
+            @if (custom && chosen != real)
+            {
+                <button type="button" class="cx-btn ghost sm" @onclick="() => Pick(club, null)">Về sân mặc định</button>
+            }
+        </div>
+        @if (saved is not null) { <p class="vn-saved" role="status"><i class="ms" aria-hidden="true">check_circle</i>@saved</p> }
+        <div class="vn-grid" role="radiogroup" aria-labelledby="vn-pick">
+            @foreach (var (i, name, city) in Options())
+            {
+                var on = i == chosen;
+                <button type="button" role="radio" aria-checked="@(on ? "true" : "false")" class="vn-card@(on ? " on" : null)" @onclick="() => Pick(club, i)">
+                    <img src="@VenueService.Thumb(i)" alt="" width="280" height="136" loading="lazy" />
+                    <span class="vn-card-t"><b>@name</b><small>@city</small></span>
+                    @if (i == real && real != VenueService.HomeField) { <span class="vn-real">Sân thật</span> }
+                    @if (on) { <i class="ms fill vn-tick" aria-hidden="true">check_circle</i> }
+                </button>
+            }
+        </div>
+    </section>
+</div>
+
+<style>
+    .vn { display: grid; gap: 18px; }
+    .vn-head h1 { margin: 0; font: 800 34px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .vn-head p { margin: 6px 0 0; color: #9ba7b5; font-size: 14.5px; }
+    .vn-head b { color: #dee1f7; font-weight: 600; }
+    .vn-now { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; }
+    .vn-hero { margin: 0; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid #2c303b; background: #1c1f2a; min-height: 220px; }
+    .vn-hero img { display: block; width: 100%; height: 100%; object-fit: cover; aspect-ratio: 560 / 272; }
+    .vn-hero figcaption { position: absolute; inset: auto 0 0 0; display: grid; gap: 2px; padding: 40px 16px 14px; background: linear-gradient(transparent, rgba(15,19,29,.94) 55%); }
+    .vn-hero figcaption b { font: 800 34px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #fff; }
+    .vn-hero figcaption small { color: #9ba7b5; font-size: 13px; }
+    .vn-tag { justify-self: start; font: 800 13px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #0f131d; background: #00ff87; padding: 4px 8px; border-radius: 6px; margin-bottom: 4px; }
+    .vn-wx { display: grid; align-content: start; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid #2c303b; background: #1c1f2a; }
+    .vn-wx h2, .vn-pick h2 { margin: 0; display: flex; gap: 8px; align-items: center; font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .vn-wx h2 .ms { color: #ffb95f; font-size: 22px; }
+    .vn-wx-now { display: flex; gap: 12px; align-items: center; }
+    .vn-wx-now > .ms { font-size: 52px; color: #ffb95f; }
+    .vn-wx-now b { display: block; font: 800 46px/1 'Barlow Condensed', sans-serif; color: #dee1f7; font-variant-numeric: tabular-nums; }
+    .vn-wx-now small { color: #9ba7b5; font-size: 14px; }
+    .vn-wx-at { margin: 0; color: #9ba7b5; font-size: 13.5px; }
+    .vn-game { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .vn-game li { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: #262a35; font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #00ff87; }
+    .vn-game small { font: 500 11.5px/1.2 'Be Vietnam Pro', sans-serif; text-transform: none; color: #9ba7b5; }
+    .vn-warn { margin: 0; display: flex; gap: 6px; align-items: center; color: #ffb95f; font-size: 13px; }
+    .vn-hint, .vn-saved { display: flex; gap: 6px; align-items: flex-start; color: #9ba7b5; font-size: 12.5px; line-height: 1.4; }
+    .vn-hint .ms { font-size: 16px; }
+    .vn-saved { margin: 0; color: #00ff87; font-size: 13.5px; align-items: center; }
+    .vn-pick { display: grid; gap: 12px; }
+    .vn-pick-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .vn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .vn-card { position: relative; display: grid; padding: 0; text-align: left; border-radius: 12px; overflow: hidden; border: 1px solid #2c303b; background: #1c1f2a; color: #dee1f7; cursor: pointer; font: inherit; }
+    .vn-card img { display: block; width: 100%; aspect-ratio: 280 / 136; object-fit: cover; background: #262a35; }
+    .vn-card-t { display: grid; gap: 2px; padding: 8px 10px 10px; }
+    .vn-card-t b { font: 800 17px/1.1 'Barlow Condensed', sans-serif; text-transform: uppercase; }
+    .vn-card-t small { color: #9ba7b5; font-size: 12px; }
+    .vn-card:hover { border-color: #4a5060; }
+    .vn-card:focus-visible { outline: 2px solid #00ff87; outline-offset: 2px; }
+    .vn-card.on { border-color: #00ff87; box-shadow: inset 0 0 0 1px #00ff87; }
+    .vn-card.on .vn-card-t b { color: #00ff87; }
+    .vn-real { position: absolute; top: 8px; left: 8px; font: 800 12px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #0f131d; background: #ffb95f; padding: 4px 6px; border-radius: 6px; }
+    .vn-tick { position: absolute; top: 6px; right: 6px; color: #00ff87; font-size: 26px; text-shadow: 0 0 6px #0f131d; }
+    .vn-ads { display: grid; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid #2c303b; background: #1c1f2a; }
+    .vn-ads h2 { margin: 0; font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .vn-ads-state { font-size: 12.5px; color: #9ba7b5; }
+    .vn-ads-state.on { color: #00ff87; }
+    .vn-note { margin: 0; color: #9ba7b5; font-size: 13.5px; }
+    .vn-boards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+    .vn-board { display: grid; gap: 8px; }
+    .vn-board-face { aspect-ratio: 8 / 1; border-radius: 6px; overflow: hidden; display: grid; place-items: center; background: #262a35; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); container-type: inline-size; }
+    .vn-board-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .vn-board-face span { font: 800 7.2cqw/1 'Barlow Condensed', sans-serif; text-transform: uppercase; white-space: nowrap; overflow: hidden; max-width: 92%; text-overflow: clip; }
+    .vn-board-ctl { display: grid; gap: 8px; }
+    .vn-board-ctl input[type=text] { min-height: 40px; padding: 8px 10px; border-radius: 10px; border: 1px solid #2c303b; background: #0f131d; color: #dee1f7; font: inherit; }
+    .vn-board-ctl input[type=text]:focus-visible { outline: 2px solid #00ff87; outline-offset: 1px; }
+    .vn-swatch { display: flex; flex-wrap: wrap; gap: 6px; }
+    .vn-swatch button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid #2c303b; font: 800 16px/1 'Barlow Condensed', sans-serif; cursor: pointer; }
+    .vn-swatch button.on { outline: 2px solid #00ff87; outline-offset: 2px; }
+    .vn-board-act, .vn-ads-act { display: flex; flex-wrap: wrap; gap: 8px; }
+    .vn-ads-act .cx-btn { min-height: 44px; }
+    .vn-ads-act .cx-btn[disabled] { opacity: .5; cursor: default; }
+    .vn-up { position: relative; cursor: pointer; }
+    .vn-up input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .vn-err { margin: 0; display: flex; gap: 6px; align-items: center; color: #ff4d5e; font-size: 13.5px; }
+    @@media (max-width: 900px) { .vn-now { grid-template-columns: minmax(0, 1fr); } }
+    @@media (max-width: 560px) {
+        .vn-boards { grid-template-columns: minmax(0, 1fr); }
+        .vn-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .vn-card-t b { font-size: 15px; }
+        .vn-hero figcaption b { font-size: 26px; }
+        .vn-head h1 { font-size: 28px; }
+    }
+</style>
+
+@code {
+    bool loaded, custom;
+    Guid? clubId;
+    string clubName = "";
+    int chosen, real;
+    string? saved;
+    VenueService.Geo? geo;
+    VenueService.Now? wx;
+    IReadOnlyList<VenueService.Board>? ads;
+    List<VenueService.Board> edit = [];
+    bool busy, adsErr;
+    string? adsMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (await Me.ManagerIdAsync() is { } mid)
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var mine = await (from a in db.TeamAssignments join c in db.Clubs on a.ClubId equals c.Id
+                              where a.ParticipantId == mid && a.To == null && a.ControllerType == ControllerType.Human select new { c.Id, c.Name }).FirstOrDefaultAsync();
+            if (mine is not null)
+            {
+                (clubId, clubName) = (mine.Id, mine.Name);
+                Load(mine.Id);
+                LoadAds(mine.Id);
+                geo = Venues.GeoOf(mine.Id);
+                wx = await Venues.WeatherAsync(mine.Id);
+            }
+        }
+        loaded = true;
+    }
+
+    void Load(Guid club) => (chosen, real, custom) = (Venues.StadiumFor(club), Venues.DefaultFor(club), Venues.HasChoice(club));
+
+    /// <summary>Sân thật của CLB đứng đầu (nếu game có), rồi "sân nhà theo game", rồi 40 sân theo thứ tự menu game.</summary>
+    IEnumerable<(int, string, string)> Options()
+    {
+        if (real != VenueService.HomeField && VenueService.ById(real) is { } r) yield return (r.Index, r.Name, r.City);
+        yield return (VenueService.HomeField, "Sân nhà theo game", "Game tự xếp sân cho đội");
+        foreach (var s in VenueService.Stadiums.Where(s => s.Index != real)) yield return (s.Index, s.Name, s.City);
+    }
+
+    void Pick(Guid club, int? i)
+    {
+        Venues.Save(club, i);
+        Load(club);
+        var name = VenueService.ById(chosen)?.Name ?? "sân nhà theo game";
+        saved = i is null ? $"Đã về sân mặc định: {name}" : $"Đã chọn {name}. Áp dụng từ trận sân nhà kế tiếp.";
+    }
+
+    void LoadAds(Guid club)
+    {
+        ads = Venues.Ads(club);
+        edit = ads?.ToList() ?? [new(clubName)];
+    }
+
+    void AddBoard()
+    {
+        var (bg, fg) = VenueService.AdColors[edit.Count % VenueService.AdColors.Length];
+        edit.Add(new("", bg, fg));
+    }
+
+    async Task Upload(Guid club, int k, InputFileChangeEventArgs e)
+    {
+        (adsMsg, adsErr, busy) = (null, false, true);
+        try
+        {
+            if (e.File.Size > VenueService.AdMaxBytes) throw new InvalidOperationException("Ảnh tối đa 8 MB");
+            await using var s = e.File.OpenReadStream(VenueService.AdMaxBytes);
+            var name = await Venues.SaveAdImageAsync(club, s, Path.GetExtension(e.File.Name));
+            if (k < edit.Count) edit[k] = edit[k] with { Image = name };
+            adsMsg = "Đã tải ảnh. Bấm Lưu biển quảng cáo để đưa vào game.";
+        }
+        catch (Exception x) when (x is InvalidOperationException or IOException) { (adsMsg, adsErr) = (x.Message, true); }
+        finally { busy = false; }
+    }
+
+    async Task SaveAds(Guid club)
+    {
+        (adsMsg, adsErr, busy) = (null, false, true);
+        try
+        {
+            await Venues.BuildAdsAsync(club, edit);
+            LoadAds(club);
+            adsMsg = $"Đã lưu {ads?.Count} tấm. Áp dụng từ trận sân nhà kế tiếp.";
+        }
+        catch (InvalidOperationException x) { (adsMsg, adsErr) = (x.Message, true); }
+        finally { busy = false; }
+    }
+
+    void ClearAds(Guid club)
+    {
+        Venues.ClearAds(club);
+        LoadAds(club);
+        (adsMsg, adsErr) = ("Đã về biển gốc của game.", false);
+    }
+}

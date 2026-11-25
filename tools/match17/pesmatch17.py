@@ -289,6 +289,10 @@ def pick(home: int, away: int, both: bool = False) -> None:
     raise NavError("nav_kickoff: không thấy màn Kickoff")
 
 
+try:
+    CONDITIONS = json.loads(os.environ.get("PESMATCH_CONDITIONS") or "{}")   # sân + giờ/mùa/thời tiết (web, PO 25/11)
+except ValueError:
+    CONDITIONS = {}
 MATCH_TIME = 10            # trận có người: phút cả trận trong game = 5 phút/hiệp (PO 18/11)
 BOT_MATCH_TIME = 5         # trận BOT vs BOT: 2,5 phút/hiệp cho nhanh (PO 19/11)
 MT_VALUE = (780, 345, 970, 372)   # ô giá trị dòng "Match Time" trong GENERAL SETTINGS
@@ -431,6 +435,80 @@ def match_time(want: int = MATCH_TIME, level: str | None = None) -> None:
         raise NavError("nav_match_time: không chỉnh được")
     finally:
         nav.pad("B w:2.5 Left w:0.6 Left w:0.6")
+
+
+# Màn STADIUM (PO 25/11): sân + giờ/mùa/thời tiết theo web (PESMATCH_CONDITIONS, JSON). Thử thật 25/11: 40 sân + Home Field (42/42)
+# + Random (41/42); Time Random/Day/Night, Season Random/Summer/Winter, Weather Random/Fine/Rainy (game không có tuyết).
+ST_COUNT = (990, 372, 1100, 408)            # "N/42" góc ảnh sân
+ST_ROWS = {"stadium": 445, "time": 474, "season": 503, "weather": 532}   # tâm dòng; ô giá trị x 680–1070
+ST_HOME, ST_TOTAL = 42, 42
+ST_CYCLE = {"time": [("random", ("ndo", "ran", "dom")), ("day", ("ay",)), ("night", ("gh", "nig"))],   # thứ tự khi bấm Phải;
+            "season": [("random", ("ndo", "ran", "dom")), ("summer", ("umm", "mme", "sum")), ("winter", ("int", "nter", "ner", "win"))],
+            "weather": [("random", ("ndo", "ran", "dom")), ("fine", ("ine", "fin")), ("rainy", ("ain", "iny", "rai"))]}   # mẫu chữ: OCR hay mất/sai chữ
+
+
+def _st_value(im, row: str) -> str:
+    y = ST_ROWS[row]
+    return ocr.rec(im, (680, y - 13, 1070, y + 13))[0].replace(" ", "").lower()
+
+
+def _st_index(im) -> int | None:
+    m = re.match(r"\s*(\d{1,2})\s*/", ocr.rec(im, ST_COUNT)[0])
+    return int(m[1]) if m else None
+
+
+def _st_keys(im, want: dict) -> list[str]:
+    """Phím đi từ dòng Stadium qua Time/Season/Weather (đọc cả 3 dòng trên 1 ảnh), bấm Phải đủ nấc rồi về lại dòng Stadium."""
+    keys, down = [], 0
+    for i, row in enumerate(("time", "season", "weather"), 1):
+        names = [n for n, _ in ST_CYCLE[row]]
+        target = str(want.get(row, "")).lower()
+        if target not in names:
+            continue
+        val = _st_value(im, row)
+        cur = next((k for k, (_, ws) in enumerate(ST_CYCLE[row]) if any(w in val for w in ws)), None)
+        if cur is None:
+            raise NavError(f"nav_{row}: không đọc được '{val}'")
+        n = (names.index(target) - cur) % len(names)
+        if n:
+            keys += ["Down w:0.3"] * (i - down) + ["Right w:0.4"] * n
+            down = i
+    return keys + ["Up w:0.3"] * down
+
+
+def match_conditions(cond: dict) -> None:
+    """Màn Kickoff (con trỏ ở KICKOFF) → tab STADIUM, đặt sân (chỉ số 1–40, 0 = Home Field) rồi Time/Season/Weather → về KICKOFF.
+    Dòng không có trong cond thì để nguyên. Mỗi lệnh pad ~1,5 s nên gộp phím: đọc 1 ảnh → 1 chuỗi phím → kiểm lại 1 ảnh.
+    Lỗi chỉ ghi log: sân/thời tiết là phụ, trận vẫn đá."""
+    want = {k: v for k, v in cond.items() if k in ST_ROWS and v is not None}
+    if not want:
+        return
+    nav.pad("Left w:0.6 A w:2.5")
+    try:
+        for attempt in range(3):
+            im = nav.shot("m17_st")
+            keys = []
+            if "stadium" in want:
+                target, cur = int(want["stadium"]) or ST_HOME, _st_index(im)
+                if cur is None:
+                    raise NavError("nav_stadium: không đọc được số sân")
+                d = (target - cur) % ST_TOTAL
+                keys += [f"Right w:0.25"] * d if d <= ST_TOTAL // 2 else ["Left w:0.25"] * (ST_TOTAL - d)
+                if keys:
+                    nav.pad(" ".join(keys) + " w:0.8")   # đổi sân xong mới đọc dòng dưới (sân có thể đổi giá trị mặc định)
+                    im = nav.shot("m17_st")
+                    if _st_index(im) != target:
+                        continue
+            rows = _st_keys(im, want)
+            if not rows:
+                log("sân/thời tiết: " + ", ".join(f"{k}={v}" for k, v in want.items()))
+                return
+            nav.pad(" ".join(rows) + " w:0.5")
+        log("sân/thời tiết: chưa đặt đủ sau 3 lần")
+    except NavError as e:
+        log(f"sân/thời tiết lỗi: {e}")
+    finally:
+        nav.pad("B w:2.5 Right w:0.6")
 
 
 GP_TITLE = (80, 112, 400, 140)   # tiêu đề GAME PLAN khung đội nhà; khung đội khách dời 576 px
@@ -946,6 +1024,30 @@ def ensure_house() -> bool:
     return False
 
 
+def ensure_ads() -> bool:
+    """Biển quảng cáo quanh sân theo CLB chủ nhà (PO 25/11; tools/pes17db/ads.py, web /san-van-dong dựng $GRAPHICS/ads/{clb}.cpk).
+    PESMATCH_CONDITIONS {"ads": clb} có gói → cài; không có → gỡ gói đang cài. Trả True nếu đã đổi (mở lại game). Lỗi chỉ ghi log."""
+    if not GRAPHICS:
+        return False
+    try:
+        club = re.sub(r"[^0-9a-f]", "", str(CONDITIONS.get("ads") or "").lower())
+        cpk = Path(GRAPHICS) / "ads" / f"{club}.cpk" if club else None
+        if not (cpk and cpk.is_file()) and not (OUT / "ads.active").exists():
+            return False
+        target = str(cpk) if cpk and cpk.is_file() else "none"
+        r = subprocess.run([sys.executable, str(REPO / "tools" / "pes17db" / "ads.py"), "install", target],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode:
+            log(f"gói biển quảng cáo lỗi: {(r.stderr or r.stdout).strip()[-200:]}")
+            return False
+        if json.loads(r.stdout).get("changed"):
+            log("biển quảng cáo đổi: mở lại game")
+            return True
+    except Exception as e:
+        log(f"gói biển quảng cáo lỗi: {e}")
+    return False
+
+
 def ensure_name() -> bool:
     """Tên giải thay chữ "Exhibition" trên dải tiêu đề (PO 23/11; tools/pes17db/compename.py, file chữ của game).
     Trận có giải → cài gói chữ tên giải; trận không giải → gỡ. Trả True nếu đã đổi (game chỉ đọc chữ lúc mở → mở lại game).
@@ -1271,6 +1373,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         gs = game_settings()
         gfx = ensure_quality(gs.get("quality"))   # ghi trước: cài đội hình (nếu có) cũng mở lại game
         gfx = ensure_house() or gfx               # đồ hoạ chung mọi trận (house.active)
+        gfx = ensure_ads() or gfx                 # biển quảng cáo CLB chủ nhà (ads.active)
         gfx = ensure_name() or gfx                # tên giải trên dải tiêu đề (name.active)
         gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active + house.active
         # đội người cầm → đổi người được trong GAME PLAN bằng tay cầm của họ (P1; trận 2 người: đội khách = P2)
@@ -1300,6 +1403,8 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             with nav.session():   # 1 kết nối tay cầm cho cả đoạn đi menu; đóng trước khi người chơi cầm tay cầm
                 to_team_select(both, human == "away", fresh)
                 pick(home, away, both)
+                if CONDITIONS:
+                    match_conditions(CONDITIONS)
                 match_time(MATCH_TIME if human else BOT_MATCH_TIME, level)
                 coach_mode(human is None)
 

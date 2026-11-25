@@ -125,10 +125,12 @@ def build(spec: dict, out: Path) -> dict:
 
 
 def extras(compe: bool) -> list[str]:
-    """Thứ tự gói của mình trong DpFileList (gói sau thắng): đội hình → đồ hoạ chung mọi trận (house.py) → đồ hoạ giải."""
+    """Thứ tự gói của mình trong DpFileList (gói sau thắng): đội hình → đồ hoạ chung mọi trận (house.py) → biển quảng cáo (ads.py) → đồ hoạ giải."""
     out = ["pes17league.cpk"]
     if (OUT / "house.active").is_file() and (OUT / "house.active").read_text().strip():
         out.append("pes17house.cpk")
+    if (OUT / "ads.active").is_file() and (OUT / "ads.active").read_text().strip():
+        out.append("pes17ads.cpk")   # biển quảng cáo theo CLB chủ nhà (ads.py, PO 25/11)
     if (OUT / "name.active").is_file() and (OUT / "name.active").read_text().strip():
         out.append("pes17name.cpk")   # tên giải trên dải tiêu đề (compename.py)
     return out + ([NAME] if compe else [])

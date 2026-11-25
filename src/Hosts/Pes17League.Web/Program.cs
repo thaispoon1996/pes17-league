@@ -56,6 +56,11 @@ var graphics = new GraphicsStore(Path.GetFullPath(Path.Combine(storeDir, "..", "
     Path.GetDirectoryName(matchLock)!);
 b.Services.AddSingleton(graphics);
 b.Services.AddHttpClient("news", c => c.Timeout = TimeSpan.FromSeconds(45));
+b.Services.AddHttpClient("weather", c => c.Timeout = TimeSpan.FromSeconds(10));   // Open-Meteo: thời tiết trận theo ngoài đời (PO 25/11)
+b.Services.AddSingleton(sp => new VenueService(Path.GetFullPath(Path.Combine(storeDir, "..", "venues")), graphics.Dir,   // + biển quảng cáo (tools/pes17db/ads.py)
+    Path.GetFullPath(Path.Combine(Path.GetDirectoryName(b.Configuration["Match:Script"]!)!, "..", "pes17db", "ads.py")), Path.GetDirectoryName(Path.GetDirectoryName(matchLock)!)!,
+    sp.GetRequiredService<IHttpClientFactory>(),
+    sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<VenueService>>()));
 b.Services.AddSingleton<IArticleWriter>(sp => new DeepSeekArticleWriter(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("news"),
     b.Configuration["DEEPSEEK_API_KEY"], b.Configuration["News:Model"] ?? "deepseek-flash"));
