@@ -619,6 +619,14 @@ class Match:
     def run(self) -> tuple[int, int]:
         last_play = progress = time.monotonic()   # progress: lần cuối đồng hồ game nhích (hoặc đang nghỉ giữa hiệp)
         last_press, last_min, misses = 0.0, None, 0
+        cut = False
+
+        def end_now() -> None:   # vừa thấy màn hết trận: ngắt người chơi 1 lần
+            nonlocal cut
+            if self.human and not cut:
+                cut = True
+                cut_players()
+
         while True:
             try:
                 im = nav.shot("m17_live")
@@ -656,6 +664,7 @@ class Match:
                 if not m and self.kick and (self.half == 1 or (last_min or 0) > 45) and ocr.rematch(im):
                     # PO 25/11: người chơi bấm A liền qua bảng Full Time → bộ chạy chỉ còn thấy hộp Rematch, trước đây kẹt
                     # tới no_progress. Tỷ số = bảng số Time Up nếu đã đọc được, không thì HUD (theo dõi từng bàn).
+                    end_now()
                     im.save(OUT / "last-fulltime.png")
                     score = getattr(self, "_ft_stats", None) or tuple(self.hud)
                     log(f"hết trận (thấy hộp Rematch, bỏ qua bảng Full Time): {score[0]}-{score[1]}")
@@ -671,6 +680,7 @@ class Match:
                         log(f"menu {m}")
                     self._last_menu = m
                     if full:
+                        end_now()
                         im.save(OUT / "last-fulltime.png")
                         if (m["home"], m["away"]) != self.hud:
                             log(f"tỷ số menu {m['home']}-{m['away']} khác HUD {self.hud}")
@@ -684,11 +694,24 @@ class Match:
                     last_press = now
                     last_play = progress = now   # đang ở menu nghỉ: không tính là treo / AFK
                 elif ocr.stats_screen(im):
-                    if (self.half == 1 or (last_min or 0) > 45) and (g := ocr.stats_goals(im)):
-                        self._ft_stats = g   # bảng số hết trận: dự phòng khi người chơi bấm qua bảng Full Time
+                    if (last_min or 0) >= 89:   # bảng số Time Up: màn đầu tiên sau tiếng còi hết trận
+                        end_now()
+                        if g := ocr.stats_goals(im):
+                            self._ft_stats = g   # dự phòng khi không đọc được bảng Full Time
                     nav.pad("A w:1")   # Half Time / Time Up
                     last_press = now
-            time.sleep(2.5)
+            time.sleep(0.5 if (last_min or 0) >= 88 or cut else 2.5)   # cuối trận nhìn dày hơn: bắt màn hết trận trong ~1 giây
+
+
+def cut_players() -> None:
+    """Hết trận (PO 25/11): thu ngay vé người chơi (chỉ giữ tay cầm ảo của máy) → người chơi không bấm qua các màn sau trận
+    được nữa; máy tự đọc tỷ số / điểm cầu thủ rồi về màn chọn đội. Web vẫn đóng vé như cũ khi xong trận (lặp lại không sao)."""
+    try:
+        r = subprocess.run(["docker", "exec", BENCH, "sh", "-c", "echo {} | /lsiopy/bin/python3 /usr/local/bin/pes-tokens.py"],
+                           capture_output=True, timeout=20)
+        log("hết trận: đã ngắt tay cầm người chơi" if r.returncode == 0 else f"ngắt tay cầm người chơi lỗi: {r.stderr[-200:]!r}")
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"ngắt tay cầm người chơi lỗi: {e}")
 
 
 def back_to_team_select() -> None:
