@@ -13,6 +13,16 @@ from pathlib import Path
 
 API = "https://www.wikidata.org/w/api.php"
 UA = "pes17-league-venue/1.0"
+# CLB Wikidata không tìm ra / ghi tên sân khác tên trong game (dò 25/11): tên CLB trong DB → (sân, thành phố, vĩ độ, kinh độ).
+# Ghi đè mỗi lần chạy. AC Milan → "San Siro" (game có 2 bản sân: Giuseppe Meazza logo Inter, San Siro logo Milan).
+OVERRIDES = {
+    "Real Madrid CF": ("Santiago Bernabéu", "Madrid", 40.4531, -3.6883),
+    "Club Atlético de Madrid": ("Metropolitano Stadium", "Madrid", 40.4362, -3.5995),
+    "Juventus FC": ("Allianz Stadium", "Torino", 45.1096, 7.6413),
+    "RCD Espanyol": ("RCDE Stadium", "Cornellà de Llobregat", 41.3479, 2.0757),
+    "Galatasaray SK": ("Rams Park", "Istanbul", 41.1033, 28.9908),
+    "AC Milan": ("San Siro", "Milan", 45.4781, 9.1240),
+}
 CLUB_WORDS = ("football club", "soccer club", "association football", "football team", "sports club")
 
 
@@ -49,7 +59,10 @@ def claims(ids: list[str]) -> dict:
 
 
 def first(e: dict, prop: str):
-    for c in e.get("claims", {}).get(prop, []):
+    """Giá trị hiện hành: hạng "preferred" trước, rồi giá trị không có ngày kết thúc (P582), cuối cùng mới tới giá trị cũ."""
+    cs = e.get("claims", {}).get(prop, [])
+    cs = sorted(cs, key=lambda c: (c.get("rank") != "preferred", "P582" in c.get("qualifiers", {}), c.get("rank") == "deprecated"))
+    for c in cs:
         v = c.get("mainsnak", {}).get("datavalue", {}).get("value")
         if v is not None:
             return v
@@ -96,6 +109,9 @@ def main(argv: list[str]) -> int:
                 coord = c
         if coord:
             done[club] = {"qid": q, "venue": venue, "city": city, "lat": round(coord["latitude"], 4), "lon": round(coord["longitude"], 4)}
+    for r in rows:
+        if (o := OVERRIDES.get(r[1])) is not None:
+            done[r[0]] = {"qid": qids.get(r[0]), "venue": o[0], "city": o[1], "lat": o[2], "lon": o[3]}
     dst.write_text(json.dumps(done, ensure_ascii=False, indent=1))
     print(json.dumps({"clubs": len(rows), "with_coords": len(done), "new": len(done) - (len(rows) - len(todo))}))
     return 0
