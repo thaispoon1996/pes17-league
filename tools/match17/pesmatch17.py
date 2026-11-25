@@ -642,7 +642,7 @@ def restart_game() -> None:
                     " pkill -9 -f 'PES2017[.]exe|wine[d]bg'; true"], capture_output=True)
     time.sleep(2)
     subprocess.run(["docker", "exec", "-d", BENCH, "bash", "-lc",
-                    "su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"], capture_output=True)
+                    "chmod 755 /defaults; su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"], capture_output=True)
     emit(event="stage", stage="boot")
     time.sleep(25)
 
@@ -677,7 +677,7 @@ def heal_bench() -> bool:
             break
         time.sleep(2)
     subprocess.run(["docker", "exec", "-d", BENCH, "bash", "-lc",
-                    "su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"], capture_output=True)
+                    "chmod 755 /defaults; su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"], capture_output=True)
     time.sleep(35)
     return True
 

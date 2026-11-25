@@ -62,6 +62,6 @@ if [ -n "$RESTART" ]; then
   docker exec "$BENCH" sh -c "pkill -f 'PES2017[.]exe'; pkill -f 'wine[d]bg';
     for i in \$(seq 30); do pgrep -f 'PES2017[.]exe|wine[d]bg' >/dev/null || exit 0; sleep 0.5; done; pkill -9 -f 'PES2017[.]exe|wine[d]bg'" || true
   sleep 2
-  docker exec -d "$BENCH" bash -lc "su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"
+  docker exec -d "$BENCH" bash -lc "chmod 755 /defaults; su -s /bin/bash abc -c 'export HOME=/config DISPLAY=:1; exec /bench/run-pes17.sh' >/tmp/pes-out.log 2>&1"
   echo "đã mở lại game"
 fi
