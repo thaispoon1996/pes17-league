@@ -1,0 +1,100 @@
+@inject IWebHostEnvironment Env
+
+@* Chọn camera trong trận (PO 25/11): kéo Độ cao / Góc → ảnh chụp thật từ máy game đổi theo ngay (wwwroot/img/camera/h{H}_a{A}.jpg,
+   chụp ở tư thế giao bóng, Custom, Zoom 0). Thiếu ảnh đúng mức → ảnh gần nhất + ghi rõ. Lưu = GameSettingsStore; bộ chạy đặt lúc giao bóng. *@
+<div class="cam">
+    <figure class="cam-view">
+        <img src="@Shot.Src" alt="Góc nhìn camera độ cao @Shot.H, góc @Shot.A lúc giao bóng" width="960" height="540" />
+        <figcaption>
+            <span class="cam-tag">Độ cao @height <i>/</i> Góc @angle</span>
+            @if (!Shot.Exact) { <span class="cam-near">Ảnh gần nhất: độ cao @Shot.H, góc @Shot.A</span> }
+        </figcaption>
+    </figure>
+    <div class="cam-ctl">
+        <label class="cam-row" for="cam-h">
+            <span><b>Độ cao</b><output>@height</output></span>
+            <input id="cam-h" type="range" min="0" max="@GameSettingsStore.CamMax" step="5" value="@height" @oninput="e => height = Num(e)" />
+            <small><span>Thấp, thấy rõ cầu thủ</span><span>Cao, thấy rộng sân</span></small>
+        </label>
+        <label class="cam-row" for="cam-a">
+            <span><b>Góc</b><output>@angle</output></span>
+            <input id="cam-a" type="range" min="0" max="@GameSettingsStore.CamMax" step="10" value="@angle" @oninput="e => angle = Num(e)" />
+            <small><span>Nghiêng</span><span>Dốc hơn</span></small>
+        </label>
+        <div class="cam-act">
+            <button type="button" class="cx-btn gold" disabled="@(!Dirty)" @onclick="Save">Lưu camera</button>
+            @if (height != Current.CamHeight || angle != Current.CamAngle)
+            {
+                <button type="button" class="cx-btn ghost" @onclick="Reset">Bỏ thay đổi</button>
+            }
+            else if (height != GameSettingsStore.CamHeightDefault || angle != GameSettingsStore.CamAngleDefault)
+            {
+                <button type="button" class="cx-btn ghost" @onclick="Default">Về mặc định</button>
+            }
+        </div>
+        <p class="cam-now">Đang dùng: độ cao @Current.CamHeight, góc @Current.CamAngle</p>
+        <small class="st-hint"><i class="ms" aria-hidden="true">info</i>Áp dụng từ trận kế tiếp. Lúc giao bóng, game tự mở bảng camera vài giây để đặt (chỉ khi bạn vừa đổi).</small>
+    </div>
+</div>
+
+<style>
+    .cam { display: grid; gap: 14px; padding-top: 4px; }
+    .cam-view { margin: 0; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid #2c303b; background: #0f131d; }
+    .cam-view img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+    .cam-view figcaption { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; justify-content: space-between; pointer-events: none; }
+    .cam-tag { font: 800 20px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; color: #00ff87; background: rgba(15,19,29,.82); padding: 6px 10px; border-radius: 8px; }
+    .cam-tag i { font-style: normal; color: #9ba7b5; padding: 0 2px; }
+    .cam-near { font-size: 11.5px; color: #ffb95f; background: rgba(15,19,29,.82); padding: 4px 8px; border-radius: 6px; }
+    .cam-ctl { display: grid; gap: 14px; }
+    .cam-row { display: grid; gap: 6px; cursor: pointer; }
+    .cam-row > span { display: flex; justify-content: space-between; align-items: baseline; }
+    .cam-row b { font-size: 14.5px; font-weight: 600; color: #dee1f7; }
+    .cam-row output { font: 800 28px/1 'Barlow Condensed', sans-serif; color: #00ff87; font-variant-numeric: tabular-nums; }
+    .cam-row small { display: flex; justify-content: space-between; gap: 8px; color: #9ba7b5; font-size: 11.5px; }
+    .cam-row input[type=range] { width: 100%; accent-color: #00ff87; height: 28px; }
+    .cam-act { display: flex; flex-wrap: wrap; gap: 8px; }
+    .cam-act .cx-btn { min-height: 44px; }
+    .cam-act .cx-btn[disabled] { opacity: .4; cursor: default; box-shadow: none; }
+    .cam-now { margin: 0; font-size: 13px; color: #9ba7b5; }
+    .cam-ctl { grid-template-columns: 1fr 1fr; column-gap: 20px; }
+    .cam-act, .cam-now, .cam-ctl .st-hint { grid-column: 1 / -1; }
+    @@media (max-width: 560px) { .cam-ctl { grid-template-columns: minmax(0, 1fr); } .cam-tag { font-size: 17px; } }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public GameSettingsStore.Settings Current { get; set; } = new();
+    [Parameter] public EventCallback<GameSettingsStore.Settings> OnSave { get; set; }
+
+    int height, angle;
+    bool Dirty => height != Current.CamHeight || angle != Current.CamAngle;
+
+    protected override void OnInitialized() => (height, angle) = (Current.CamHeight, Current.CamAngle);
+
+    static int Num(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v, 0, GameSettingsStore.CamMax) : 0;
+
+    Task Save() => OnSave.InvokeAsync(Current with { CamHeight = height, CamAngle = angle });
+    void Reset() => (height, angle) = (Current.CamHeight, Current.CamAngle);
+    void Default() => (height, angle) = (GameSettingsStore.CamHeightDefault, GameSettingsStore.CamAngleDefault);
+
+    // Ảnh có sẵn (đọc 1 lần): ưu tiên đúng mức → cùng góc, độ cao gần nhất → gần nhất tổng.
+    static (int H, int A)[]? shots;
+    (int H, int A)[] Shots => shots ??= Directory.Exists(Path.Combine(Env.WebRootPath, "img", "camera"))
+        ? Directory.GetFiles(Path.Combine(Env.WebRootPath, "img", "camera"), "h*_a*.jpg")
+            .Select(f => System.Text.RegularExpressions.Regex.Match(Path.GetFileName(f), @"^h(\d+)_a(\d+)\.jpg$"))
+            .Where(m => m.Success).Select(m => (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value))).ToArray()
+        : [];
+
+    (string Src, int H, int A, bool Exact) Shot
+    {
+        get
+        {
+            var all = Shots;
+            if (all.Length == 0) return ("img/camera/none.jpg", height, angle, true);
+            var sameAngle = all.Where(s => s.A == angle).ToArray();
+            (int H, int A) best = all.Contains((height, angle)) ? (height, angle)
+                : sameAngle.Length > 0 ? sameAngle.MinBy(s => Math.Abs(s.H - height))
+                : all.MinBy(s => Math.Abs(s.H - height) * 2 + Math.Abs(s.A - angle));
+            return ($"img/camera/h{best.H}_a{best.A}.jpg", best.H, best.A, best == (height, angle));
+        }
+    }
+}

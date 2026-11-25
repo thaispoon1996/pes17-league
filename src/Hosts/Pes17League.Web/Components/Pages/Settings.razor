@@ -69,6 +69,10 @@
                 </div>
                 <small class="st-hint"><i class="ms" aria-hidden="true">info</i>Đổi đồ hoạ: game tự mở lại trước trận kế tiếp (thêm khoảng 30–60 giây). Máy game giữ 60 khung/giây ở mọi mức; hình bị giật do mạng thì bật "Giảm giật" trên màn hình chơi.</small>
             </div>
+            <div class="st-opt" aria-labelledby="st-cam">
+                <b id="st-cam">Camera trong trận</b>
+                <CameraPicker Current="game" OnSave="Set" />
+            </div>
             @if (saved is not null) { <p class="st-saved" role="status"><i class="ms" aria-hidden="true">check_circle</i>@saved</p> }
         </section>
     }
@@ -127,9 +131,10 @@
     {
         if (clubId is null && !admin) return;
         var gfx = s.Quality != game.Quality;
+        var cam = s.CamHeight != game.CamHeight || s.CamAngle != game.CamAngle;
         Game.Save(s);
         game = s;
-        saved = gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : "Đã lưu";
+        saved = gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : cam ? "Đã lưu camera — áp dụng từ trận kế tiếp" : "Đã lưu";
     }
 
     async Task ToggleAuto(ChangeEventArgs e)

@@ -307,6 +307,71 @@ def game_settings() -> dict:
         return {}
 
 
+CAM_APPLIED = OUT / "camera-applied.json"   # camera đã đặt + PID game lúc đặt; game mở lại (PID khác, mọi đường: deploy/compe/heal) → đọc lại
+CAM_RANGE = 50   # PES2017.exe đã vá giới hạn thanh 10→50 (tools/bench/pes17-camera-patch.py, PO 25/11)
+CAM_TITLE = (175, 108, 560, 152)
+CAM_TYPE = (760, 160, 990, 186)
+CAM_ROWS = [(1025, 189, 1080, 213), (1025, 218, 1080, 242), (1025, 247, 1080, 271)]   # Zoom, Height, Angle
+
+
+def camera_want(gs: dict) -> tuple[int, int, int] | None:
+    """Camera web chọn (trang /cai-dat, PO 25/11): Custom, Zoom 0 (xa nhất), Height/Angle 0–50. Thiếu/sai → None (không đụng)."""
+    try:
+        h, a = int(gs["camHeight"]), int(gs["camAngle"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (0, h, a) if 0 <= h <= CAM_RANGE and 0 <= a <= CAM_RANGE else None
+
+
+def _cam_num(t: str) -> int | None:
+    t = t.strip().replace("口", "0").replace("O", "0").replace("o", "0")
+    return int(t) if t.isdigit() else None
+
+
+def ensure_camera(want: tuple[int, int, int] | None) -> None:
+    """Tư thế giao bóng (sau skip_intro): đặt camera Custom = want qua Pause Menu → Camera Settings (~10–20 s), chỉ khi khác lần
+    đã đặt trong game đang chạy. Thử 25/11: lúc giao bóng Pause Menu mở ở GAME PLAN, Right x2 = Camera Settings; bảng mở ở Camera Type.
+    Lỗi chỉ ghi log, không chặn trận."""
+    if want is None:
+        return
+    game = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017[.]exe"], capture_output=True, text=True).stdout.split()[:1]
+    try:
+        if json.loads(CAM_APPLIED.read_text()) == {"cam": list(want), "game": game}:
+            return
+    except (OSError, ValueError):
+        pass
+    try:
+        with nav.session():
+            nav.pad("Start w:2.5")
+            if "ause" not in ocr.rec(nav.shot("m17_cam"), ocr.MENU_TITLE)[0]:
+                raise NavError("không mở được Pause Menu")
+            nav.pad("Right w:0.6 Right w:0.6 A w:2.5")
+            if "amera" not in ocr.rec(nav.shot("m17_cam"), CAM_TITLE)[0]:
+                nav.pad("B w:1.5 B w:2")
+                raise NavError("không vào được Camera Settings")
+            for _ in range(7):
+                if "ustom" in ocr.rec(nav.shot("m17_cam"), CAM_TYPE)[0]:
+                    break
+                nav.pad("Right w:0.8")
+            got = []
+            for row, v in zip(CAM_ROWS, want):
+                nav.pad("Down w:0.5")
+                for _ in range(2):   # đọc → bấm bù → đọc lại (phím có thể rơi)
+                    cur = _cam_num(ocr.rec(nav.shot("m17_cam"), row)[0])
+                    if cur is None or cur == v:
+                        break
+                    key = "Left" if cur > v else "Right"
+                    nav.pad(" ".join([f"{key} w:0.12"] * abs(cur - v)) + " w:0.5")
+                got.append(cur)
+            nav.pad("B w:1.5 B w:2")
+            if "ause" in ocr.rec(nav.shot("m17_cam"), ocr.MENU_TITLE)[0]:
+                nav.pad("B w:2")
+        CAM_APPLIED.write_text(json.dumps({"cam": list(want), "game": game}))
+        log(f"camera {want} (đọc {got})")
+    except Exception as e:
+        log(f"không đặt được camera {want}: {e}")
+
+
 def _norm(t: str) -> str:
     return re.sub(r"[^a-z]", "", t.lower())
 
@@ -1192,6 +1257,8 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
                 skip_intro()
             except Exception as e:   # bỏ qua không được thì xem phim như cũ
                 log(f"bỏ qua phim mở màn lỗi: {e}")
+        if human:
+            ensure_camera(camera_want(gs))
         pres = Presence() if both else None
         try:
             if both:
