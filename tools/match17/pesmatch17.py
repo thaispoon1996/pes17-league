@@ -653,6 +653,13 @@ class Match:
                 raise NavError("no_progress: quá lâu không thấy HUD trận")
             elif now - last_press > 3:
                 m = ocr.menu(im)
+                if not m and self.kick and (self.half == 1 or (last_min or 0) > 45) and ocr.rematch(im):
+                    # PO 25/11: người chơi bấm A liền qua bảng Full Time → bộ chạy chỉ còn thấy hộp Rematch, trước đây kẹt
+                    # tới no_progress. Tỷ số = bảng số Time Up nếu đã đọc được, không thì HUD (theo dõi từng bàn).
+                    im.save(OUT / "last-fulltime.png")
+                    score = getattr(self, "_ft_stats", None) or tuple(self.hud)
+                    log(f"hết trận (thấy hộp Rematch, bỏ qua bảng Full Time): {score[0]}-{score[1]}")
+                    return score[0], score[1]
                 if m and self.kick:
                     # chỉ tin tiêu đề: menu tạm dừng (người chơi bấm Start) cũng có tỷ số + đồng hồ
                     t = m["title"]
@@ -677,6 +684,8 @@ class Match:
                     last_press = now
                     last_play = progress = now   # đang ở menu nghỉ: không tính là treo / AFK
                 elif ocr.stats_screen(im):
+                    if (self.half == 1 or (last_min or 0) > 45) and (g := ocr.stats_goals(im)):
+                        self._ft_stats = g   # bảng số hết trận: dự phòng khi người chơi bấm qua bảng Full Time
                     nav.pad("A w:1")   # Half Time / Time Up
                     last_press = now
             time.sleep(2.5)

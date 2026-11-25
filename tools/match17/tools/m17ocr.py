@@ -65,6 +65,15 @@ def menu(im: Image.Image) -> dict | None:
     return {"title": title, "home": digits[0], "away": digits[1], "clock": clock}
 
 
+REMATCH_TITLE = (80, 108, 640, 152)   # tiêu đề hộp "Rematch" sau trận (góc trên trái)
+
+
+def rematch(im: Image.Image) -> bool:
+    """Hộp Rematch sau trận (Start the Match / Game Plan / Return to Top Menu): người chơi đã bấm qua bảng Full Time."""
+    t, s = rec(im, REMATCH_TITLE)
+    return s > 0.6 and "ematch" in t
+
+
 def stats_goals(im: Image.Image) -> tuple[int, int] | None:
     toks = [t for t, s, _ in det(im, STATS_GOALS) if s > 0.3]
     nums = [int(t) for t in toks if re.fullmatch(r"\d{1,2}", t)]
