@@ -3,7 +3,7 @@
 
 Trận của mình (giao hữu) dùng đồ hoạ GỐC PES 2017 (Data/dt11_win.cpk; bộ SiderX_Switcher không áp, dò 23/11) → gói
 download/pes17house.cpk thay các file gốc, đứng sau pes17league.cpk, trước gói giải pes17compe.cpk (compe.extras):
-  - common/menu/licence/licenceTexturePes.bin — ảnh 1: khung giới thiệu đội hình (+ nhãn "ĐỘI HÌNH XUẤT PHÁT"),
+  - common/menu/licence/licenceTexturePes.bin — ảnh 1: khung giới thiệu đội hình / bảng thống kê (không nhãn: khung dùng chung),
     ảnh 0: dải tên đội (dải dưới thành xanh), khung thay người / thống kê. Đổi màu theo từng điểm ảnh, giữ hình dạng gốc.
   - common/menu/licence/game2dPes.bin — mảnh bảng tỉ số gốc (hiện lúc chiếu lại / ăn mừng) + 3 ô logo "PES 2017" → chữ của mình.
   - common/menu/licence/game2dPesEnter.bin — chữ "2017" đỏ của logo lúc ra sân → xanh.
@@ -124,16 +124,13 @@ def recolor(im, band: tuple[int, int, int, int] | None = None):
 
 
 def reskin_licence(b: bytes) -> bytes:
-    from PIL import ImageDraw
     b = txp.unwrap(b)
     ts = txp.textures(b)
     im0 = recolor(txp.image(b, ts[0]), BAND)
     b = txp.replace(b, ts[0], im0)
     ts = txp.textures(b)
+    # Không vẽ nhãn vào khung (PO 25/11): game dùng chung khung này cho bảng thống kê nghỉ giữa hiệp → nhãn đè lên số liệu.
     im1 = recolor(txp.image(b, ts[1]))
-    d = ImageDraw.Draw(im1)   # nhãn trong khung đội hình (khung 1140x708 hiện ~750 px trên màn 1280)
-    d.rounded_rectangle((92, 44, 92 + 300, 44 + 46), radius=9, fill=GREEN + (255,))
-    d.text((92 + 150, 44 + 23), "ĐỘI HÌNH XUẤT PHÁT", font=font(33), fill=BG + (255,), anchor="mm")
     return txp.replace(b, ts[1], im1)
 
 
