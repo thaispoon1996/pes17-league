@@ -99,8 +99,8 @@
                 else if (Jobs.SecondsToKickoff is { } left && left > 0) { <span class="num"><b>@left</b><small>giây</small></span> }
                 else { <i class="ms fill" aria-hidden="true">sports_soccer</i> }
             </div>
-            <h1>@(Jobs.Running ? Jobs.SecondsToKickoff is > 0 ? "Đang vào trận" : "Sắp giao bóng" : "Không vào được trận")</h1>
-            <ol class="cx-vt-steps">
+            <h1>@(!Jobs.Running ? "Không vào được trận" : Jobs.Stage == "gameplan" ? "Mời chỉnh chiến thuật" : Jobs.SecondsToKickoff is > 0 ? "Đang vào trận" : "Sắp giao bóng")</h1>
+            <ol class="cx-vt-steps" style="grid-template-columns: repeat(@Steps.Length, 1fr)">
                 @foreach (var (key, text) in Steps)
                 {
                     var state = Index(key) < Index(Jobs.Stage) ? "done" : key == Jobs.Stage && Jobs.Running ? "now" : "";
@@ -112,7 +112,12 @@
                 @* Nút nổi trên thanh dưới như trang chủ career: điện thoại nhỏ vẫn thấy ngay. *@
                 <div class="cx-cta-dock">
                     <a class="cx-cta" href="@Jobs.PlayLink" data-stream>
-                        @if (Jobs.Stage is "loading" or "kickoff")
+                        @if (Jobs.Stage == "gameplan")
+                        {
+                            @* PO 25/11: máy dừng ở GAME PLAN, giao tay cầm — người chơi chỉnh chiến thuật rồi tự bấm Kickoff. *@
+                            <span><b>Vào chỉnh chiến thuật</b><small>Máy đã mở GAME PLAN · chỉnh xong tự bấm Kickoff</small></span>
+                        }
+                        else if (Jobs.Stage is "loading" or "kickoff")
                         {
                             @* 24/11: rớt kết nối/quay lại trang này → vào lại màn hình game; quá 5 phút chưa giao bóng thì máy huỷ trận. *@
                             <span><b>Vào màn hình game</b><small>Trận đang chờ bạn giao bóng · quá 5 phút máy tự huỷ</small></span>
@@ -255,7 +260,7 @@ else
 
 @code {
     static readonly (string Key, string Text)[] Steps =
-        [("boot", "Khởi động game"), ("menu", "Vào menu"), ("teams", "Chọn đội"), ("ready", "Sẵn sàng"), ("loading", "Tải trận")];
+        [("boot", "Khởi động game"), ("menu", "Vào menu"), ("teams", "Chọn đội"), ("ready", "Sẵn sàng"), ("gameplan", "Chiến thuật"), ("loading", "Tải trận")];
     static int Index(string? stage) => stage is "kickoff" or "fulltime" ? Steps.Length : Array.FindIndex(Steps, s => s.Key == stage);
     bool left, guest = true;
     Timer? tick;
@@ -280,7 +285,7 @@ else
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
-        if (!left && Jobs.Running && Jobs.Title == "Trận của tôi" && Jobs.Stage is "loading" or "kickoff")
+        if (!left && Jobs.Running && Jobs.Title == "Trận của tôi" && Jobs.Stage is "gameplan" or "loading" or "kickoff")
         {
             left = true;
             Nav.NavigateTo(await JS.InvokeAsync<string>("pesCtl.streamUrl", Jobs.PlayLink), forceLoad: true);

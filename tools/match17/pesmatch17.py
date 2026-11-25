@@ -1271,6 +1271,29 @@ def wait_go(squads: str, home: int, away: int, setup, replan=None, plan_teams: l
             raise NavError("human_timeout: không bấm vào trận")
 
 
+def hand_over() -> None:
+    """PO 25/11: màn Kickoff (con trỏ ở KICKOFF) → mở GAME PLAN, báo stage "gameplan" (web mời người chơi vào chỉnh chiến thuật),
+    rồi chờ người chơi tự bấm Kickoff: thấy HUD, hoặc thấy cỏ mà không phải màn Kickoff/GAME PLAN (bảng chiến thuật cũng xanh),
+    2 lần liên tiếp. Bộ chạy không bấm nút nào trong lúc chờ. Quá HUMAN_PREMATCH_TIMEOUT → NavError human_timeout."""
+    nav.pad("Right w:0.6 A w:1.5")
+    if not _gp_wait("Menu", 6):
+        log("không mở được GAME PLAN — người chơi tự mở từ màn Kickoff")
+    emit(event="stage", stage="gameplan")
+    t0, seen = time.monotonic(), 0
+    while True:
+        while not CMDS.empty():   # bấm Sẵn sàng lại trên web: bỏ qua, người chơi đang tự chỉnh
+            CMDS.get_nowait()
+        im = nav.shot("m17_hand")
+        play = ocr.hud(im) or (grass(im) > 3500 and not kickoff_screen(im) and not gp_title(im).strip())
+        seen = seen + 1 if play else 0
+        if seen >= 2:
+            log("người chơi đã bấm Kickoff")
+            return
+        if time.monotonic() - t0 > HUMAN_PREMATCH_TIMEOUT:
+            raise NavError("human_timeout: không bấm vào trận")
+        time.sleep(2)
+
+
 def overlay(logo: str | None) -> None:
     """Đặt (logo-<sha>.png + overlay.json {"logo": tên}) / xoá ({}) logo giải trên trang chơi. Lỗi thì bỏ qua: logo là phụ."""
     try:
@@ -1442,6 +1465,13 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             emit(event="stage", stage="ready")
             if WAIT_GO or WARM:
                 self_started = wait_go(squads, home, away, setup, replan if plan else None, plan_teams)
+            if not self_started:   # PO 25/11: máy chọn áo, mở GAME PLAN rồi giao tay cầm; người chơi tự chỉnh + tự bấm Kickoff
+                try:
+                    uniform(match_kits())
+                except NavError as e:
+                    log(f"chọn áo lỗi: {e}")
+                hand_over()
+                self_started = True
         emit(event="stage", stage="loading")
         board = make_board(home, away)
         if REC and rec17.wanted(OUT, human):

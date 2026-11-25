@@ -106,7 +106,7 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
     {
         get
         {
-            if (!Running || Title != "Trận của tôi" || Ready || Stage is "kickoff" or "fulltime") return null;
+            if (!Running || Title != "Trận của tôi" || Ready || Stage is "gameplan" or "kickoff" or "fulltime") return null;
             lock (_gate) return (int)Math.Max(0, Math.Ceiling(Eta.GetValueOrDefault(Stage ?? "", 21) - (clock.GetUtcNow() - StageAt).TotalSeconds));
         }
     }
@@ -438,7 +438,8 @@ public sealed class MatchJobService(IDbContextFactory<ClubsDbContext> dbs, IOpti
                 CurrentFixtureId = r.FixtureId;
                 if (Stage == "boot") LiveFixtureId = null;
                 if (Stage == "boot" && _stageTimes.ContainsKey("boot")) _stageTimes.Clear();   // thử lại → lần này không dùng để chỉnh ước lượng
-                if (Stage == "kickoff" && r.HumanSide is not null && _stageTimes.Count > 0 && !_stageTimes.ContainsKey("ready"))
+                // PO 25/11: trận người chơi dừng ở GAME PLAN chờ người chỉnh → học thời gian tới lúc mở GAME PLAN, không tính lúc người chơi chỉnh
+                if ((Stage == "gameplan" || Stage == "kickoff" && !_stageTimes.ContainsKey("gameplan")) && r.HumanSide is not null && _stageTimes.Count > 0 && !_stageTimes.ContainsKey("ready"))
                     foreach (var (st, at) in _stageTimes) Eta[st] = (Eta.GetValueOrDefault(st, 21) + (now - at).TotalSeconds) / 2;
                 _stageTimes.TryAdd(Stage, now);
             }
