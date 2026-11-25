@@ -34,6 +34,19 @@ exec 8>"$OUT/deploy.lock"; flock 8   # sync.sh và bộ chạy trận không cà
 
 if [ -n "$SQUADS" ]; then cp "$SQUADS" "$OUT/squads.json.new"
 else "$R/tools/cli.sh" export-pes17-squads "$OUT/squads.json.new"; fi
+# độ khó (PO 26/11): game-settings.json aiBoost → khoá "_boost" (cộng chỉ số đội máy, pesdb.py apply ghi Player.bin); nằm trong SHA → đổi mức là cài lại
+python3 - "$OUT/squads.json.new" "$OUT/game-settings.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+try:
+    n = int(json.load(open(sys.argv[2])).get("aiBoost") or 0)
+except (OSError, ValueError, AttributeError):
+    n = 0
+doc.pop("_boost", None)
+if n > 0:
+    doc["_boost"] = n
+json.dump(doc, open(sys.argv[1], "w"))
+PY
 SHA=$(python3 -c 'import json,sys,hashlib; print(hashlib.sha256(json.dumps(json.load(open(sys.argv[1])),sort_keys=True).encode()).hexdigest()[:16])' "$OUT/squads.json.new")
 mv "$OUT/squads.json.new" "$OUT/squads.json"
 if [ -z "$FORCE" ] && [ "$SHA" = "$(cat "$OUT/deployed.squads.sha" 2>/dev/null)" ]; then
@@ -45,6 +58,7 @@ docker exec -u abc "$BENCH" cat "$DL/23-eFootballHANOV6.cpk" > "$OUT/template.cp
 FILES=("common/etc/pesdb/PlayerAssignment.bin=$OUT/PlayerAssignment.bin")
 # sơ đồ web (khoá _formations trong squads.json, PO 21/11) → pesdb.py apply ghi TacticsFormation.bin cạnh PlayerAssignment.bin
 [ -f "$OUT/TacticsFormation.bin" ] && FILES+=("common/etc/pesdb/TacticsFormation.bin=$OUT/TacticsFormation.bin")
+[ -f "$OUT/Player.bin" ] && FILES+=("common/etc/pesdb/Player.bin=$OUT/Player.bin")   # chỉ số đội máy đã cộng (khoá _boost, PO 26/11)
 [ -f "$OUT/Tactics.bin" ] && FILES+=("common/etc/pesdb/Tactics.bin=$OUT/Tactics.bin")   # thông số chiến thuật (khoá _plan, PO 21/11)
 python3 "$H/cpk.py" build "$OUT/template.cpk" "$OUT/pes17league.cpk" "${FILES[@]}"
 # gói đồ hoạ giải đang cài (compe.py, PO 23/11) giữ nguyên trong danh sách

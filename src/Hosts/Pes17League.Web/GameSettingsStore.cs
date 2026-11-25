@@ -10,7 +10,14 @@ public sealed class GameSettingsStore(string path)
     /// "custom" = Custom, Zoom luôn 0 (xa nhất), Height/Angle 0–<see cref="CamMax"/> (PES2017.exe đã vá thanh 10→50).
     /// Bộ chạy đặt qua Pause Menu lúc giao bóng, chỉ khi khác lần trước (tools/match17/pesmatch17.py ensure_camera).</summary>
     public sealed record Settings(string Level = "Regular", string Quality = "high", int CamHeight = CamHeightDefault, int CamAngle = CamAngleDefault,
-        string CamType = CamTypeDefault);
+        string CamType = CamTypeDefault, int AiBoost = 0);
+
+    /// <summary>Độ khó thêm (PO 26/11): PES 2017 cao nhất chỉ Superstar → cộng thẳng vào mọi chỉ số kỹ năng cầu thủ CLB máy (tối đa 99),
+    /// CLB người chơi giữ nguyên. tools/pes17db/deploy.sh đọc aiBoost → pesdb.py apply ghi Player.bin; đổi mức = cài lại game trước trận kế tiếp.</summary>
+    public static readonly (int Value, string Label, string Note)[] Boosts =
+    [
+        (0, "Gốc", "Chỉ số thật"), (3, "Khó", "Đội máy +3"), (6, "Rất khó", "Đội máy +6"), (9, "Cực khó", "Đội máy +9"),
+    ];
 
     public const string CamTypeDefault = "fan";
     public static readonly (string Key, string Label, string Note)[] CamTypes =
@@ -50,6 +57,7 @@ public sealed class GameSettingsStore(string path)
                     CamHeight = CamOk(s.CamHeight) ? s.CamHeight : CamHeightDefault,
                     CamAngle = CamOk(s.CamAngle) ? s.CamAngle : CamAngleDefault,
                     CamType = CamTypes.Any(t => t.Key == s.CamType) ? s.CamType : CamTypeDefault,
+                    AiBoost = Boosts.Any(b => b.Value == s.AiBoost) ? s.AiBoost : 0,
                 };
             }
             catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
@@ -62,7 +70,7 @@ public sealed class GameSettingsStore(string path)
     public void Save(Settings s)
     {
         if (!Levels.Any(l => l.Key == s.Level) || !Qualities.Any(q => q.Key == s.Quality) || !CamOk(s.CamHeight) || !CamOk(s.CamAngle)
-            || !CamTypes.Any(t => t.Key == s.CamType))
+            || !CamTypes.Any(t => t.Key == s.CamType) || !Boosts.Any(b => b.Value == s.AiBoost))
             throw new ArgumentException("cài đặt game không hợp lệ");
         lock (gate)
         {

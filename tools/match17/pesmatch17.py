@@ -949,6 +949,8 @@ def game_has(squads: str, home: int, away: int) -> bool:
         cur = json.loads((OUT / "squads.json").read_text())
         if _sha(cur) != (OUT / "deployed.squads.sha").read_text().strip():
             return False
+        if int(cur.get("_boost") or 0) != int(game_settings().get("aiBoost") or 0):   # đổi độ khó (cộng chỉ số đội máy, PO 26/11) → cài lại
+            return False
         want = json.loads(Path(squads).read_text())
     except (OSError, ValueError):
         return False
@@ -1112,6 +1114,8 @@ def plan_only(squads: str, home: int, away: int, teams: list[int]) -> bool:
     try:
         cur = json.loads((OUT / "squads.json").read_text())
         if _sha(cur) != (OUT / "deployed.squads.sha").read_text().strip():
+            return False
+        if int(cur.get("_boost") or 0) != int(game_settings().get("aiBoost") or 0):   # đổi độ khó (cộng chỉ số đội máy, PO 26/11) → cài lại
             return False
         want = json.loads(Path(squads).read_text())
     except (OSError, ValueError):
