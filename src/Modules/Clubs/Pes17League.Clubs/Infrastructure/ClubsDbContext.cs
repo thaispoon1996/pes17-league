@@ -59,6 +59,9 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
     public DbSet<BoardConfidence> BoardConfidences => Set<BoardConfidence>();
     public DbSet<ClubStaff> ClubStaff => Set<ClubStaff>();
     public DbSet<YouthIntake> YouthIntakes => Set<YouthIntake>();
+    public DbSet<YouthPlayer> YouthPlayers => Set<YouthPlayer>();
+    public DbSet<YouthFixture> YouthFixtures => Set<YouthFixture>();
+    public DbSet<YouthAppearance> YouthAppearances => Set<YouthAppearance>();
     public DbSet<ScoutReport> ScoutReports => Set<ScoutReport>();
     public DbSet<MatchPhoto> MatchPhotos => Set<MatchPhoto>();
     public DbSet<AttributeChange> AttributeChanges => Set<AttributeChange>();
@@ -167,6 +170,23 @@ public sealed class ClubsDbContext(DbContextOptions<ClubsDbContext> options) : D
         });
 
         b.Entity<YouthIntake>(e => e.HasIndex(x => new { x.SeasonId, x.ClubId }));
+        b.Entity<YouthPlayer>(e =>   // Giải U19 (PO 25/11)
+        {
+            e.Property(x => x.Name).HasMaxLength(80);
+            e.Property(x => x.Position).HasConversion<string>().HasMaxLength(8);
+            e.HasIndex(x => x.ClubId);
+        });
+        b.Entity<YouthFixture>(e =>
+        {
+            e.HasIndex(x => new { x.EditionId, x.Round });
+            e.ToTable(t => t.HasCheckConstraint("CK_YouthFixture_Goals", "(\"HomeGoals\" IS NULL) = (\"AwayGoals\" IS NULL)"));
+        });
+        b.Entity<YouthAppearance>(e =>
+        {
+            e.HasKey(x => new { x.FixtureId, x.PlayerId });
+            e.Property(x => x.Rating).HasPrecision(3, 1);
+            e.HasIndex(x => x.PlayerId);
+        });
         b.Entity<ScoutReport>(e => e.HasKey(x => new { x.ClubId, x.PlayerId }));
         b.Entity<BoardConfidence>(e => e.HasKey(x => new { x.ClubId, x.SeasonId }));
         b.Entity<CareerSeen>(e => { e.HasKey(x => new { x.ParticipantId, x.Key }); e.Property(x => x.Key).HasMaxLength(80); });

@@ -2884,6 +2884,77 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.ToTable("TransferWindows", "clubs");
                 });
 
+            modelBuilder.Entity("Pes17League.Clubs.Domain.YouthAppearance", b =>
+                {
+                    b.Property<Guid>("FixtureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Goals")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Rating")
+                        .HasPrecision(3, 1)
+                        .HasColumnType("numeric(3,1)");
+
+                    b.Property<bool>("Started")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("FixtureId", "PlayerId");
+
+                    b.HasIndex("PlayerId");
+
+                    b.ToTable("YouthAppearances", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.YouthFixture", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AwayClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("AwayGoals")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EditionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("HomeClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("HomeGoals")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("MatchdayId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("PlayedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EditionId", "Round");
+
+                    b.ToTable("YouthFixtures", "clubs", t =>
+                        {
+                            t.HasCheckConstraint("CK_YouthFixture_Goals", "(\"HomeGoals\" IS NULL) = (\"AwayGoals\" IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Pes17League.Clubs.Domain.YouthIntake", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2907,6 +2978,53 @@ namespace Pes17League.Clubs.Infrastructure.Migrations
                     b.HasIndex("SeasonId", "ClubId");
 
                     b.ToTable("YouthIntakes", "clubs");
+                });
+
+            modelBuilder.Entity("Pes17League.Clubs.Domain.YouthPlayer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Age")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("JoinedSeasonId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("LeftAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<int>("Overall")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Position")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<int>("Potential")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Slot")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId");
+
+                    b.ToTable("YouthPlayers", "clubs");
                 });
 
             modelBuilder.Entity("Pes17League.Clubs.Domain.AttributeChange", b =>

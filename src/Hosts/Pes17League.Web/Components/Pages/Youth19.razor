@@ -1,0 +1,228 @@
+@page "/u19"
+@using Microsoft.EntityFrameworkCore
+@using Pes17League.Clubs.Infrastructure
+@inject LeagueQueries Q
+@inject IDbContextFactory<ClubsDbContext> Dbs
+@inject TimeProvider Clock
+
+@* Giải U19 (PO 25/11, giai đoạn 1): đội trẻ các CLB cùng giải quốc gia với CLB người chơi, đá vòng tròn 2 lượt song song giải chính.
+   Kết quả MÔ PHỎNG (YouthLeagueService) — ghi rõ trên trang, không giả làm trận đá trên máy. Dùng lại khung .bx của trang BXH. *@
+<PageTitle>Giải U19</PageTitle>
+@if (!loaded) { }
+else if (season is null || editionId is null)
+{
+    <div class="bx"><section class="bx-tbl"><p class="note"><i class="ms" aria-hidden="true">info</i>Giải U19 mở khi CLB của bạn đá giải quốc gia trong mùa đang chạy.</p></section></div>
+}
+else
+{
+    var me = season.HumanClubId;
+    var mine = table.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Club == me);
+    <div class="bx u19">
+        <section class="bx-hero">
+            <div class="bx-comp" role="heading" aria-level="1">
+                <span class="ring u19-badge">U19</span>
+                <span class="t"><span class="ttl">Giải U19 · @league</span><span class="meta">@table.Count đội trẻ · vòng tròn 2 lượt</span></span>
+                <span class="sw sim"><i class="ms" aria-hidden="true">memory</i>Mô phỏng</span>
+            </div>
+            <div class="bx-round">
+                <span class="n">@if (played > 0) { <text>Vòng @played</text><small>/@rounds</small> } else { <text>Vòng 1</text><small>/@rounds · sắp đá</small> }</span>
+                <span class="bar"><i style="--w:@(Math.Max(1, rounds == 0 ? 0 : played * 100 / rounds))%"></i></span>
+                <span class="left">@(played == 0 ? "Đá cùng vòng giải chính" : played >= rounds ? "Đã đá xong" : $"Còn {rounds - played} vòng")</span>
+            </div>
+            @if (mine.r is { } m)
+            {
+                <div class="bx-me">
+                    <div class="rk">
+                        @if (played > 0) { <b data-count="@(mine.i + 1)">@(mine.i + 1)</b><small>Hạng</small> } else { <b class="na">–</b><small>Chưa xếp</small> }
+                    </div>
+                    <div class="who">
+                        <div class="club"><Crest Name="@season.Clubs[me]" Logo="@season.Logo(me)" /><span>@season.Clubs[me] U19</span></div>
+                        <div class="nums"><span><b>@m.Points</b>điểm</span><span><b>@m.Played</b>trận</span><span><b>@m.Won-@m.Drawn-@m.Lost</b>T-H-B</span><span><b>@m.GoalDifference.ToString("+0;-0;0")</b>hiệu số</span></div>
+                        @if (m.Played > 0) { <FormDots Form="@Form(me)" /> }
+                    </div>
+                </div>
+            }
+        </section>
+
+        <p class="u19-sim"><i class="ms" aria-hidden="true">info</i>Kết quả mô phỏng theo chỉ số đội trẻ — không đá trên máy PES. Mỗi lần giải chính xong một vòng, U19 đá một vòng.</p>
+
+        <div class="bx-seg" role="group" aria-label="Mục">
+            @foreach (var (v, label) in Tabs)
+            {
+                <button type="button" class="no-busy @(tab == v ? "on" : null)" aria-pressed="@(tab == v ? "true" : "false")" @onclick="() => tab = v">@label</button>
+            }
+        </div>
+
+        <div class="bx-grid">
+            @if (tab == "bang")
+            {
+                <section class="bx-tbl" aria-label="Bảng xếp hạng U19">
+                    @if (played == 0) { <p class="note"><i class="ms" aria-hidden="true">info</i>Chưa đá vòng nào.</p> }
+                    <div class="hd" aria-hidden="true"><span></span><span>#</span><span></span><span class="c">CLB</span><span>Tr</span><span class="w">T</span><span class="w">H</span><span class="w">B</span><span class="w">BT</span><span class="w">BB</span><span>HS</span><span>Đ</span><span class="w f">5 trận gần nhất</span></div>
+                    @foreach (var (r, i) in table.Select((r, i) => (r, i)))
+                    {
+                        <div class="rw @(r.Club == me ? "my" : null)" style="--i:@i">
+                            <span class="z"></span><span class="p">@(i + 1)</span><span class="dl"></span>
+                            <span class="c"><Crest Name="@season.Clubs.GetValueOrDefault(r.Club, "?")" Logo="@season.Logo(r.Club)" /><span>@season.Clubs.GetValueOrDefault(r.Club, "?")</span></span>
+                            <span>@r.Played</span><span class="w">@r.Won</span><span class="w">@r.Drawn</span><span class="w">@r.Lost</span><span class="w">@r.GoalsFor</span><span class="w">@r.GoalsAgainst</span>
+                            <span class="gd">@r.GoalDifference.ToString("+0;-0;0")</span><span class="pts">@r.Points</span>
+                            <span class="w f">@if (r.Played > 0) { <FormDots Form="@Form(r.Club)" /> } else { <span class="none">–</span> }</span>
+                        </div>
+                    }
+                </section>
+            }
+            else if (tab == "ket-qua")
+            {
+                var shown = fixtures.Where(f => f.Round == view).ToList();
+                <section class="bx-tbl u19-res" aria-label="Kết quả vòng @view">
+                    <div class="u19-nav">
+                        <button type="button" class="no-busy" disabled="@(view <= 1)" @onclick="() => GoRound(view - 1)" aria-label="Vòng trước"><i class="ms">chevron_left</i></button>
+                        <b>Vòng @view<small>@(view <= played ? "Đã đá" : "Sắp đá")</small></b>
+                        <button type="button" class="no-busy" disabled="@(view >= rounds)" @onclick="() => GoRound(view + 1)" aria-label="Vòng sau"><i class="ms">chevron_right</i></button>
+                    </div>
+                    @foreach (var f in shown)
+                    {
+                        var done = f.HomeGoals is not null;
+                        var sc = goals.GetValueOrDefault(f.Id) ?? [];
+                        <div class="u19-m @(f.HomeClubId == me || f.AwayClubId == me ? "my" : null)">
+                            <span class="t h"><span>@season.Clubs.GetValueOrDefault(f.HomeClubId, "?")</span><Crest Name="@season.Clubs.GetValueOrDefault(f.HomeClubId, "?")" Logo="@season.Logo(f.HomeClubId)" /></span>
+                            <span class="s @(done ? null : "pend")">@(done ? $"{f.HomeGoals} – {f.AwayGoals}" : "vs")</span>
+                            <span class="t a"><Crest Name="@season.Clubs.GetValueOrDefault(f.AwayClubId, "?")" Logo="@season.Logo(f.AwayClubId)" /><span>@season.Clubs.GetValueOrDefault(f.AwayClubId, "?")</span></span>
+                            @if (sc.Count > 0)
+                            {
+                                <span class="g h">@string.Join(", ", sc.Where(x => x.Club == f.HomeClubId).Select(Goal))</span>
+                                <span></span>
+                                <span class="g a">@string.Join(", ", sc.Where(x => x.Club == f.AwayClubId).Select(Goal))</span>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+            else
+            {
+                <section class="bx-tbl u19-sq" aria-label="Đội U19 của bạn">
+                    <p class="note"><i class="ms" aria-hidden="true">groups</i>@season.Clubs[me] U19 · 11 người đầu đá chính (4-3-3). Cầu thủ trẻ chưa lên được đội một ở giai đoạn này.</p>
+                    <div class="u19-sh" aria-hidden="true"><span>VT</span><span class="n">Cầu thủ</span><span>Tuổi</span><span>OVR</span><span>Tr</span><span>BT</span><span>Điểm</span></div>
+                    @foreach (var (s, i) in squad.Select((s, i) => (s, i)))
+                    {
+                        if (i == 11) { <div class="u19-div">Dự bị</div> }
+                        <div class="u19-sr">
+                            <span class="pos">@s.Player.Position</span><span class="n">@s.Player.Name</span><span>@s.Player.Age</span>
+                            <span class="o">@s.Player.Overall</span><span>@s.Apps</span><span>@s.Goals</span><span>@(s.AvgRating?.ToString("0.0") ?? "–")</span>
+                        </div>
+                    }
+                </section>
+            }
+
+            <aside class="bx-side">
+                <section class="box">
+                    <h2>Vua phá lưới U19 @if (scorers.Count > 0) { <small>Top @scorers.Count</small> }</h2>
+                    @if (scorers.Count == 0) { <p class="empty"><i class="ms" aria-hidden="true">sports_soccer</i>Bàn thắng đầu tiên của giải U19 sẽ hiện ở đây.</p> }
+                    else
+                    {
+                        var max = Math.Max(1, scorers.Max(s => s.Goals));
+                        @foreach (var (s, i) in scorers.Select((s, i) => (s, i)))
+                        {
+                            <div class="pl @(i == 0 ? "first" : null) @(s.Club == me ? "my" : null)">
+                                <span class="r">@(i + 1)</span><Crest Name="@season.Clubs.GetValueOrDefault(s.Club, "?")" Logo="@season.Logo(s.Club)" />
+                                <span class="nm"><b>@s.Name</b><span>@season.Clubs.GetValueOrDefault(s.Club, "?") · @s.Apps trận</span></span>
+                                <span class="v"><b>@s.Goals</b><small>bàn</small></span>
+                                <span class="bar"><i style="--w:@(s.Goals * 100 / max)%"></i></span>
+                            </div>
+                        }
+                    }
+                </section>
+            </aside>
+        </div>
+    </div>
+}
+
+<style>
+    .cx .u19 .u19-badge { display: grid; place-items: center; font: 800 15px var(--f-display); color: var(--n0, #0f131d); background: var(--gold); }
+    .cx .u19 .bx-comp { cursor: default; }
+    .cx .u19 .bx-comp .sw.sim { color: var(--cyan); border-color: rgba(255,185,95,.4); }
+    .cx .u19 .u19-sim { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; color: var(--muted); background: rgba(255,185,95,.06); border: 1px solid rgba(255,185,95,.25); }
+    .cx .u19 .u19-sim .ms { font-size: 17px; color: var(--cyan); margin-right: 6px; vertical-align: -3px; }
+    .cx .u19 .bx-tbl .rw { cursor: default; }
+    .cx .u19-nav { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .cx .u19-nav b { font: 800 20px var(--f-display); text-transform: uppercase; text-align: center; }
+    .cx .u19-nav b small { display: block; font: 500 11px var(--f-body); color: var(--muted); text-transform: none; }
+    .cx .u19-nav button { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.03); color: var(--text); cursor: pointer; }
+    .cx .u19-nav button:disabled { opacity: .35; cursor: default; }
+    .cx .u19-m { display: grid; grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); align-items: center; column-gap: 8px; row-gap: 2px; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.05); }
+    .cx .u19-m.my { background: rgba(0,255,135,.07); box-shadow: inset 3px 0 0 var(--gold); }
+    .cx .u19-m .t { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
+    .cx .u19-m .t span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cx .u19-m .t.h { justify-content: flex-end; text-align: right; }
+    .cx .u19-m .t .crest { width: 24px; height: 24px; flex: none; }
+    .cx .u19-m .s { text-align: center; font: 800 20px var(--f-display); font-variant-numeric: tabular-nums; }
+    .cx .u19-m .s.pend { font-size: 14px; color: var(--muted); }
+    .cx .u19-m .g { font-size: 11px; color: var(--muted); }
+    .cx .u19-m .g.h { text-align: right; }
+    .cx .u19-sh, .cx .u19-sr { display: grid; grid-template-columns: 44px minmax(0, 1fr) 34px 38px 30px 30px 40px; align-items: center; column-gap: 6px; padding: 0 12px; text-align: center; }
+    .cx .u19-sh { height: 32px; font: 800 12px var(--f-display); letter-spacing: .06em; color: var(--muted); text-transform: uppercase; border-bottom: 1px solid var(--line); }
+    .cx .u19-sr { min-height: 42px; border-bottom: 1px solid rgba(255,255,255,.05); font-variant-numeric: tabular-nums; }
+    .cx .u19-sh .n, .cx .u19-sr .n { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cx .u19-sr .n { font-weight: 600; }
+    .cx .u19-sr .pos { font: 800 13px var(--f-display); color: var(--cyan); }
+    .cx .u19-sr .o { font: 800 17px var(--f-display); color: var(--gold); }
+    .cx .u19-div { padding: 6px 12px; font: 800 12px var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: rgba(255,255,255,.03); }
+    .cx .u19 .bx-side .pl { cursor: default; }
+</style>
+
+@code {
+    [CascadingParameter] public CareerLayout? Shell { get; set; }
+
+    static readonly (string, string)[] Tabs = [("bang", "Bảng"), ("ket-qua", "Kết quả"), ("doi", "Đội U19")];
+    string tab = "bang";
+    bool loaded;
+    SeasonInfo? season;
+    Guid? editionId;
+    string league = "";
+    List<YouthFixture> fixtures = [];
+    List<YouthTableRow> table = [];
+    List<YouthScorer> scorers = [];
+    List<YouthSquadLine> squad = [];
+    Dictionary<Guid, List<(Guid Club, string Name, int Goals)>> goals = [];
+    int rounds, played, view = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        season = await Q.SeasonAsync();
+        if (season is not null)
+        {
+            await using var db = await Dbs.CreateDbContextAsync();
+            var svc = new YouthLeagueService(db, Clock);
+            var eds = await svc.EditionsAsync(season.Id);
+            editionId = eds.Count == 0 ? null
+                : await db.EditionClubs.Where(x => eds.Contains(x.EditionId) && x.ClubId == season.HumanClubId).Select(x => (Guid?)x.EditionId).FirstOrDefaultAsync() ?? eds[0];
+            if (editionId is { } ed)
+            {
+                if (await svc.EnsureAsync(ed)) await db.SaveChangesAsync();   // lần đầu mở: sinh đội trẻ + lịch
+                league = await (from e in db.Editions join c in db.Competitions on e.CompetitionId equals c.Id where e.Id == ed select c.Name).SingleAsync();
+                fixtures = await svc.FixturesAsync(ed);
+                var clubs = await db.EditionClubs.Where(x => x.EditionId == ed).Select(x => x.ClubId).ToListAsync();
+                table = YouthLeagueService.Table(clubs, fixtures);
+                rounds = fixtures.Count == 0 ? 0 : fixtures.Max(f => f.Round);
+                played = fixtures.Where(f => f.HomeGoals is not null).Select(f => f.Round).DefaultIfEmpty(0).Max();
+                view = Math.Max(1, played);
+                scorers = await svc.ScorersAsync(ed);
+                squad = await svc.SquadAsync(season.HumanClubId, ed);
+                goals = await svc.GoalsAsync([.. fixtures.Where(f => f.HomeGoals is not null).Select(f => f.Id)]);
+            }
+        }
+        loaded = true;
+    }
+
+    void GoRound(int r) => view = Math.Clamp(r, 1, Math.Max(1, rounds));
+
+    static string Goal((Guid Club, string Name, int Goals) g) => g.Goals > 1 ? $"{g.Name} ×{g.Goals}" : g.Name;
+
+    string Form(Guid club) => string.Concat(fixtures.Where(f => f.HomeGoals is not null && (f.HomeClubId == club || f.AwayClubId == club))
+        .OrderByDescending(f => f.Round).Take(5).Reverse()
+        .Select(f =>
+        {
+            var (s, c) = f.HomeClubId == club ? (f.HomeGoals!.Value, f.AwayGoals!.Value) : (f.AwayGoals!.Value, f.HomeGoals!.Value);
+            return s > c ? 'W' : s == c ? 'D' : 'L';
+        }));
+}

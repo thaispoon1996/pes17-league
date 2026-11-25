@@ -383,6 +383,7 @@ public sealed class CompetitionService(ClubsDbContext db, IOptionFileStore store
         await new ConditionService(db, clock).ApplyRoundAsync(md.Id, ct);   // FM đợt 5: thể lực, chấn thương, tinh thần
         await new BoardService(db, clock).ApplyRoundAsync(md.SeasonId, md.Id, ct);   // FM đợt 7: độ tin cậy ban lãnh đạo
         await new YouthService(db, clock).ApplyRoundAsync(md.Id, ct);   // FM đợt 8: báo cáo trinh sát
+        await new YouthLeagueService(db, clock, rng).ApplyRoundAsync(md, ct);   // Giải U19 mô phỏng (PO 25/11)
         await eco.ApplyFormAsync(md.SeasonId, form, ct);
 
         md.Status = MatchdayStatus.Settled;
