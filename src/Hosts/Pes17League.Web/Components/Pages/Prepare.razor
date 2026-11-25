@@ -12,6 +12,7 @@
 @inject StreamPass Pass
 @inject IOptionFileStore Store
 @inject TimeProvider Clock
+@inject VenueService Venues
 
 @* Chuẩn bị trận của PO (PO 05/11): chỉnh đội hình/chiến thuật trên sân → "Sẵn sàng" = chốt đội hình, game tự vào trận
    (màn chờ /vao-tran đếm ngược). Vào trận nhanh (PO 16/11): mở trang lúc máy rảnh → máy dựng sẵn game tới màn Chọn đội, vẫn sửa
@@ -42,6 +43,36 @@
     @* PO 23/11: thay "Tâm điểm đối đầu" bằng chọn áo đấu (game mặc đúng bộ đã chọn, không mở lại game). *@
     <h3 class="cx-h3">Áo đấu</h3>
     <MatchKitPicker Season="season" Fixture="fixture" Mine="side" Locked="@(fixture.Status != FixtureStatus.Scheduled || Jobs.LineupLocked)" />
+    @* PO 25/11: sân (đội chủ nhà chọn) + thời tiết thật tại sân lúc này — đúng thứ máy chọn trong game (VenueService.ConditionsAsync). *@
+    <h3 class="cx-h3">Sân &amp; thời tiết</h3>
+    <section class="pp-venue">
+        <figure>
+            <img src="@VenueService.Thumb(stadium)" alt="" width="560" height="272" />
+            <figcaption>
+                <b>@(VenueService.ById(stadium)?.Name ?? $"Sân nhà {season!.Clubs[fixture.Home]}")</b>
+                <small>@(VenueService.ById(stadium)?.City ?? "Theo game")@(side == MatchSide.Home ? " · bạn chọn ở trang Sân vận động" : " · đội chủ nhà chọn")</small>
+            </figcaption>
+        </figure>
+        <div class="pp-wx">
+            @if (wx is { } w)
+            {
+                <div class="pp-wx-now">
+                    <i class="ms fill" aria-hidden="true">@w.Icon</i>
+                    <span><b>@w.TempC.ToString("0")°</b><small>@w.Label · @(w.IsDay ? "ban ngày" : "ban đêm")</small></span>
+                </div>
+                <ul aria-label="Trong game">
+                    <li><small>Thời tiết</small>@(w.Weather == "rainy" ? "Mưa" : "Khô ráo")</li>
+                    <li><small>Giờ</small>@(w.Time == "day" ? "Ngày" : "Đêm")</li>
+                    <li><small>Mùa</small>@(w.Season == "winter" ? "Đông" : "Hè")</li>
+                </ul>
+                <p>Thời tiết thật lúc này tại @(geo?.City ?? geo?.Venue ?? season!.Clubs[fixture.Home]), lấy lại đúng lúc vào trận.@(w.Snow ? " Game không có tuyết: đá dưới mưa." : "")</p>
+            }
+            else
+            {
+                <p>Chưa lấy được thời tiết ở sân đội chủ nhà, trận dùng thời tiết mặc định của game.</p>
+            }
+        </div>
+    </section>
 }
 <section class="hero">
     <span class="pill">Chuẩn bị trận · Vòng @fixture.Matchday</span>
@@ -178,6 +209,9 @@
     Timer? tick, touch;
     Guid? me;
     Guid otherManager;
+    int stadium;
+    VenueService.Now? wx;
+    VenueService.Geo? geo;
     string? myName;
     string? PlayLink => Pass.Link(fixture!.Id, side == MatchSide.Home);   // vé riêng từng trận (PO 17/11)
 
@@ -198,6 +232,9 @@
             side = fixture.Home == season.HumanClubId ? MatchSide.Home : MatchSide.Away;
         else { fixture = null; notMine = true; return; }   // PO 17/11: admin = Ban tổ chức, không đá trận (bỏ "admin đá trận BOT" 16/11)
         club = side == MatchSide.Home ? fixture.Home : fixture.Away;
+        stadium = Venues.StadiumFor(fixture.Home);
+        geo = Venues.GeoOf(fixture.Home);
+        try { wx = await Venues.WeatherAsync(fixture.Home); } catch (Exception e) when (e is not OperationCanceledException) { wx = null; }
         banned = await SanctionService.IsBannedAsync(db, FixtureId);   // Ban tổ chức cấm chỉ đạo (PO 17/11)
         if (season.BothHuman(fixture))
         {
@@ -301,3 +338,24 @@
         touch?.Dispose();
     }
 }
+
+<style>
+    /* PO 25/11: khối Sân & thời tiết trên trang Chuẩn bị (màu theo giao diện xanh). */
+    .pp-venue { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
+    .pp-venue figure { position: relative; margin: 0; overflow: hidden; border: 1px solid #2c303b; border-radius: 12px; background: #1c1f2a; min-height: 150px; }
+    .pp-venue img { display: block; width: 100%; height: 100%; aspect-ratio: 560 / 272; object-fit: cover; }
+    .pp-venue figcaption { position: absolute; inset: auto 0 0; display: grid; gap: 2px; padding: 28px 14px 12px; background: linear-gradient(transparent, rgba(15,19,29,.92)); }
+    .pp-venue figcaption b { font: 800 20px/1.1 "Barlow Condensed", sans-serif; text-transform: uppercase; color: #dee1f7; }
+    .pp-venue figcaption small, .pp-wx p { font-size: 13px; color: #9ba7b5; }
+    .pp-wx { display: grid; align-content: center; gap: 12px; padding: 14px 16px; border: 1px solid #2c303b; border-radius: 12px; background: #1c1f2a; }
+    .pp-wx-now { display: flex; align-items: center; gap: 12px; }
+    .pp-wx-now .ms { font-size: 44px; color: #ffb95f; }
+    .pp-wx-now span { display: grid; }
+    .pp-wx-now b { font: 800 34px/1 "Barlow Condensed", sans-serif; color: #dee1f7; }
+    .pp-wx-now small { color: #9ba7b5; }
+    .pp-wx ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .pp-wx li { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: #262a35; font: 800 16px "Barlow Condensed", sans-serif; text-transform: uppercase; color: #00ff87; }
+    .pp-wx li small { font: 600 11px "Be Vietnam Pro", sans-serif; text-transform: none; color: #9ba7b5; }
+    .pp-wx p { margin: 0; }
+    @@media (max-width: 700px) { .pp-venue { grid-template-columns: 1fr; } }
+</style>
