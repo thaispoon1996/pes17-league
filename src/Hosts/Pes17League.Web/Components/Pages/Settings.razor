@@ -131,7 +131,7 @@
     {
         if (clubId is null && !admin) return;
         var gfx = s.Quality != game.Quality;
-        var cam = s.CamHeight != game.CamHeight || s.CamAngle != game.CamAngle;
+        var cam = s.CamHeight != game.CamHeight || s.CamAngle != game.CamAngle || s.CamType != game.CamType;
         Game.Save(s);
         game = s;
         saved = gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : cam ? "Đã lưu camera — áp dụng từ trận kế tiếp" : "Đã lưu";

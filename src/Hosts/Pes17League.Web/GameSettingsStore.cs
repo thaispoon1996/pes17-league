@@ -6,9 +6,17 @@ namespace Pes17League.Web;
 /// Lưu ở $DATA/pes17-deploy/game-settings.json; bộ chạy trận (tools/match17/pesmatch17.py game_settings()) đọc đầu mỗi trận.</summary>
 public sealed class GameSettingsStore(string path)
 {
-    /// <summary>Camera Custom trong trận: Zoom luôn 0 (xa nhất); Height/Angle 0–<see cref="CamMax"/> (PES2017.exe đã vá thanh 10→50).
+    /// <summary>Camera trong trận: <see cref="CamType"/> "fan" = Fan View (toàn cảnh, mặc định — gần ảnh mẫu PO nhất, thử 25/11) hoặc
+    /// "custom" = Custom, Zoom luôn 0 (xa nhất), Height/Angle 0–<see cref="CamMax"/> (PES2017.exe đã vá thanh 10→50).
     /// Bộ chạy đặt qua Pause Menu lúc giao bóng, chỉ khi khác lần trước (tools/match17/pesmatch17.py ensure_camera).</summary>
-    public sealed record Settings(string Level = "Regular", string Quality = "high", int CamHeight = CamHeightDefault, int CamAngle = CamAngleDefault);
+    public sealed record Settings(string Level = "Regular", string Quality = "high", int CamHeight = CamHeightDefault, int CamAngle = CamAngleDefault,
+        string CamType = CamTypeDefault);
+
+    public const string CamTypeDefault = "fan";
+    public static readonly (string Key, string Label, string Note)[] CamTypes =
+    [
+        ("fan", "Toàn cảnh", "Góc cao giữa khán đài, thấy cả bề ngang sân"), ("custom", "Tuỳ chỉnh", "Tự kéo độ cao và góc, gần cầu thủ hơn"),
+    ];
 
     public const int CamMax = 50, CamHeightDefault = 15, CamAngleDefault = 10;
     static bool CamOk(int v) => v is >= 0 and <= CamMax;
@@ -41,6 +49,7 @@ public sealed class GameSettingsStore(string path)
                     Quality = Qualities.Any(q => q.Key == s.Quality) ? s.Quality : "high",
                     CamHeight = CamOk(s.CamHeight) ? s.CamHeight : CamHeightDefault,
                     CamAngle = CamOk(s.CamAngle) ? s.CamAngle : CamAngleDefault,
+                    CamType = CamTypes.Any(t => t.Key == s.CamType) ? s.CamType : CamTypeDefault,
                 };
             }
             catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
@@ -52,7 +61,8 @@ public sealed class GameSettingsStore(string path)
 
     public void Save(Settings s)
     {
-        if (!Levels.Any(l => l.Key == s.Level) || !Qualities.Any(q => q.Key == s.Quality) || !CamOk(s.CamHeight) || !CamOk(s.CamAngle))
+        if (!Levels.Any(l => l.Key == s.Level) || !Qualities.Any(q => q.Key == s.Quality) || !CamOk(s.CamHeight) || !CamOk(s.CamAngle)
+            || !CamTypes.Any(t => t.Key == s.CamType))
             throw new ArgumentException("cài đặt game không hợp lệ");
         lock (gate)
         {

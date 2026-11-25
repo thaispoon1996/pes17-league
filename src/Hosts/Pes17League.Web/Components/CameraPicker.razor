@@ -1,16 +1,35 @@
 @inject IWebHostEnvironment Env
 
-@* Chọn camera trong trận (PO 25/11): kéo Độ cao / Góc → ảnh chụp thật từ máy game đổi theo ngay (wwwroot/img/camera/h{H}_a{A}.jpg,
-   chụp ở tư thế giao bóng, Custom, Zoom 0). Thiếu ảnh đúng mức → ảnh gần nhất + ghi rõ. Lưu = GameSettingsStore; bộ chạy đặt lúc giao bóng. *@
+@* Chọn camera trong trận (PO 25/11): Toàn cảnh (Fan View, mặc định) hoặc Tuỳ chỉnh (Custom: kéo Độ cao / Góc → ảnh chụp thật từ
+   máy game đổi theo ngay, wwwroot/img/camera/h{H}_a{A}.jpg, chụp ở tư thế giao bóng, Zoom 0; thiếu ảnh đúng mức → ảnh gần nhất + ghi rõ).
+   Lưu = GameSettingsStore; bộ chạy đặt lúc giao bóng. *@
 <div class="cam">
+    <div class="cam-type" role="radiogroup" aria-label="Loại camera">
+        @foreach (var t in GameSettingsStore.CamTypes)
+        {
+            <button type="button" role="radio" aria-checked="@(type == t.Key ? "true" : "false")" class="@(type == t.Key ? "on" : null)" @onclick="() => type = t.Key">
+                <b>@t.Label</b><small>@t.Note</small>
+            </button>
+        }
+    </div>
     <figure class="cam-view">
-        <img src="@Shot.Src" alt="Góc nhìn camera độ cao @Shot.H, góc @Shot.A lúc giao bóng" width="960" height="540" />
-        <figcaption>
-            <span class="cam-tag">Độ cao @height <i>/</i> Góc @angle</span>
-            @if (!Shot.Exact) { <span class="cam-near">Ảnh gần nhất: độ cao @Shot.H, góc @Shot.A</span> }
-        </figcaption>
+        @if (Fan)
+        {
+            <img src="img/camera/fan.jpg" alt="Góc nhìn camera toàn cảnh lúc giao bóng" width="960" height="540" />
+            <figcaption><span class="cam-tag">Toàn cảnh</span></figcaption>
+        }
+        else
+        {
+            <img src="@Shot.Src" alt="Góc nhìn camera độ cao @Shot.H, góc @Shot.A lúc giao bóng" width="960" height="540" />
+            <figcaption>
+                <span class="cam-tag">Độ cao @height <i>/</i> Góc @angle</span>
+                @if (!Shot.Exact) { <span class="cam-near">Ảnh gần nhất: độ cao @Shot.H, góc @Shot.A</span> }
+            </figcaption>
+        }
     </figure>
     <div class="cam-ctl">
+        @if (!Fan)
+        {
         <label class="cam-row" for="cam-h">
             <span><b>Độ cao</b><output>@height</output></span>
             <input id="cam-h" type="range" min="0" max="@GameSettingsStore.CamMax" step="5" value="@height" @oninput="e => height = Num(e)" />
@@ -21,24 +40,32 @@
             <input id="cam-a" type="range" min="0" max="@GameSettingsStore.CamMax" step="10" value="@angle" @oninput="e => angle = Num(e)" />
             <small><span>Nghiêng</span><span>Dốc hơn</span></small>
         </label>
+        }
         <div class="cam-act">
             <button type="button" class="cx-btn gold" disabled="@(!Dirty)" @onclick="Save">Lưu camera</button>
-            @if (height != Current.CamHeight || angle != Current.CamAngle)
+            @if (Dirty)
             {
                 <button type="button" class="cx-btn ghost" @onclick="Reset">Bỏ thay đổi</button>
             }
-            else if (height != GameSettingsStore.CamHeightDefault || angle != GameSettingsStore.CamAngleDefault)
+            else if (type != GameSettingsStore.CamTypeDefault || height != GameSettingsStore.CamHeightDefault || angle != GameSettingsStore.CamAngleDefault)
             {
                 <button type="button" class="cx-btn ghost" @onclick="Default">Về mặc định</button>
             }
         </div>
-        <p class="cam-now">Đang dùng: độ cao @Current.CamHeight, góc @Current.CamAngle</p>
+        <p class="cam-now">Đang dùng: @(Current.CamType == "fan" ? "toàn cảnh" : $"tuỳ chỉnh, độ cao {Current.CamHeight}, góc {Current.CamAngle}")</p>
         <small class="st-hint"><i class="ms" aria-hidden="true">info</i>Áp dụng từ trận kế tiếp. Lúc giao bóng, game tự mở bảng camera vài giây để đặt (chỉ khi bạn vừa đổi).</small>
     </div>
 </div>
 
 <style>
     .cam { display: grid; gap: 14px; padding-top: 4px; }
+    .cam-type { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cam-type button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; min-height: 56px; border-radius: 12px; border: 1px solid #2c303b; background: #1c1f2a; color: #dee1f7; cursor: pointer; font: inherit; }
+    .cam-type button b { font: 800 18px/1.1 'Barlow Condensed', sans-serif; text-transform: uppercase; }
+    .cam-type button small { font-size: 12px; color: #9ba7b5; line-height: 1.35; }
+    .cam-type button.on { border-color: #00ff87; background: rgba(0,255,135,.08); box-shadow: inset 0 0 0 1px #00ff87; }
+    .cam-type button.on b { color: #00ff87; }
+    .cam-type button:focus-visible { outline: 2px solid #00ff87; outline-offset: 2px; }
     .cam-view { margin: 0; position: relative; border-radius: 12px; overflow: hidden; border: 1px solid #2c303b; background: #0f131d; }
     .cam-view img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
     .cam-view figcaption { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; justify-content: space-between; pointer-events: none; }
@@ -66,15 +93,18 @@
     [Parameter] public EventCallback<GameSettingsStore.Settings> OnSave { get; set; }
 
     int height, angle;
-    bool Dirty => height != Current.CamHeight || angle != Current.CamAngle;
+    string type = GameSettingsStore.CamTypeDefault;
+    bool Fan => type == "fan";
+    // Toàn cảnh: độ cao/góc không dùng → không tính là thay đổi
+    bool Dirty => type != Current.CamType || (!Fan && (height != Current.CamHeight || angle != Current.CamAngle));
 
-    protected override void OnInitialized() => (height, angle) = (Current.CamHeight, Current.CamAngle);
+    protected override void OnInitialized() => (type, height, angle) = (Current.CamType, Current.CamHeight, Current.CamAngle);
 
     static int Num(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v, 0, GameSettingsStore.CamMax) : 0;
 
-    Task Save() => OnSave.InvokeAsync(Current with { CamHeight = height, CamAngle = angle });
-    void Reset() => (height, angle) = (Current.CamHeight, Current.CamAngle);
-    void Default() => (height, angle) = (GameSettingsStore.CamHeightDefault, GameSettingsStore.CamAngleDefault);
+    Task Save() => OnSave.InvokeAsync(Current with { CamType = type, CamHeight = height, CamAngle = angle });
+    void Reset() => (type, height, angle) = (Current.CamType, Current.CamHeight, Current.CamAngle);
+    void Default() => (type, height, angle) = (GameSettingsStore.CamTypeDefault, GameSettingsStore.CamHeightDefault, GameSettingsStore.CamAngleDefault);
 
     // Ảnh có sẵn (đọc 1 lần): ưu tiên đúng mức → cùng góc, độ cao gần nhất → gần nhất tổng.
     static (int H, int A)[]? shots;

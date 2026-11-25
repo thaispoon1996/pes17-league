@@ -314,13 +314,23 @@ CAM_TYPE = (760, 160, 990, 186)
 CAM_ROWS = [(1025, 189, 1080, 213), (1025, 218, 1080, 242), (1025, 247, 1080, 271)]   # Zoom, Height, Angle
 
 
-def camera_want(gs: dict) -> tuple[int, int, int] | None:
-    """Camera web chọn (trang /cai-dat, PO 25/11): Custom, Zoom 0 (xa nhất), Height/Angle 0–50. Thiếu/sai → None (không đụng)."""
+SYSTEM_CAM = ("Fan View",)   # camera lưu trong System Data của game (đặt + Save System Data 25/11) — game mở lại là có sẵn
+CAM_TYPES = {"fan": "Fan View"}   # loại camera cố định web chọn được (camType) → tên trong game; "custom" = Custom + 3 thanh
+
+
+def camera_want(gs: dict) -> tuple | None:
+    """Camera web chọn (trang /cai-dat, PO 25/11): ("Fan View",) — toàn cảnh, mặc định (gần ảnh mẫu PO nhất, thử 25/11) — hoặc
+    ("Custom", Zoom 0 = xa nhất, Height, Angle 0–50). File chưa có camType mà có camHeight (bản cũ) → Custom. Thiếu/sai → None (không đụng)."""
+    t = gs.get("camType")
+    if t in CAM_TYPES:
+        return (CAM_TYPES[t],)
+    if t not in (None, "custom"):
+        return None
     try:
         h, a = int(gs["camHeight"]), int(gs["camAngle"])
     except (KeyError, TypeError, ValueError):
         return None
-    return (0, h, a) if 0 <= h <= CAM_RANGE and 0 <= a <= CAM_RANGE else None
+    return ("Custom", 0, h, a) if 0 <= h <= CAM_RANGE and 0 <= a <= CAM_RANGE else None
 
 
 def _cam_num(t: str) -> int | None:
@@ -328,7 +338,7 @@ def _cam_num(t: str) -> int | None:
     return int(t) if t.isdigit() else None
 
 
-def ensure_camera(want: tuple[int, int, int] | None) -> None:
+def ensure_camera(want: tuple | None) -> None:
     """Tư thế giao bóng (sau skip_intro): đặt camera Custom = want qua Pause Menu → Camera Settings (~10–20 s), chỉ khi khác lần
     đã đặt trong game đang chạy. Thử 25/11: lúc giao bóng Pause Menu mở ở GAME PLAN, Right x2 = Camera Settings; bảng mở ở Camera Type.
     Lỗi chỉ ghi log, không chặn trận."""
@@ -336,10 +346,14 @@ def ensure_camera(want: tuple[int, int, int] | None) -> None:
         return
     game = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017[.]exe"], capture_output=True, text=True).stdout.split()[:1]
     try:
-        if json.loads(CAM_APPLIED.read_text()) == {"cam": list(want), "game": game}:
-            return
+        last = json.loads(CAM_APPLIED.read_text())
     except (OSError, ValueError):
-        pass
+        last = {}
+    if last == {"cam": list(want), "game": game}:
+        return
+    if tuple(want) == SYSTEM_CAM and last.get("game") != game:   # game vừa mở: camera = System Data, đã đúng → khỏi mở bảng
+        CAM_APPLIED.write_text(json.dumps({"cam": list(want), "game": game}))
+        return
     try:
         with nav.session():
             nav.pad("Start w:2.5")
@@ -349,12 +363,16 @@ def ensure_camera(want: tuple[int, int, int] | None) -> None:
             if "amera" not in ocr.rec(nav.shot("m17_cam"), CAM_TITLE)[0]:
                 nav.pad("B w:1.5 B w:2")
                 raise NavError("không vào được Camera Settings")
-            for _ in range(7):
-                if "ustom" in ocr.rec(nav.shot("m17_cam"), CAM_TYPE)[0]:
+            name = _norm(want[0])[:3]   # OCR đọc chữ trên nền sân hay sai đuôi ("Fan  iw"); 3 chữ đầu đủ phân biệt
+            for _ in range(12):   # 10 loại camera, vòng tròn
+                if name in _norm(ocr.rec(nav.shot("m17_cam"), CAM_TYPE)[0]):
                     break
                 nav.pad("Right w:0.8")
+            else:
+                nav.pad("B w:1.5 B w:2")
+                raise NavError(f"không thấy loại camera {want[0]}")
             got = []
-            for row, v in zip(CAM_ROWS, want):
+            for row, v in zip(CAM_ROWS, want[1:]):
                 nav.pad("Down w:0.5")
                 for _ in range(2):   # đọc → bấm bù → đọc lại (phím có thể rơi)
                     cur = _cam_num(ocr.rec(nav.shot("m17_cam"), row)[0])
