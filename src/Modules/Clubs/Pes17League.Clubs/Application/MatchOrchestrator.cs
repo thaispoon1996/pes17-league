@@ -334,7 +334,7 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         if (md.OptionFileBuildId is null) await new BotCoachService(db, clock).ApplyAsync(md.Id, ct);
         Guid buildId;
         if (await new Pes17RoundService(db, store, clock).IsPes17SeasonAsync(season.Id, ct))   // PES17: ảnh chụp đội hình JSON cả liên đoàn
-            buildId = (await new Pes17RoundService(db, store, clock).SnapshotAsync(season.PatchVersionId!.Value, md.Id, ct, (fixtureId, [f.HomeClubId, f.AwayClubId]))).Id;
+            buildId = (await new Pes17RoundService(db, store, clock).SnapshotAsync(season.PatchVersionId!.Value, md.Id, ct)).Id;   // PO 25/11: không còn đội hình riêng trận (chỉnh trong game)
         else
         {
             var mine = await new RoundOptionFileService(db, store, clock).BuildForFixtureAsync(md.Id, [f.HomeClubId, f.AwayClubId], ct);

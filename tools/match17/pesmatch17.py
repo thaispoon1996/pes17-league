@@ -51,6 +51,8 @@ SKIP_INTRO = os.environ.get("PESMATCH_SKIP_INTRO", "1") != "0"   # bấm Start b
 LOCK = Path(os.environ.get("PESMATCH_LOCK") or OUT / "match.lock")   # web truyền đường dẫn để tự xoá khi dừng bộ chạy ngang (PO 22/11)
 WAIT_GO = os.environ.get("PESMATCH_WAIT_GO") == "1"
 WARM = os.environ.get("PESMATCH_WARM") == "1"
+# PO 25/11: người chơi tự chỉnh đội hình/chiến thuật trong game → bộ chạy KHÔNG vào GAME PLAN (đổi người, kiểm đội hình). Bật lại: PESMATCH_PLAN=1.
+GAME_PLAN = os.environ.get("PESMATCH_PLAN") == "1"
 BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
 REC = os.environ.get("PESMATCH_REC")     # web luôn truyền; chỉ ghi khi record-mode cho phép (rec17.wanted)
 LOGO = os.environ.get("PESMATCH_LOGO")   # logo giải của trận (web, PO 22/11) → góc phải trên màn hình chơi, từ lúc giao bóng tới hết trận
@@ -1389,7 +1391,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         gfx = ensure_compe() or gfx               # trước ensure_game: deploy.sh ghi DpFileList theo compe.active + house.active
         # đội người cầm → đổi người được trong GAME PLAN bằng tay cầm của họ (P1; trận 2 người: đội khách = P2)
         plan = {"home": [(home, "home", 0)], "away": [(away, "away", 0)],
-                "both": [(home, "home", 0), (away, "away", 1)]}.get(human or "", [])
+                "both": [(home, "home", 0), (away, "away", 1)]}.get(human or "", []) if GAME_PLAN else []
         plan_teams = [t for t, _, _ in plan]
         restarted = ensure_game(squads, home, away, plan_teams)
         # Không mở lại game → đội hình trong game có thể đã khác gói (trận trước đổi trong GAME PLAN, game tự thay người) → luôn kiểm

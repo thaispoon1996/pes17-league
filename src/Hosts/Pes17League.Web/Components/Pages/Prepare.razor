@@ -46,16 +46,14 @@
 <section class="hero">
     <span class="pill">Chuẩn bị trận · Vòng @fixture.Matchday</span>
     <h1>@season.Clubs[fixture.Home] – @season.Clubs[fixture.Away]</h1>
-    <p>Bạn đá đội @(adminPick ? season.Clubs[club] + " " : "")(@(side == MatchSide.Home ? "nhà" : "khách")). Chỉnh đội hình, chiến thuật rồi bấm Sẵn sàng.</p>
+    <p>Bạn đá đội @(adminPick ? season.Clubs[club] + " " : "")(@(side == MatchSide.Home ? "nhà" : "khách")). Bấm Sẵn sàng: máy tự chọn đội, áo đấu, sân, thời tiết rồi vào trận. Đội hình, chiến thuật bạn chỉnh trong game (Tạm dừng → Game Plan).</p>
     @if (adminPick && !(Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id))
     {
         <p><a class="btn" href="chuan-bi/@fixture.Id?ben=@(side == MatchSide.Home ? "khach" : "nha")">⇄ Đổi sang đá @season.Clubs[side == MatchSide.Home ? fixture.Away : fixture.Home]</a></p>
     }
 </section>
 <div class="grid">
-    <section class="panel">
-        <LineupBoard Season="season" ClubId="club" FixtureId="fixture.Id" Locked="Jobs.LineupLocked" LockedMessage="Đội hình đã chốt cho trận đang vào." />
-    </section>
+    @* PO 25/11: bỏ chỉnh đội hình/chiến thuật trên web ở trang này — người chơi tự chỉnh trong game. *@
     @* Điện thoại (PO 17/11): khu Vào trận nằm dưới cùng → nút nổi nhảy tới *@
     <button type="button" class="jump-cta no-busy" onclick="document.getElementById('vao-tran').scrollIntoView({behavior:'smooth'})"><span class="ms ic" aria-hidden="true">sports_soccer</span>Vào trận ↓</button>
     <aside class="panel" id="vao-tran">
@@ -118,13 +116,13 @@
         {
             @if (Jobs.Ready)
             {
-                <p class="muted">Game đã dựng sẵn với đội hình hiện tại — bấm Sẵn sàng là vào trận (~@(Jobs.SecondsToKickoffEstimateWarm) giây). Sửa đội hình/chiến thuật thì máy tự cài lại vào game (game khởi động lại khoảng 2 phút).</p>
+                <p class="muted">Game đã dựng sẵn — bấm Sẵn sàng là vào trận (~@(Jobs.SecondsToKickoffEstimateWarm) giây).</p>
             }
             else
             {
-                <p class="muted">Máy đang dựng sẵn game (@(Jobs.Stage ?? "khởi động")) — vẫn chỉnh đội hình được. Bấm Sẵn sàng lúc nào cũng được, game tự đi tiếp.</p>
+                <p class="muted">Máy đang dựng sẵn game (@(Jobs.Stage ?? "khởi động")) — bấm Sẵn sàng lúc nào cũng được, game tự đi tiếp.</p>
             }
-            <button class="primary wide" @onclick="Go"><span class="ms ic" aria-hidden="true">check_circle</span>Sẵn sàng — chốt đội hình & vào trận</button>
+            <button class="primary wide" @onclick="Go"><span class="ms ic" aria-hidden="true">check_circle</span>Sẵn sàng — vào trận</button>
             <button class="wide" data-confirm="Huỷ dựng sẵn và trả máy?" @onclick="Jobs.Cancel"><span class="ms ic" aria-hidden="true">close</span>Huỷ dựng sẵn (trả máy)</button>
         }
         else if (Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id)
@@ -153,8 +151,8 @@
         }
         else
         {
-            <p class="muted">Bấm Sẵn sàng: đội hình được chốt, game khởi động và tự vào trận (~@(Jobs.SecondsToKickoffEstimate) giây, có đếm ngược).</p>
-            <button class="primary wide" @onclick="Ready"><span class="ms ic" aria-hidden="true">check_circle</span>Sẵn sàng — chốt đội hình & vào trận</button>
+            <p class="muted">Bấm Sẵn sàng: máy chọn đội, áo đấu, sân, thời tiết rồi tự vào trận (~@(Jobs.SecondsToKickoffEstimate) giây, có đếm ngược).</p>
+            <button class="primary wide" @onclick="Ready"><span class="ms ic" aria-hidden="true">check_circle</span>Sẵn sàng — vào trận</button>
         }
         @if (fixture.Status == FixtureStatus.Scheduled && season.NeedsHuman(fixture) && !season.BothHuman(fixture) && !(Jobs.LineupLocked && Jobs.HumanFixture?.FixtureId == fixture.Id))
         {
