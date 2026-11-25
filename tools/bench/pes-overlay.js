@@ -469,6 +469,13 @@
   ['mousemove', 'touchstart', 'keydown'].forEach(ev => document.addEventListener(ev, wake, { passive: true }));
   document.addEventListener('fullscreenchange', sync);
   document.addEventListener('webkitfullscreenchange', sync);
+  // PO 25/11: Selkies khoá phím Esc khi toàn màn hình (navigator.keyboard.lock có "Escape") → bấm Esc vào game, phải giữ 2 giây mới thoát.
+  // Khoá lại KHÔNG có Escape (lock() mới thay bộ cũ) để Esc thoát toàn màn hình như thường. Gọi muộn vì Selkies khoá sau sự kiện.
+  const freeEsc = () => {
+    if (!document.fullscreenElement || !(navigator.keyboard && navigator.keyboard.lock)) return;
+    navigator.keyboard.lock(['AltLeft', 'AltRight', 'Tab', 'MetaLeft', 'MetaRight', 'ContextMenu']).catch(() => {});
+  };
+  document.addEventListener('fullscreenchange', () => [50, 400, 1500].forEach(t => setTimeout(freeEsc, t)));
   window.addEventListener('resize', place);
   setInterval(place, 1000);
   // Gửi mức đang chọn sau khi nối máy (mặc định máy chủ 8 Mbps); gửi 2 lần cho chắc khi mạng chậm.
@@ -480,10 +487,14 @@
 // Cỏ = xanh át đỏ/xanh dương. Vạch = điểm sáng ít lệch màu, xử lý trước để không bị kéo thành cỏ.
 (() => {
   const vs = 'attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
+  // PO 25/11: ngưỡng cứng (if/else) làm điểm ảnh sát ngưỡng lật qua lại → cỏ loang mảng vàng/xanh, "vỡ hình".
+  // Giờ dùng trọng số mượt (smoothstep): điểm gần ngưỡng chỉ được tô một phần, không còn ranh giới răng cưa.
   const fs = `precision mediump float;varying vec2 v;uniform sampler2D t;
 void main(){vec3 c=texture2D(t,v).rgb;float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b));
-if(mn>.5&&mx-mn<.18)c=mix(c,vec3(1.),.7);
-else if(c.g>c.r*1.08+.02&&c.g>c.b*1.08+.02&&c.g>.08){c=mix(c,vec3(.03,.18,.05),.4);c*=vec3(.85,.95,.75);}
+float w=smoothstep(.45,.6,mn)*(1.-smoothstep(.12,.24,mx-mn));
+float g=smoothstep(0.,.08,c.g-max(c.r,c.b)*1.08)*smoothstep(.06,.14,c.g)*(1.-w);
+vec3 d=mix(c,vec3(.03,.18,.05),.4)*vec3(.85,.95,.75);
+c=mix(c,d,g);c=mix(c,vec3(1.),.6*w);
 gl_FragColor=vec4(c,1.);}`;
   const out = document.createElement('canvas');
   out.id = 'pes-pitch';
