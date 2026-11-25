@@ -6,6 +6,52 @@
 // PO 24/11 "không có tiếng": Selkies tạo AudioContext lúc nối, chỉ resume() khi có gói tiếng (không trong thao tác chạm) → iPhone giữ "suspended";
 // nút chơi chặn chạm nên Selkies không thấy thao tác. Ghi lại mọi AudioContext, resume() trong mọi lần chạm/bấm (pha capture, trước khi bị chặn).
 // iPhone gạt im lặng tắt cả Web Audio → audioSession "playback" (Safari 16.4+) để vẫn có tiếng như video.
+// PO 25/11 "mượt, không cảm thấy trễ": báo nhận từng khung hình về máy chủ (PES_ACK <số khung>) + số đo mỗi 5 giây (PES_STAT).
+// Máy chủ (tools/bench/selkies-smooth.py) dùng báo nhận để biết người này trễ bao nhiêu; trễ quá → bỏ hình cũ, nhảy tới khung đầy đủ mới
+// (hình luôn là hiện tại, không trễ dồn rồi tua nhanh). Số đo ghi /bench/stream-stats.log. Phải chạy TRƯỚC Selkies (module chạy sau script thường).
+(() => {
+  const WS = window.WebSocket;
+  if (!WS || WS.pesWrapped) return;
+  const hook = ws => {
+    let n = 0, bytes = 0, keys = 0, last = 0, gapMax = 0, gaps = 0, rLast = 0, jank = 0, rMax = 0;
+    ws.addEventListener('message', ev => {
+      const d = ev.data;
+      if (!(d instanceof ArrayBuffer) || d.byteLength < 10) return;
+      const v = new DataView(d);
+      if (v.getUint8(0) !== 4) return;          // 4 = một khung H.264 cả màn
+      const now = performance.now();
+      if (last) { const g = now - last; if (g > gapMax) gapMax = g; if (g > 50) gaps++; }
+      last = now; n++; bytes += d.byteLength; if (v.getUint8(1) === 1) keys++;
+      try { ws.send('PES_ACK ' + v.getUint16(2)); } catch { /* đang đóng */ }
+    });
+    const raf = t => {                         // khung vẽ của trình duyệt bị khựng (>34 ms) = máy người chơi bận
+      if (rLast && !document.hidden) { const g = t - rLast; if (g > 34) jank++; if (g > rMax) rMax = g; }
+      rLast = t;
+      if (ws.readyState < 2) requestAnimationFrame(raf);
+    };
+    requestAnimationFrame(raf);
+    const iv = setInterval(() => {
+      if (ws.readyState > 1) { clearInterval(iv); return; }
+      if (ws.readyState !== 1) return;
+      const c = navigator.connection || {};
+      const s = { fps: +(n / 5).toFixed(1), gap_max: Math.round(gapMax), gaps50: gaps, kbps: Math.round(bytes * 8 / 5000), keys, jank,
+        raf_max: Math.round(rMax), hidden: document.hidden ? 1 : 0, net: c.effectiveType || '', dl: c.downlink || null, rtt: c.rtt ?? null,
+        dev: (/iPhone|iPad|Android/.exec(navigator.userAgent) || ['pc'])[0], vw: innerWidth, vh: innerHeight };
+      try { ws.send('PES_STAT ' + JSON.stringify(s)); } catch { /* đang đóng */ }
+      n = bytes = keys = gapMax = gaps = jank = rMax = 0;
+    }, 5000);
+  };
+  const Wrapped = function (url, protocols) {
+    const ws = protocols === undefined ? new WS(url) : new WS(url, protocols);
+    try { if (/\/websockets$/.test(new URL(url, location.href).pathname)) hook(ws); } catch { /* url lạ */ }
+    return ws;
+  };
+  Wrapped.prototype = WS.prototype;
+  Object.setPrototypeOf(Wrapped, WS);
+  Wrapped.pesWrapped = true;
+  window.WebSocket = Wrapped;
+})();
+
 (() => {
   const list = [];
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -118,21 +164,32 @@
 // Nút Toàn màn hình + Giảm giật + Tiếng giữa mép trên khung game (PO 22/11, Tiếng 23/11; góc trên trái là bảng tỉ số, góc phải là logo giải). Nằm cùng khối cha với canvas → vẫn thấy khi toàn màn hình;
 // tự mờ sau 3 giây không đụng chuột/chạm. Toàn màn hình: nhờ Selkies (postMessage requestFullscreen = phóng khối cha canvas).
 // iPhone không có API toàn màn hình cho trang → báo cách xoay ngang / thêm vào màn hình chính.
-// Giảm giật: stream chạy bitrate cố định (CBR) → hạ bitrate 18→8 Mbps (giữ 60 khung/giây: 45 lệch nhịp màn 60 Hz lại giật).
-// Máy cho khoảng 8–18 (docker-compose SELKIES_VIDEO_BITRATE), mặc định máy chủ là 8 → trang luôn gửi mức đang chọn sau khi nối.
+// Giảm giật: stream chạy bitrate cố định (CBR). Mặc định 8 Mbps; bấm để lên 18 Mbps (nét hơn, mạng phải khoẻ). Giữ 60 khung/giây: 45 lệch nhịp màn 60 Hz lại giật.
+// Máy cho khoảng 8–18 (docker-compose SELKIES_VIDEO_BITRATE).
 // Cả 2 người cùng xem 1 luồng mã hoá: ai bật cũng áp cho cả hai.
 // Tiếng (23/11): game đã có âm thanh (Selkies gửi Opus). Nút bật/tắt tiếng chỉ đổi âm lượng ở máy người xem (postMessage setVolume 0/1), nhớ theo trình duyệt.
 (() => {
-  // h264_streaming_mode: mã hoá cả khung thay vì theo dải — đo 23/11 lúc đang đá (Chrome, 30 s/lần): cả khung đều 60 khung/s,
-  // theo dải 53–58 khung/s và có lúc khựng 0,7 s; bitrate như nhau. VAAPI (card AMD) thử thì mất hình → giữ mã hoá CPU.
+  // Đo 23/11 lúc đang đá: mã hoá theo dải 53–58 khung/s, có lúc khựng 0,7 s; mã hoá cả khung đều 60 khung/s. VAAPI mất hình.
+  // Selkies chỉ nhận hai cờ này trong gói SETTINGS lúc nối, đọc từ localStorage. postMessage 'settings' bỏ qua chúng.
+  // Script này chạy trước module Selkies (module ở head, file này cuối body) nên khoá có mặt ngay lần tải đầu.
   const LOWLAG = { video_bitrate: 8, h264_streaming_mode: true }, NORMAL = { video_bitrate: 18, h264_streaming_mode: true };
   const KEY = 'pes_lowlag', MUTE = 'pes_mute';
-  const get = () => { try { return localStorage.getItem(KEY) === '1'; } catch { return false; } };
+  const sk = location.href.split('#')[0].replace(/[^a-zA-Z0-9.-_]/g, '_');
+  const skPut = (k, v) => { try { localStorage.setItem(sk + '_' + k, String(v)); } catch { /* chế độ riêng tư */ } };
+  skPut('h264_streaming_mode', true);
+  skPut('use_cpu', true);
+  skPut('use_paint_over_quality', false);
+  skPut('framerate', 60);
+  const get = () => { try { return localStorage.getItem(KEY) !== '0'; } catch { return true; } };
   const put = v => { try { localStorage.setItem(KEY, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
   const muted = () => { try { return localStorage.getItem(MUTE) === '1'; } catch { return false; } };
   const putMuted = v => { try { localStorage.setItem(MUTE, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
   const sendVol = () => window.postMessage({ type: 'setVolume', value: muted() ? 0 : 1 }, window.location.origin);
-  const send = v => window.postMessage({ type: 'settings', settings: v ? LOWLAG : NORMAL }, window.location.origin);
+  const send = v => {
+    skPut('video_bitrate', v ? 8 : 18);
+    window.postMessage({ type: 'settings', settings: v ? LOWLAG : NORMAL }, window.location.origin);
+  };
+  skPut('video_bitrate', get() ? 8 : 18);
   const fsOk = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 
@@ -417,4 +474,60 @@
   // Gửi mức đang chọn sau khi nối máy (mặc định máy chủ 8 Mbps); gửi 2 lần cho chắc khi mạng chậm.
   [3000, 8000].forEach(t => setTimeout(() => { send(get()); sendVol(); }, t));
   sync(); wake();
+})();
+
+// Cỏ xanh đậm + vạch vôi trắng hơn (PO 24/11). Chỉ tô lại khung hình đã giải mã, không đụng game và không đụng bộ nhận sân.
+// Cỏ = xanh át đỏ/xanh dương. Vạch = điểm sáng ít lệch màu, xử lý trước để không bị kéo thành cỏ.
+(() => {
+  const vs = 'attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
+  const fs = `precision mediump float;varying vec2 v;uniform sampler2D t;
+void main(){vec3 c=texture2D(t,v).rgb;float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b));
+if(mn>.5&&mx-mn<.18)c=mix(c,vec3(1.),.7);
+else if(c.g>c.r*1.08+.02&&c.g>c.b*1.08+.02&&c.g>.08){c=mix(c,vec3(.03,.18,.05),.4);c*=vec3(.85,.95,.75);}
+gl_FragColor=vec4(c,1.);}`;
+  const out = document.createElement('canvas');
+  out.id = 'pes-pitch';
+  // videoCanvas z-index 2 → lớp lọc cũng 2, đứng sau nó trong DOM nên nằm trên (z 1 cũ bị khung hình che, không thấy gì); logo/bảng tỉ số chèn sau vẫn nằm trên.
+  Object.assign(out.style, { position: 'absolute', zIndex: '2', pointerEvents: 'none', display: 'none' });
+  const gl = out.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false });
+  if (!gl) return;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  let tw = 0, th = 0;
+  const frame = () => {
+    requestAnimationFrame(frame);
+    const src = document.getElementById('videoCanvas');
+    if (!src || !src.parentElement || src.width < 100 || src.height < 100) { out.style.display = 'none'; return; }
+    if (out.parentElement !== src.parentElement) src.parentElement.appendChild(out);
+    out.style.left = src.offsetLeft + 'px';
+    out.style.top = src.offsetTop + 'px';
+    out.style.width = src.offsetWidth + 'px';
+    out.style.height = src.offsetHeight + 'px';
+    out.style.display = 'block';
+    if (tw !== src.width || th !== src.height) {
+      tw = out.width = src.width; th = out.height = src.height;
+      gl.viewport(0, 0, tw, th);
+    }
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, src);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  };
+  requestAnimationFrame(frame);
 })();
