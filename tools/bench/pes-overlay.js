@@ -180,7 +180,10 @@
   skPut('use_cpu', true);
   skPut('use_paint_over_quality', false);
   skPut('framerate', 60);
-  const get = () => { try { return localStorage.getItem(KEY) !== '0'; } catch { return true; } };
+  // PO 25/11 "nét hơn": máy tính (màn to, mạng nhà) mặc định 18 Mbps; điện thoại 12. Người chơi bấm nút thì nhớ lựa chọn.
+  // Mạng khựng thì selkies-smooth.py tự hạ bitrate chung, nên 18 không làm giật lâu.
+  const phone = /iPhone|iPad|Android/.test(navigator.userAgent);
+  const get = () => { try { const v = localStorage.getItem(KEY); return v === null ? phone : v !== '0'; } catch { return phone; } };
   const put = v => { try { localStorage.setItem(KEY, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
   const muted = () => { try { return localStorage.getItem(MUTE) === '1'; } catch { return false; } };
   const putMuted = v => { try { localStorage.setItem(MUTE, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
@@ -455,7 +458,7 @@
   lagBtn.addEventListener('click', e => {
     e.stopPropagation();
     const v = !get(); put(v); send(v); sync();
-    say(v ? 'Giảm giật: BẬT — hình nhẹ hơn (8 Mbps), hợp mạng yếu' : 'Giảm giật: TẮT — hình nét nhất (18 Mbps)');
+    say(v ? 'Giảm giật: BẬT — hình nhẹ hơn (12 Mbps), hợp mạng yếu' : 'Giảm giật: TẮT — hình nét nhất (18 Mbps)');
   });
 
   sndBtn.addEventListener('click', e => {
@@ -483,62 +486,5 @@
   sync(); wake();
 })();
 
-// Cỏ xanh đậm + vạch vôi trắng hơn (PO 24/11). Chỉ tô lại khung hình đã giải mã, không đụng game và không đụng bộ nhận sân.
-// Cỏ = xanh át đỏ/xanh dương. Vạch = điểm sáng ít lệch màu, xử lý trước để không bị kéo thành cỏ.
-(() => {
-  const vs = 'attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
-  // PO 25/11: ngưỡng cứng (if/else) làm điểm ảnh sát ngưỡng lật qua lại → cỏ loang mảng vàng/xanh, "vỡ hình".
-  // Giờ dùng trọng số mượt (smoothstep): điểm gần ngưỡng chỉ được tô một phần, không còn ranh giới răng cưa.
-  const fs = `precision mediump float;varying vec2 v;uniform sampler2D t;
-void main(){vec3 c=texture2D(t,v).rgb;float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b));
-float w=smoothstep(.45,.6,mn)*(1.-smoothstep(.12,.24,mx-mn));
-float g=smoothstep(0.,.08,c.g-max(c.r,c.b)*1.08)*smoothstep(.06,.14,c.g)*(1.-w);
-vec3 d=mix(c,vec3(.03,.18,.05),.4)*vec3(.85,.95,.75);
-c=mix(c,d,g);c=mix(c,vec3(1.),.6*w);
-gl_FragColor=vec4(c,1.);}`;
-  const out = document.createElement('canvas');
-  out.id = 'pes-pitch';
-  // videoCanvas z-index 2 → lớp lọc cũng 2, đứng sau nó trong DOM nên nằm trên (z 1 cũ bị khung hình che, không thấy gì); logo/bảng tỉ số chèn sau vẫn nằm trên.
-  Object.assign(out.style, { position: 'absolute', zIndex: '2', pointerEvents: 'none', display: 'none' });
-  const gl = out.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false });
-  if (!gl) return;
-  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
-  const prog = gl.createProgram();
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
-  gl.useProgram(prog);
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(prog, 'p');
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-  let tw = 0, th = 0;
-  const frame = () => {
-    requestAnimationFrame(frame);
-    const src = document.getElementById('videoCanvas');
-    if (!src || !src.parentElement || src.width < 100 || src.height < 100) { out.style.display = 'none'; return; }
-    if (out.parentElement !== src.parentElement) src.parentElement.appendChild(out);
-    out.style.left = src.offsetLeft + 'px';
-    out.style.top = src.offsetTop + 'px';
-    out.style.width = src.offsetWidth + 'px';
-    out.style.height = src.offsetHeight + 'px';
-    out.style.display = 'block';
-    if (tw !== src.width || th !== src.height) {
-      tw = out.width = src.width; th = out.height = src.height;
-      gl.viewport(0, 0, tw, th);
-    }
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, src);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  };
-  requestAnimationFrame(frame);
-})();
+// Lớp lọc cỏ xanh đậm (PO 24/11) ĐÃ BỎ (PO 25/11): nó phân loại từng điểm ảnh nên các khối lệch màu nhẹ của hình nén
+// (H.264) bị khuếch đại thành mảng vàng/chữ nhật trên cỏ. Muốn đổi màu cỏ phải đổi trong game, không tô trên trình duyệt.
