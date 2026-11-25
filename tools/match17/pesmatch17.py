@@ -1308,14 +1308,25 @@ def grass(im: Image.Image) -> int:
     return n
 
 
+def top_menu_ask(im: Image.Image) -> bool:
+    """Hộp "Return to Top Menu?" giữa màn. Trong trận hộp đè lên sân (sân vẫn thấy) nên is_ask (đòi không có cỏ) trượt —
+    gặp 25/11: bộ chạy báo left_match nhưng game kẹt ở hộp. Đọc chữ dòng hỏi; OCR hay dính/rơi chữ nên chỉ cần "top" + "enu"/"ret"."""
+    t = ocr.rec(im, (260, 295, 1020, 345))[0].replace(" ", "").lower()
+    return ("top" in t and ("enu" in t or "ret" in t)) or is_ask(im)
+
+
 def leave_match() -> None:
     """Đang trong trận: Start (nếu chưa dừng) → mục cuối "Top Menu" của Pause Menu → Yes → menu chính. Đo 18/11: Right x5 tới mục cuối, hộp hỏi mặc định No."""
     try:
         if "ause" not in ocr.rec(nav.shot("m17_leave"), ocr.MENU_TITLE)[0]:
             nav.pad("Start w:2")
         nav.pad(" ".join(["Right w:0.5"] * 5) + " A w:2")
-        if is_ask(nav.shot("m17_leave")):
+        for _ in range(3):   # hộp "Return to Top Menu?" (mặc định No) → Left = Yes; bấm rơi phím thì thử lại
+            if not top_menu_ask(nav.shot("m17_leave")):
+                break
             nav.pad("Left w:0.5 A w:6")
+        else:
+            log("vẫn kẹt hộp Return to Top Menu")
         emit(event="stage", stage="left_match")
     except Exception as e:   # không chặn việc báo lỗi AFK
         log(f"không thoát được trận: {e}")
