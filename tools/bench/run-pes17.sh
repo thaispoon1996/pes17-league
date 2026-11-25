@@ -6,7 +6,7 @@ export WINEPREFIX="${WINEPREFIX:-/config/.wine}"
 export WINEDEBUG=-all
 export SteamAppId=456610
 export SteamGameId=456610
-export DXVK_HUD=0
+export DXVK_HUD="${DXVK_HUD:-0}"
 # Tiếng (25/11): nối thẳng ổ Pulse của Selkies. Chỉ có PULSE_RUNTIME_PATH=/defaults thì thư viện Pulse đòi thư mục đó thuộc về mình (700) → user abc bị từ chối → game câm.
 export PULSE_SERVER="${PULSE_SERVER:-unix:/defaults/native}"
 # VSync ON (FIFO): ổn định 60 FPS game+stream, ít giật hơn IMMEDIATE trên Selkies
@@ -29,4 +29,5 @@ GAME="/config/.wine-pes17/drive_c/Program Files (x86)/Pro Evolution Soccer 2017"
 ln -sfn "$GAME" "/config/.wine/drive_c/Program Files (x86)/Pro Evolution Soccer 2017" 2>/dev/null || true
 cp /opt/dxvk/x32/*.dll "$GAME/" 2>/dev/null || true
 cd "$GAME"
+# Camera (25/11): PES2017.exe đã vá giới hạn thanh camera 10→50 (tools/bench/pes17-camera-patch.py; bản gốc PES2017.exe.goc-1125). Không dùng Sider: dưới Wine sider.exe tự thoát → game treo.
 exec wine PES2017.exe
