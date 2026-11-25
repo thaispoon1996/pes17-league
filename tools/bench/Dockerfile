@@ -8,7 +8,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # 22/11 (PO duyệt kiểu A): logo giải góc phải trên trang chơi — pes-overlay.js đọc pes/overlay.json (bộ chạy trận ghi vào /bench/overlay).
 # init-nginx chép selkies-dashboard → web mỗi lần container khởi động nên sửa ở bản gốc; cp -a giữ nguyên symlink pes.
 COPY pes-overlay.js /usr/share/selkies/selkies-dashboard/pes-overlay.js
-RUN sed -i 's#</body>#<script src="pes-overlay.js?v=6"></script></body>#' /usr/share/selkies/selkies-dashboard/index.html \
+RUN sed -i 's#</body>#<script src="pes-overlay.js?v=7"></script></body>#' /usr/share/selkies/selkies-dashboard/index.html \
  && sed -i 's#<script src="src/universalTouchGamepad.js"></script>##' /usr/share/selkies/selkies-dashboard/index.html \
  && sed -i 's#src="./assets/index-D2fS95jp.js"#src="./assets/index-D2fS95jp.js?v=2"#' /usr/share/selkies/selkies-dashboard/index.html \
  && sed -i 's#hardwareAcceleration:"prefer-software"};try{if(!(await VideoDecoder.isConfigSupported(He)).supported)throw new Error(`Configuration not supported: ${JSON.stringify(He)}`);return await f.configure(He)#hardwareAcceleration:"prefer-hardware"};try{if(!(await VideoDecoder.isConfigSupported(He)).supported){He.hardwareAcceleration="prefer-software";if(!(await VideoDecoder.isConfigSupported(He)).supported)throw new Error(`Configuration not supported: ${JSON.stringify(He)}`)}return await f.configure(He)#' /usr/share/selkies/selkies-dashboard/assets/*.js \
@@ -25,3 +25,6 @@ RUN /lsiopy/bin/python3 /tmp/selkies-latency.py
 # tự hạ/nâng bitrate theo mạng; số đo mỗi 5 giây/người ở /bench/stream-stats.log. Chạy SAU selkies-latency.py.
 COPY selkies-smooth.py /tmp/selkies-smooth.py
 RUN /lsiopy/bin/python3 /tmp/selkies-smooth.py
+# 25/11: Selkies (user abc) không tự tìm ra ổ Pulse (/defaults không thuộc abc → libpulse từ chối) → trang chơi không có tiếng. Chỉ đường thẳng.
+RUN sed -i 's#^export XCURSOR_THEME=breeze#export XCURSOR_THEME=breeze\nexport PULSE_SERVER=unix:/defaults/native#' /etc/s6-overlay/s6-rc.d/svc-selkies/run \
+ && grep -q PULSE_SERVER /etc/s6-overlay/s6-rc.d/svc-selkies/run

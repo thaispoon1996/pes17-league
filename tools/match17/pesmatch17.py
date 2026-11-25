@@ -619,13 +619,19 @@ class Match:
     def run(self) -> tuple[int, int]:
         last_play = progress = time.monotonic()   # progress: lần cuối đồng hồ game nhích (hoặc đang nghỉ giữa hiệp)
         last_press, last_min, misses = 0.0, None, 0
-        cut = False
+        cut, muted, paused, gone = False, 0.0, False, 0   # paused: đã thấy menu tạm dừng, chưa thấy lại sân (Game Plan…)
 
         def end_now() -> None:   # vừa thấy màn hết trận: ngắt người chơi 1 lần
             nonlocal cut
             if self.human and not cut:
                 cut = True
                 cut_players()
+
+        def unmute() -> None:
+            nonlocal muted
+            if muted:
+                muted = 0.0
+                mute_players(False)
 
         while True:
             try:
@@ -640,6 +646,22 @@ class Match:
                 raise NavError(afk_reason(self.presence))
             if not h and self.board and (misses := misses + 1) >= 2:
                 self.board.hide()
+            if self.human and self.kick and not cut and (last_min or 0) >= 90:
+                # Còi hết trận (PO 25/11: "ngay khi vừa hết trận là tắt luôn"): đồng hồ biến mất ở phút 90+ mà không phải
+                # menu tạm dừng → khoá ngay nút người chơi. Chỉ là chiếu lại bàn bù giờ / cảnh phạm lỗi thì đồng hồ hiện lại
+                # → mở khoá (lúc đó nút chỉ để tua cảnh, khoá vài giây không hại). Khoá quá 60 giây mà chưa thấy màn hết trận → mở.
+                gone = 0 if h else gone + 1
+                if h:
+                    paused = False
+                if h or paused or (muted and now - muted > 60):
+                    unmute()
+                elif not muted and gone >= 2:   # 2 lần chụp liền (~1 giây) không thấy đồng hồ: không phải đọc sót 1 khung
+                    if (pm := ocr.menu(im)) and not any(k in pm["title"] for k in ("Up", "ull", "Hal")):
+                        paused = True
+                    else:
+                        muted = now
+                        mute_players(True)
+                        log("đồng hồ trận biến mất ở phút 90+: khoá tạm nút người chơi")
             if h:
                 last_play = now
                 self.halftime = None   # hết nghỉ giữa hiệp
@@ -674,7 +696,9 @@ class Match:
                     t = m["title"]
                     full = "Up" in t or "ull" in t
                     if not full and "Hal" not in t:
-                        time.sleep(2.5)
+                        paused = True   # menu tạm dừng (Start): người chơi đang chỉnh → không khoá nút
+                        unmute()
+                        time.sleep(0.5 if (last_min or 0) >= 88 else 2.5)
                         continue
                     if m != getattr(self, "_last_menu", None):
                         log(f"menu {m}")
@@ -701,6 +725,15 @@ class Match:
                     nav.pad("A w:1")   # Half Time / Time Up
                     last_press = now
             time.sleep(0.5 if (last_min or 0) >= 88 or cut else 2.5)   # cuối trận nhìn dày hơn: bắt màn hết trận trong ~1 giây
+
+
+def mute_players(on: bool) -> None:
+    """Khoá / mở tạm nút người chơi (tay cầm ảo của máy vẫn bấm được; tools/bench/selkies-smooth.py, file /tmp/pes-mute)."""
+    try:
+        subprocess.run(["docker", "exec", BENCH, "sh", "-c", "touch /tmp/pes-mute" if on else "rm -f /tmp/pes-mute"],
+                       capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"khoá nút người chơi lỗi: {e}")
 
 
 def cut_players() -> None:
@@ -1330,6 +1363,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         return 1
     finally:
         rec17.stop(recording)   # lỗi trước khi vào trận (đã bắt đầu ghi)
+        mute_players(False)     # không để sót khoá nút cho trận sau (Selkies cũng tự bỏ khoá cũ quá 3 phút)
         LOCK.unlink(missing_ok=True)
 
 

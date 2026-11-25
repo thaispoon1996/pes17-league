@@ -9,8 +9,9 @@ Vá:
 - Máy chủ tính trễ từng người = tuổi của khung cũ nhất đã gửi mà chưa được báo nhận. Quá PES_LAG_DROP_MS
   (mặc định 220 ms) → ngừng gửi cho người đó, chờ xả hết hình cũ, xin khung đầy đủ (IDR) rồi gửi tiếp từ khung đó.
   Người chơi thấy hình đứng một nhịp rồi bắt kịp hiện tại, thay vì trễ cả giây.
-- Có người phải bỏ hình → hạ bitrate chung 30% (tối thiểu PES_ABR_MIN_KBPS = 2500); 20 giây sạch → nâng 20%, tới bitrate gốc.
+- Có người phải bỏ hình 2 lần trong 10 giây → hạ bitrate chung 30% (tối thiểu PES_ABR_MIN_KBPS = 2500); 20 giây sạch → nâng 20%, tới bitrate gốc.
 - Ghi số đo mỗi 5 giây/người vào /bench/stream-stats.log (JSON một dòng).
+- Bộ chạy trận tạo /tmp/pes-mute → bỏ nút bấm của người chơi (giữ tay cầm ảo của máy) — khoá ngay lúc còi hết trận.
 Người không có trang chơi mới (không gửi PES_ACK, ví dụ tay cầm ảo pad17) giữ nguyên cách cũ.
 
 Chạy lại nhiều lần không sao. Có hiệu lực khi tiến trình Selkies mở lại (mất tay cầm → phải mở lại game, đừng làm giữa trận)."""
@@ -25,6 +26,7 @@ HELPERS = r'''
 import collections as _pes_c, json as _pes_json, os as _pes_os, datetime as _pes_dt
 PES_LAG_DROP_MS = float(_pes_os.environ.get("PES_LAG_DROP_MS", "220"))
 PES_LAG_OK_MS = 60.0
+PES_ACK_LOST_S = 1.5   # đang bỏ hình mà 1,5 giây không có báo nhận nào → coi khung đang bay đã mất (25/11: kẹt 0 hình/giây cả chục phút)
 PES_STATS = _pes_os.environ.get("PES_STATS", "/bench/stream-stats.log")
 _pes = {}
 
@@ -33,7 +35,7 @@ def _pes_state(ws, perms=None):
     st = _pes.get(ws)
     if st is None:
         p = perms or {}
-        st = _pes[ws] = {"sent": _pes_c.OrderedDict(), "skip": False, "idr_t": 0.0, "role": p.get("role"), "slot": p.get("slot")}
+        st = _pes[ws] = {"sent": _pes_c.OrderedDict(), "skip": False, "idr_t": 0.0, "ack_t": time.monotonic(), "role": p.get("role"), "slot": p.get("slot")}
         _pes_reset(st)
     return st
 
@@ -55,7 +57,8 @@ def _pes_idr(app, st, now):
 
 
 PES_ABR_MIN = int(_pes_os.environ.get("PES_ABR_MIN_KBPS", "2500"))
-_pes_abr = {"mod": None, "base": 0, "cur": 0, "t": 0.0, "skip_t": 0.0, "bad": 0, "bad_t": 0.0}
+_pes_abr = {"mod": None, "base": 0, "cur": 0, "t": 0.0, "skip_t": 0.0, "bad": 0, "bad_t": 0.0, "skips": []}
+PES_VBV_FRAMES = 5   # đệm mã hoá ~80 ms: đủ cho khung chuyển cảnh nhanh khỏi vỡ; trễ dồn đã có cơ chế bỏ hình lo
 
 
 def _pes_rate(app, now, skipped):
@@ -74,7 +77,8 @@ def _pes_rate(app, now, skipped):
         new = a["cur"]
         if skipped:
             a["skip_t"] = now
-            if now - a["t"] > 3:
+            a["skips"] = [t for t in a["skips"] if now - t < 10] + [now]
+            if len(a["skips"]) >= 2 and now - a["t"] > 3:   # 1 lần khựng lẻ chỉ bỏ hình, không hạ chất lượng
                 a.update(bad=a["cur"], bad_t=now)   # mức vừa hỏng: 2 phút không nâng lại tới đó
                 new = max(PES_ABR_MIN, int(a["cur"] * 0.7))
         elif a["cur"] < a["base"] and now - a["skip_t"] > 20 and now - a["t"] > 20:
@@ -84,7 +88,7 @@ def _pes_rate(app, now, skipped):
             new = max(new, a["cur"])
         if new != a["cur"]:
             mod.update_video_bitrate(new)
-            mod.update_vbv_buf_size(max(200, int(new / fps * 2)))
+            mod.update_vbv_buf_size(max(200, int(new / fps * PES_VBV_FRAMES)))
             data_logger.info(f"PES17 bitrate {a['cur']} -> {new} kbps")
             a.update(cur=new, t=now)
     except Exception as e:
@@ -105,6 +109,8 @@ def _pes_gate(app, viewers, chunk, frame_id):
             out.append(ws)
             continue
         sent = st["sent"]
+        if st["skip"] and sent and now - st["ack_t"] > PES_ACK_LOST_S:
+            sent.clear()   # khung đang bay không bao giờ được báo nhận (mất / trang chơi bỏ) → không chờ mãi: gửi lại từ IDR
         lag = (now - next(iter(sent.values()))) * 1000.0 if sent else 0.0
         st["lag_sum"] += lag; st["lag_n"] += 1
         if lag > st["lag_max"]:
@@ -137,6 +143,7 @@ def _pes_msg(app, ws, msg, perms):
         st = _pes_state(ws, perms)
         now = time.monotonic()
         if kind == "PES_ACK":
+            st["ack_t"] = now
             fid = int(rest)
             sent = st["sent"]
             if fid in sent:
@@ -164,6 +171,35 @@ def _pes_msg(app, ws, msg, perms):
                 _pes.pop(w, None)
     except Exception as e:
         data_logger.warning(f"PES17 stat: {e}")
+
+
+# Khoá tạm nút người chơi (PO 25/11: "hết trận là tắt luôn"): bộ chạy trận tạo file PES_MUTE lúc đồng hồ trận biến mất
+# ở phút 90+ (còi hết trận, hoặc chiếu lại bàn bù giờ → đồng hồ hiện lại thì xoá). Có file → bỏ mọi nút bấm (tay cầm,
+# bàn phím, chuột) từ vé KHÔNG phải tay cầm ảo của máy. File cũ quá PES_MUTE_MAX_S giây bị bỏ qua (bộ chạy chết giữa chừng).
+PES_MUTE = _pes_os.environ.get("PES_MUTE", "/tmp/pes-mute")
+PES_MUTE_MAX_S = 180
+_PES_INPUT = {"js", "kd", "ku", "kr", "m", "m2"}
+_pes_mute = {"t": 0.0, "on": False, "pads": None}
+
+
+def _pes_mute_drop(msg, perms):
+    if msg.partition(",")[0] not in _PES_INPUT:
+        return False
+    now = time.monotonic()
+    m = _pes_mute
+    if now - m["t"] > 0.1:
+        m["t"] = now
+        try:
+            m["on"] = time.time() - _pes_os.stat(PES_MUTE).st_mtime < PES_MUTE_MAX_S
+        except OSError:
+            m["on"] = False
+    if not m["on"]:
+        return False
+    if m["pads"] is None:
+        import hashlib
+        mk = getattr(settings, "master_token", None) or _pes_os.environ.get("SELKIES_MASTER_TOKEN", "")
+        m["pads"] = {hashlib.sha256((mk + ":pad" + ("" if n == 1 else str(n))).encode()).hexdigest()[:32] for n in range(1, 5)}
+    return (perms or {}).get("token") not in m["pads"]
 # --- /pes_smooth ---
 '''
 
@@ -174,6 +210,8 @@ EDITS = [
      "                elif isinstance(message, str):\n"
      "                    if message.startswith(\"PES_\"):  # pes_smooth: báo nhận khung + số đo từ trang chơi\n"
      "                        _pes_msg(self, websocket, message, client_permissions.get(websocket))\n"
+     "                        continue\n"
+     "                    if _pes_mute_drop(message, client_permissions.get(websocket)):  # pes_smooth: hết trận, khoá nút người chơi\n"
      "                        continue\n"),
     ("                        websockets.broadcast(primary_viewers, data_chunk)\n",
      "                        websockets.broadcast(_pes_gate(self, primary_viewers, data_chunk, frame_id), data_chunk)  # pes_smooth\n"),

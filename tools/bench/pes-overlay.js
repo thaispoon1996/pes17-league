@@ -164,7 +164,7 @@
 // Nút Toàn màn hình + Giảm giật + Tiếng giữa mép trên khung game (PO 22/11, Tiếng 23/11; góc trên trái là bảng tỉ số, góc phải là logo giải). Nằm cùng khối cha với canvas → vẫn thấy khi toàn màn hình;
 // tự mờ sau 3 giây không đụng chuột/chạm. Toàn màn hình: nhờ Selkies (postMessage requestFullscreen = phóng khối cha canvas).
 // iPhone không có API toàn màn hình cho trang → báo cách xoay ngang / thêm vào màn hình chính.
-// Giảm giật: stream chạy bitrate cố định (CBR). Mặc định 8 Mbps; bấm để lên 18 Mbps (nét hơn, mạng phải khoẻ). Giữ 60 khung/giây: 45 lệch nhịp màn 60 Hz lại giật.
+// Giảm giật: stream chạy bitrate cố định (CBR). Mặc định 12 Mbps (máy chủ tự hạ khi mạng yếu, selkies-smooth.py); bấm để lên 18 Mbps (nét hơn, mạng phải khoẻ). Giữ 60 khung/giây: 45 lệch nhịp màn 60 Hz lại giật.
 // Máy cho khoảng 8–18 (docker-compose SELKIES_VIDEO_BITRATE).
 // Cả 2 người cùng xem 1 luồng mã hoá: ai bật cũng áp cho cả hai.
 // Tiếng (23/11): game đã có âm thanh (Selkies gửi Opus). Nút bật/tắt tiếng chỉ đổi âm lượng ở máy người xem (postMessage setVolume 0/1), nhớ theo trình duyệt.
@@ -172,7 +172,7 @@
   // Đo 23/11 lúc đang đá: mã hoá theo dải 53–58 khung/s, có lúc khựng 0,7 s; mã hoá cả khung đều 60 khung/s. VAAPI mất hình.
   // Selkies chỉ nhận hai cờ này trong gói SETTINGS lúc nối, đọc từ localStorage. postMessage 'settings' bỏ qua chúng.
   // Script này chạy trước module Selkies (module ở head, file này cuối body) nên khoá có mặt ngay lần tải đầu.
-  const LOWLAG = { video_bitrate: 8, h264_streaming_mode: true }, NORMAL = { video_bitrate: 18, h264_streaming_mode: true };
+  const LOWLAG = { video_bitrate: 12, h264_streaming_mode: true }, NORMAL = { video_bitrate: 18, h264_streaming_mode: true };
   const KEY = 'pes_lowlag', MUTE = 'pes_mute';
   const sk = location.href.split('#')[0].replace(/[^a-zA-Z0-9.-_]/g, '_');
   const skPut = (k, v) => { try { localStorage.setItem(sk + '_' + k, String(v)); } catch { /* chế độ riêng tư */ } };
@@ -186,10 +186,10 @@
   const putMuted = v => { try { localStorage.setItem(MUTE, v ? '1' : '0'); } catch { /* chế độ riêng tư */ } };
   const sendVol = () => window.postMessage({ type: 'setVolume', value: muted() ? 0 : 1 }, window.location.origin);
   const send = v => {
-    skPut('video_bitrate', v ? 8 : 18);
+    skPut('video_bitrate', v ? 12 : 18);
     window.postMessage({ type: 'settings', settings: v ? LOWLAG : NORMAL }, window.location.origin);
   };
-  skPut('video_bitrate', get() ? 8 : 18);
+  skPut('video_bitrate', get() ? 12 : 18);
   const fsOk = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 
