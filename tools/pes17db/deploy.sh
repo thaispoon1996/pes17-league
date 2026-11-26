@@ -19,12 +19,13 @@ BENCH=${PES17_BENCH:-pes17-bench}
 DL="/config/.wine-pes17/drive_c/Program Files (x86)/Pro Evolution Soccer 2017/download"
 OUT="$DATA/pes17-deploy"
 ORIG="$DATA/DpFileList.bin.orig-hano"
-SQUADS="" RESTART="" FORCE=""
+SQUADS="" RESTART="" FORCE="" AI_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --squads) SQUADS=$2; shift ;;
     --restart) RESTART=1 ;;
     --force) FORCE=1 ;;
+    --ai) AI_ARG=$2; shift ;;   # thử: bỏ qua aiMode của trang Cài đặt
     *) echo "không hiểu: $1" >&2; exit 2 ;;
   esac; shift
 done
@@ -36,8 +37,13 @@ if [ -n "$SQUADS" ]; then cp "$SQUADS" "$OUT/squads.json.new"
 else "$R/tools/cli.sh" export-pes17-squads "$OUT/squads.json.new"; fi
 SHA=$(python3 -c 'import json,sys,hashlib; print(hashlib.sha256(json.dumps(json.load(open(sys.argv[1])),sort_keys=True).encode()).hexdigest()[:16])' "$OUT/squads.json.new")
 mv "$OUT/squads.json.new" "$OUT/squads.json"
-if [ -z "$FORCE" ] && [ "$SHA" = "$(cat "$OUT/deployed.squads.sha" 2>/dev/null)" ]; then
-  echo "không đổi ($SHA): game đã có đội hình này"; exit 0
+# trí khôn AI (trang Cài đặt, PO 26/11): aiMode trong game-settings.json → aimod.py (goc = tham số AI gốc của game)
+AI=$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("aiMode") or "goc")
+except Exception: print("goc")' "$OUT/game-settings.json")
+[ -n "$AI_ARG" ] && AI=$AI_ARG
+if [ -z "$FORCE" ] && [ "$SHA" = "$(cat "$OUT/deployed.squads.sha" 2>/dev/null)" ] && [ "$AI" = "$(cat "$OUT/deployed.ai" 2>/dev/null || echo goc)" ]; then
+  echo "không đổi ($SHA, AI $AI): game đã có đội hình này"; exit 0
 fi
 
 python3 "$H/pesdb.py" apply "$DATA/pesdb" "$OUT/squads.json" "$OUT/PlayerAssignment.bin"
@@ -46,6 +52,11 @@ FILES=("common/etc/pesdb/PlayerAssignment.bin=$OUT/PlayerAssignment.bin")
 # sơ đồ web (khoá _formations trong squads.json, PO 21/11) → pesdb.py apply ghi TacticsFormation.bin cạnh PlayerAssignment.bin
 [ -f "$OUT/TacticsFormation.bin" ] && FILES+=("common/etc/pesdb/TacticsFormation.bin=$OUT/TacticsFormation.bin")
 [ -f "$OUT/Tactics.bin" ] && FILES+=("common/etc/pesdb/Tactics.bin=$OUT/Tactics.bin")   # thông số chiến thuật (khoá _plan, PO 21/11)
+if [ "$AI" != goc ]; then
+  docker exec -u abc "$BENCH" cat "$DL/../Data/dt18_win.cpk" > "$OUT/dt18.cpk"
+  rm -rf "$OUT/ai"; mapfile -t AIF < <(python3 "$H/aimod.py" build "$AI" "$OUT/dt18.cpk" "$OUT"); rm -f "$OUT/dt18.cpk"
+  FILES+=("${AIF[@]}")
+fi
 python3 "$H/cpk.py" build "$OUT/template.cpk" "$OUT/pes17league.cpk" "${FILES[@]}"
 # gói đồ hoạ giải đang cài (compe.py, PO 23/11) giữ nguyên trong danh sách
 # + gói đồ hoạ chung mọi trận (house.py, PO 23/11) trước gói giải
@@ -55,7 +66,8 @@ put() { docker exec -i -u abc "$BENCH" sh -c 'cat > "$1.new" && mv "$1.new" "$1"
 put "$OUT/pes17league.cpk" pes17league.cpk
 put "$OUT/DpFileList.bin" DpFileList.bin
 echo "$SHA" > "$OUT/deployed.squads.sha"
-echo "đã cài $(stat -c %s "$OUT/pes17league.cpk") byte, đội hình $SHA"
+echo "$AI" > "$OUT/deployed.ai"
+echo "đã cài $(stat -c %s "$OUT/pes17league.cpk") byte, đội hình $SHA, AI $AI"
 
 if [ -n "$RESTART" ]; then
   # chờ game (cả winedbg nếu game vừa crash) tắt hẳn thay vì chờ cố định: mở lại khi wine còn dọn dở từng làm game crash lúc khởi động (21/11)

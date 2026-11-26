@@ -10,7 +10,14 @@ public sealed class GameSettingsStore(string path)
     /// "custom" = Custom, Zoom luôn 0 (xa nhất), Height/Angle 0–<see cref="CamMax"/> (PES2017.exe đã vá thanh 10→50).
     /// Bộ chạy đặt qua Pause Menu lúc giao bóng, chỉ khi khác lần trước (tools/match17/pesmatch17.py ensure_camera).</summary>
     public sealed record Settings(string Level = "Regular", string Quality = "high", int CamHeight = CamHeightDefault, int CamAngle = CamAngleDefault,
-        string CamType = CamTypeDefault);
+        string CamType = CamTypeDefault, string AiMode = "goc");
+
+    /// <summary>Trí khôn AI (PO 26/11): tham số AI của game (common/match/ai/*.json) — không đụng chỉ số cầu thủ.
+    /// Bộ cài gói (tools/pes17db/deploy.sh + aimod.py) đọc aiMode; khác bản đã cài → cài lại gói + mở lại game trước trận.</summary>
+    public static readonly (string Key, string Label, string Note)[] AiModes =
+    [
+        ("goc", "Gốc", "Tham số AI nguyên bản của game"), ("plus", "AI+", "Pressing, bọc lót, chạy chỗ, dứt điểm quyết liệt hơn"),
+    ];
 
     public const string CamTypeDefault = "fan";
     public static readonly (string Key, string Label, string Note)[] CamTypes =
@@ -50,6 +57,7 @@ public sealed class GameSettingsStore(string path)
                     CamHeight = CamOk(s.CamHeight) ? s.CamHeight : CamHeightDefault,
                     CamAngle = CamOk(s.CamAngle) ? s.CamAngle : CamAngleDefault,
                     CamType = CamTypes.Any(t => t.Key == s.CamType) ? s.CamType : CamTypeDefault,
+                    AiMode = AiModes.Any(a => a.Key == s.AiMode) ? s.AiMode : "goc",
                 };
             }
             catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
@@ -62,7 +70,7 @@ public sealed class GameSettingsStore(string path)
     public void Save(Settings s)
     {
         if (!Levels.Any(l => l.Key == s.Level) || !Qualities.Any(q => q.Key == s.Quality) || !CamOk(s.CamHeight) || !CamOk(s.CamAngle)
-            || !CamTypes.Any(t => t.Key == s.CamType))
+            || !CamTypes.Any(t => t.Key == s.CamType) || !AiModes.Any(a => a.Key == s.AiMode))
             throw new ArgumentException("cài đặt game không hợp lệ");
         lock (gate)
         {

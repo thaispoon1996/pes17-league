@@ -58,6 +58,17 @@
                     }
                 </div>
             </div>
+            <div class="st-opt" role="radiogroup" aria-labelledby="st-ai">
+                <b id="st-ai">Trí khôn AI</b>
+                <div class="st-chips st-gfx no-busy">
+                    @foreach (var (key, label, note) in GameSettingsStore.AiModes)
+                    {
+                        <button type="button" role="radio" aria-checked="@(game.AiMode == key ? "true" : "false")" class="@(game.AiMode == key ? "on" : null)"
+                                @onclick="() => Set(game with { AiMode = key })">@label<small>@note</small></button>
+                    }
+                </div>
+                <small class="st-hint"><i class="ms" aria-hidden="true">info</i>Chỉnh cách cầu thủ do máy điều khiển chơi, không đổi chỉ số. Áp cho cả đồng đội bạn không cầm. Đổi mức: game cài lại và tự mở lại trước trận kế tiếp.</small>
+            </div>
             <div class="st-opt" role="radiogroup" aria-labelledby="st-gfx">
                 <b id="st-gfx">Đồ hoạ</b>
                 <div class="st-chips st-gfx no-busy">
@@ -131,10 +142,11 @@
     {
         if (clubId is null && !admin) return;
         var gfx = s.Quality != game.Quality;
+        var ai = s.AiMode != game.AiMode;
         var cam = s.CamHeight != game.CamHeight || s.CamAngle != game.CamAngle || s.CamType != game.CamType;
         Game.Save(s);
         game = s;
-        saved = gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : cam ? "Đã lưu camera — áp dụng từ trận kế tiếp" : "Đã lưu";
+        saved = ai ? "Đã lưu — game sẽ cài lại trí khôn AI mới trước trận kế tiếp" : gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : cam ? "Đã lưu camera — áp dụng từ trận kế tiếp" : "Đã lưu";
     }
 
     async Task ToggleAuto(ChangeEventArgs e)

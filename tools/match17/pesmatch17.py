@@ -313,6 +313,15 @@ def game_settings() -> dict:
         return {}
 
 
+def ai_deployed() -> bool:
+    """Gói đã cài đúng trí khôn AI đang chọn ở trang Cài đặt (aiMode, PO 26/11) — khác thì phải cài lại gói (deploy.sh)."""
+    try:
+        cur = (OUT / "deployed.ai").read_text().strip()
+    except OSError:
+        cur = "goc"
+    return cur == (game_settings().get("aiMode") or "goc")
+
+
 CAM_APPLIED = OUT / "camera-applied.json"   # camera đã đặt + PID game lúc đặt; game mở lại (PID khác, mọi đường: deploy/compe/heal) → đọc lại
 CAM_RANGE = 50   # PES2017.exe đã vá giới hạn thanh 10→50 (tools/bench/pes17-camera-patch.py, PO 25/11)
 CAM_TITLE = (175, 108, 560, 152)
@@ -949,6 +958,8 @@ def game_has(squads: str, home: int, away: int) -> bool:
         cur = json.loads((OUT / "squads.json").read_text())
         if _sha(cur) != (OUT / "deployed.squads.sha").read_text().strip():
             return False
+        if not ai_deployed():
+            return False
         want = json.loads(Path(squads).read_text())
     except (OSError, ValueError):
         return False
@@ -1112,6 +1123,8 @@ def plan_only(squads: str, home: int, away: int, teams: list[int]) -> bool:
     try:
         cur = json.loads((OUT / "squads.json").read_text())
         if _sha(cur) != (OUT / "deployed.squads.sha").read_text().strip():
+            return False
+        if not ai_deployed():
             return False
         want = json.loads(Path(squads).read_text())
     except (OSError, ValueError):
