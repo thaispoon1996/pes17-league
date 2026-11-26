@@ -74,6 +74,15 @@ def rematch(im: Image.Image) -> bool:
     return s > 0.6 and "ematch" in t
 
 
+HL_TITLE, HL_NEXT = (60, 30, 300, 80), (60, 620, 260, 670)
+
+
+def highlights(im: Image.Image) -> bool:
+    """Màn Highlights game tự chiếu sau còi hết trận (nhãn "Highlights" góc trên + "A Next" góc dưới, 26/11)."""
+    return any("ighlight" in t and s > 0.6 for t, s, _ in det(im, HL_TITLE)) and \
+        any("Next" in t and s > 0.6 for t, s, _ in det(im, HL_NEXT))
+
+
 def stats_goals(im: Image.Image) -> tuple[int, int] | None:
     toks = [t for t, s, _ in det(im, STATS_GOALS) if s > 0.3]
     nums = [int(t) for t in toks if re.fullmatch(r"\d{1,2}", t)]
