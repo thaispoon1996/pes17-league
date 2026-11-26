@@ -58,17 +58,6 @@
                     }
                 </div>
             </div>
-            <div class="st-opt" role="radiogroup" aria-labelledby="st-boost">
-                <b id="st-boost">Sức mạnh đội máy</b>
-                <div class="st-chips st-gfx no-busy">
-                    @foreach (var (value, label, note) in GameSettingsStore.Boosts)
-                    {
-                        <button type="button" role="radio" aria-checked="@(game.AiBoost == value ? "true" : "false")" class="@(game.AiBoost == value ? "on" : null)"
-                                @onclick="() => Set(game with { AiBoost = value })">@label<small>@note</small></button>
-                    }
-                </div>
-                <small class="st-hint"><i class="ms" aria-hidden="true">info</i>Siêu sao là mức cao nhất của PES 2017. Muốn khó hơn: cộng thêm vào mọi chỉ số cầu thủ các CLB máy (tối đa 99), đội bạn giữ nguyên. Trận trợ lý đá thay cũng gặp đội máy đã cộng. Đổi mức: game tự cài lại trước trận kế tiếp (thêm khoảng 1–2 phút).</small>
-            </div>
             <div class="st-opt" role="radiogroup" aria-labelledby="st-gfx">
                 <b id="st-gfx">Đồ hoạ</b>
                 <div class="st-chips st-gfx no-busy">
@@ -141,13 +130,11 @@
     void Set(GameSettingsStore.Settings s)
     {
         if (clubId is null && !admin) return;
-        var boost = s.AiBoost != game.AiBoost;
         var gfx = s.Quality != game.Quality;
         var cam = s.CamHeight != game.CamHeight || s.CamAngle != game.CamAngle || s.CamType != game.CamType;
         Game.Save(s);
         game = s;
-        saved = boost ? "Đã lưu — game sẽ cài lại đội máy theo mức mới trước trận kế tiếp"
-            : gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : cam ? "Đã lưu camera — áp dụng từ trận kế tiếp" : "Đã lưu";
+        saved = gfx ? "Đã lưu — game sẽ mở lại với đồ hoạ mới trước trận kế tiếp" : cam ? "Đã lưu camera — áp dụng từ trận kế tiếp" : "Đã lưu";
     }
 
     async Task ToggleAuto(ChangeEventArgs e)

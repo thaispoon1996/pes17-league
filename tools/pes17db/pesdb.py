@@ -126,27 +126,6 @@ STATS = {
 # Chưa chắc: chân không thuận, chống chấn thương, kỹ năng đặc biệt (cờ rải bit 304–388, chưa khớp thứ tự 28 thẻ), vị trí phụ.
 
 
-# Chỉ số kỹ năng 40–99 (6 bit + 40) — cộng cho đội máy khi tăng độ khó (PO 26/11). Không đụng chiều cao/cân nặng/tuổi/vị trí/phong độ.
-SKILLS = tuple(k for k, (_, w, add) in STATS.items() if w == 6 and add == 40)
-
-
-def boost(raw: bytes, ids: set[int], n: int) -> tuple[bytes, int]:
-    """Player.raw: cộng `n` (tối đa 99) vào mọi chỉ số kỹ năng của cầu thủ có mã trong `ids`. Trả (raw mới, số cầu thủ đã cộng)."""
-    out, done = bytearray(raw), 0
-    for i in range(0, len(raw) - PLAYER_SIZE + 1, PLAYER_SIZE):
-        if struct.unpack_from("<I", raw, i + 8)[0] not in ids:
-            continue
-        v = int.from_bytes(raw[i:i + 0x34], "little")
-        for k in SKILLS:
-            b, w, add = STATS[k]
-            cur = ((v >> b) & ((1 << w) - 1)) + add
-            new = min(99, cur + n) if cur < 99 else cur
-            v = (v & ~(((1 << w) - 1) << b)) | ((new - add) << b)
-        out[i:i + 0x34] = v.to_bytes(0x34, "little")
-        done += 1
-    return bytes(out), done
-
-
 def stats(r: bytes) -> dict:
     v = int.from_bytes(r[:0x34], "little")
     out = {k: ((v >> b) & ((1 << w) - 1)) + add for k, (b, w, add) in STATS.items()}
@@ -486,8 +465,6 @@ def main(argv: list[str]) -> int:
         forms = {int(k): v for k, v in (doc.pop("_formations", None) or {}).items()}
         jobs = {int(k): {j: int(p) for j, p in v.items()} for k, v in (doc.pop("_jobs", None) or {}).items()}
         plans = {int(k): {f: int(x) for f, x in v.items()} for k, v in (doc.pop("_plan", None) or {}).items()}
-        ai_boost = int(doc.pop("_boost", 0) or 0)            # độ khó: cộng chỉ số đội máy (game-settings aiBoost, deploy.sh chèn)
-        humans = {int(t) for t in doc.pop("_human", None) or []}   # CLB người chơi: không cộng
         squads = {int(k): [(int(p), int(n)) for p, n in v] for k, v in doc.items()}
         raw, info = apply((d / "PlayerAssignment.raw").read_bytes(), squads, nat)
         if jobs:   # đội trưởng + người đá phạt từ web (PO 21/11)
@@ -518,16 +495,6 @@ def main(argv: list[str]) -> int:
             info["plans"] = len(plans) - len(bad)
             if bad:
                 info["noPlanRows"] = bad[:10]
-        pl_out = Path(argv[3]).with_name("Player.bin")
-        pl_out.unlink(missing_ok=True)
-        if ai_boost > 0:   # mọi cầu thủ đang ở CLB máy (không tính đội tuyển) — máy đấu máy vẫn cân, chỉ đội người chơi thấy đối thủ mạnh hơn
-            ids = {a["player"] for a in assignments(raw) if a["team"] not in nat and a["team"] not in humans}
-            ids -= {a["player"] for a in assignments(raw) if a["team"] in humans}
-            pr, info["boosted"] = boost((d / "Player.raw").read_bytes(), ids, ai_boost)
-            packed = pack_wesys(pr, (d / "Player.bin").read_bytes()[:8])
-            assert wesys(packed) == pr
-            pl_out.write_bytes(packed)
-            info["boost"] = ai_boost
         print(info, len(out))
         return 0
     if len(argv) == 3 and argv[0] == "formations":

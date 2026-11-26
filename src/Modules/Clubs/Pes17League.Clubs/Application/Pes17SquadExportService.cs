@@ -8,7 +8,7 @@ namespace Pes17League.Clubs.Application;
 
 /// <summary>Đội hình xuất cho game: cầu thủ theo ô + sơ đồ web của CLB đã chọn sơ đồ/vị trí (mã đội PES17 dạng chuỗi).</summary>
 public sealed record Pes17Squads(Dictionary<string, List<int[]>> Squads, Dictionary<string, int[][]> Formations,
-    Dictionary<string, Dictionary<string, int>>? Jobs = null, Dictionary<string, Dictionary<string, int>>? Plans = null, int[]? Humans = null)
+    Dictionary<string, Dictionary<string, int>>? Jobs = null, Dictionary<string, Dictionary<string, int>>? Plans = null)
 {
     /// <summary>
     /// {"mã đội": [[cầu thủ, số áo], ...], "_formations": {"mã đội": [[vai trò, X, Y] × 11]}, "_jobs": {"mã đội": {"captain": cầu thủ, …}},
@@ -21,7 +21,6 @@ public sealed record Pes17Squads(Dictionary<string, List<int[]>> Squads, Diction
         if (Formations.Count > 0) doc["_formations"] = Formations;
         if (Jobs is { Count: > 0 }) doc["_jobs"] = Jobs;
         if (Plans is { Count: > 0 }) doc["_plan"] = Plans;
-        if (Humans is { Length: > 0 }) doc["_human"] = Humans;   // CLB người chơi: không cộng chỉ số khi tăng độ khó (pesdb.py apply, PO 26/11)
         return JsonSerializer.Serialize(doc);
     }
 }
@@ -86,8 +85,6 @@ public sealed class Pes17SquadExportService(ClubsDbContext db, TimeProvider cloc
                 if (js.Count > 0) jobs[c.PesClubIndex.ToString()] = js;
             }
         }
-        var humanClubs = await db.TeamAssignments.Where(a => a.To == null && a.ControllerType == ControllerType.Human).Select(a => a.ClubId).ToListAsync(ct);
-        var humans = clubs.Where(c => humanClubs.Contains(c.ClubId)).Select(c => c.PesClubIndex).Order().ToArray();
-        return new Pes17Squads(squads, formations, jobs, plans, humans);
+        return new Pes17Squads(squads, formations, jobs, plans);
     }
 }
