@@ -67,11 +67,14 @@ def pulse_host(c: str, emit: Callable[..., None]) -> str | None:
         return None
 
 
-def frame(win_y: int) -> str:
+def frame(win_y: int, sw: int = 1280, sh: int = 720, win_h: int = 0) -> str:
     """Bộ lọc khung hình: cắt đúng phần game (bỏ viền xám 1px Openbox, thanh tiêu đề nếu có, dải đen 20px dưới đáy khi không viền —
-    game tự khoá cửa sổ 1284x700, đo 23/11) rồi co về 1280x720 (game vẽ 16:9 rồi giãn vào 1284x700 → co lại là đúng tỉ lệ)."""
-    h = min(699, 720 - win_y - 1)
-    return f"crop=1279:{h}:1:{win_y + 1},scale=1280:720:flags=bilinear,setsar=1"
+    game tự khoá cửa sổ 1284x700, đo 23/11) rồi co về 1280x720 (game vẽ 16:9 rồi giãn vào 1284x700 → co lại là đúng tỉ lệ).
+    Màn to hơn (1080p): win_y/win_h theo điểm ảnh thật (cửa sổ 1924x1060, đo 26/11), ngang nhân theo sw/1280; bản ghi vẫn 1280x720."""
+    s = sw / 1280
+    b = max(1, round(s))
+    h = min(win_h, sh - win_y) - b if win_h > 0 else min(round(699 * s), sh - win_y - b)
+    return f"crop={round(1279 * s)}:{h}:{b}:{win_y + b},scale=1280:720:flags=bilinear,setsar=1"
 
 
 def live_tee(live: str, owner: os.stat_result, f: str, audio: bool, emit: Callable[..., None]) -> tuple[list[str], list[str]] | None:
@@ -97,9 +100,9 @@ def live_tee(live: str, owner: os.stat_result, f: str, audio: bool, emit: Callab
              f":hls_segment_filename=/live/{n}-%05d.ts]/live/{n}.m3u8"])
 
 
-def start(c: str, path: str, live: str | None, emit: Callable[..., None], win_y: int = 0, board: Path | None = None) -> tuple[str | None, float | None]:
+def start(c: str, path: str, live: str | None, emit: Callable[..., None], screen: tuple[int, int, int, int] = (1280, 720, 0, 0), board: Path | None = None) -> tuple[str | None, float | None]:
     """Bắt đầu ghi. Trả (tên container ghi, mốc 0 của video theo time.monotonic()); lỗi → (None, None).
-    win_y: Y cửa sổ game (board17.window_y) để cắt khung (frame). board: ảnh bảng tỉ số (board17.Board.file) → chồng lên góc trên trái,
+    screen: (rộng, cao màn X, Y, cao cửa sổ game thật) — board17.geometry — để lấy cả màn + cắt khung (frame). board: ảnh bảng tỉ số (board17.Board.file) → chồng lên góc trên trái,
     ffmpeg đọc lại file 4 lần/giây (-loop 1 -re; trễ < 1 s, đo 23/11).
     Mốc 0 ≈ lúc container chạy (ffmpeg khởi động < 1 s); không chờ file có dữ liệu (muxer đệm vài giây → lệch ~5 s, đo PES6 04/11)."""
     try:
@@ -117,15 +120,15 @@ def start(c: str, path: str, live: str | None, emit: Callable[..., None], win_y:
                 "-v", f"{tap}/pulse-native:/pulse/pulse-native", "-v", f"{tap}/pulse-client.conf:/pulse/client.conf:ro"] if tap else [])
         ain = ["-thread_queue_size", "1024", "-f", "pulse", "-i", "output.monitor"] if tap else []
         aenc = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"] if tap else []
-        bvol, bin_, graph = [], [], f"[0:v]{frame(win_y)}[v]"
+        bvol, bin_, graph = [], [], f"[0:v]{frame(screen[2], screen[0], screen[1], screen[3])}[v]"
         if board is not None and board.is_file():
             bvol = ["-v", f"{board.parent}:/board:ro"]
             bin_ = ["-f", "image2", "-loop", "1", "-framerate", "4", "-thread_queue_size", "1", "-re", "-i", f"/board/{board.name}"]
-            graph = f"[0:v]{frame(win_y)}[g];[g][{2 if tap else 1}:v]overlay=48:32:format=auto[v]"
+            graph = f"[0:v]{frame(screen[2], screen[0], screen[1], screen[3])}[g];[g][{2 if tap else 1}:v]overlay=48:32:format=auto[v]"
         maps = ["-filter_complex", graph, "-map", "[v]"] + (["-map", "1:a"] if tap else [])
         r = subprocess.run(["docker", "run", "-d", "--rm", "--name", name, "--network", f"container:{c}", "-u", f"{st.st_uid}:{st.st_gid}",
                             "-v", f"{d}:/out", *vol, *bvol, *pre, IMAGE, "ffmpeg", "-nostdin", "-loglevel", "error",
-                            "-thread_queue_size", "1024", "-f", "x11grab", "-framerate", "30", "-video_size", "1280x720", "-i", ":1",
+                            "-thread_queue_size", "1024", "-f", "x11grab", "-framerate", "30", "-video_size", f"{screen[0]}x{screen[1]}", "-i", ":1",
                             *ain, *bin_, *maps, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-g", "60", "-pix_fmt", "yuv420p", *aenc,
                             "-t", str(MAX_SECONDS), *out],
                            capture_output=True, text=True, timeout=60)

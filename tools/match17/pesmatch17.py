@@ -1397,7 +1397,9 @@ def overlay(logo: str | None) -> None:
 def extras(on: bool) -> None:
     """Logo giải góc phải trên + thẻ HLV góc dưới trên trang chơi (tools/extras17.py); hết trận → xoá. Lỗi chỉ ghi log."""
     try:
-        its, files = extras17.items(board17.window_y(BENCH), LOGO, COACHES, log) if on and (LOGO or COACHES) else ([], {})
+        g = board17.geometry(BENCH)
+        its, files = (extras17.items(round(g[2] * 1280 / g[0]), LOGO, COACHES, log, board17.game_vscale(g))
+                      if on and (LOGO or COACHES) else ([], {}))
         extras17.publish(BENCH, OVERLAY, its, files)
     except Exception as e:
         log(f"logo/thẻ HLV lỗi: {e}")
@@ -1570,7 +1572,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         board = make_board(home, away)
         if REC and rec17.wanted(OUT, human):
             recording, t_rec = rec17.start(container, REC, os.environ.get("PESMATCH_LIVE"), emit,
-                                           board.y if board else board17.window_y(BENCH), board.file if board else None)
+                                           board.screen if board else board17.geometry(BENCH), board.file if board else None)
         if not self_started:
             try:
                 uniform(match_kits())   # đọc lúc bấm vào trận: HLV đổi áo trên web tới phút chót vẫn kịp

@@ -23,8 +23,22 @@ export WINEDLLOVERRIDES='d3d11,dxgi,d3d10core,d3d9=n,b;quartz=d;winemenubuilder.
 export SELKIES_INTERPOSER=/bench/lib/i386-linux-gnu/selkies_joystick_interposer.so
 export LD_PRELOAD="/bench/lib/i386-linux-gnu/selkies_joystick_interposer.so:/bench/lib/x86_64-linux-gnu/selkies_joystick_interposer.so:/bench/lib/i386-linux-gnu/libudev.so.1.0.0-fake:/bench/lib/x86_64-linux-gnu/libudev.so.1.0.0-fake"
 export SDL_JOYSTICK_DEVICE=/dev/input/js0
-# Selkies đổi màn về chế độ 1280x720 tần số 0 Hz → DXVK chia cho 0 lúc mở game (18/11). Ép mode 60 Hz nếu có.
-xrandr 2>/dev/null | grep -q "1280x720_60.00" && xrandr --output screen --mode 1280x720_60.00 2>/dev/null || true
+# Selkies đổi màn về chế độ WxH tần số 0 Hz → DXVK chia cho 0 lúc mở game (18/11). Ép mode 60 Hz nếu có.
+# Cỡ màn lấy từ Xvfb (SELKIES_MANUAL_WIDTH/HEIGHT trong docker-compose, PO 26/11: 1080p).
+read -r SW SH < <(xwininfo -root 2>/dev/null | awk '/Width:/{w=$2} /Height:/{h=$2} END{print w+0, h+0}') || true
+SW=${SW:-1280}; SH=${SH:-720}; [ "$SW" -gt 0 ] || { SW=1280; SH=720; }
+M="${SW}x${SH}_60.00"
+if ! xrandr 2>/dev/null | grep -q "$M"; then   # Xvfb 1080p chỉ có mode 0 Hz → tự thêm mode 60 Hz (cvt)
+  ML=$(cvt "$SW" "$SH" 60 2>/dev/null | sed -n 's/^Modeline "[^"]*" *//p')
+  [ -n "$ML" ] && xrandr --newmode "$M" $ML 2>/dev/null && xrandr --addmode screen "$M" 2>/dev/null || true
+fi
+xrandr 2>/dev/null | grep -q "$M" && xrandr --output screen --mode "$M" 2>/dev/null || true
+# Độ phân giải trong game = cỡ màn: settings.dat ("WECF") int32 rộng ở byte 12, cao ở byte 16.
+SET="$WINEPREFIX/drive_c/users/abc/Documents/KONAMI/Pro Evolution Soccer 2017/settings.dat"
+le32() { printf '\\x%02x\\x%02x\\x%02x\\x%02x' $(($1 & 255)) $(($1 >> 8 & 255)) $(($1 >> 16 & 255)) $(($1 >> 24 & 255)); }
+if [ -f "$SET" ] && [ "$(head -c 4 "$SET")" = WECF ]; then
+  printf "$(le32 "$SW")$(le32 "$SH")" | dd of="$SET" bs=1 seek=12 conv=notrunc status=none || true
+fi
 GAME="/config/.wine-pes17/drive_c/Program Files (x86)/Pro Evolution Soccer 2017"
 ln -sfn "$GAME" "/config/.wine/drive_c/Program Files (x86)/Pro Evolution Soccer 2017" 2>/dev/null || true
 cp /opt/dxvk/x32/*.dll "$GAME/" 2>/dev/null || true

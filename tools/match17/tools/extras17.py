@@ -85,7 +85,7 @@ def _png(im: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def items(y: int, logo: str | None, coaches: list[dict], log=print) -> tuple[list[dict], dict[str, bytes]]:
+def items(y: int, logo: str | None, coaches: list[dict], log=print, kv: float = 1.0) -> tuple[list[dict], dict[str, bytes]]:
     """(danh sách {src, box}, {tên file: dữ liệu}) — phần nào lỗi thì bỏ phần đó (trang trí là phụ)."""
     out, files = [], {}
 
@@ -111,7 +111,7 @@ def items(y: int, logo: str | None, coaches: list[dict], log=print) -> tuple[lis
             card = coach_card(c["face"], c.get("name") or "", c.get("club") or "", flip)
             cw, ch = card.width // K, card.height // K
             x = 1280 - CARD_LEFT - cw if flip else CARD_LEFT
-            add(card, [1 + x, 1 + y + CARD_BOTTOM - ch, cw, ch])
+            add(card, [1 + x, 1 + y + round(CARD_BOTTOM * kv) - ch, cw, ch])   # kv: board17.game_vscale (1080p)
         except Exception as e:
             log(f"thẻ HLV lỗi: {e}")
     return out, files

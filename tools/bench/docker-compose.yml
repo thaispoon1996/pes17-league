@@ -24,8 +24,9 @@ services:
       SELKIES_H264_STREAMING_MODE: "true"   # mã hoá cả khung: đều 60 khung/s (đo 23/11), theo dải 53–58 + khựng; pes-overlay.js cũng gửi
       SELKIES_ENABLE_RATE_CONTROL: "true"
       SELKIES_RATE_CONTROL_MODE: cbr
-      SELKIES_MANUAL_WIDTH: "1280"
-      SELKIES_MANUAL_HEIGHT: "720"
+      # Độ phân giải màn + game (PO 26/11 đồ hoạ nhoè → 1080p). Máy nặng: PES17_W=1600 PES17_H=900 up.sh; về cũ: 1280/720.
+      SELKIES_MANUAL_WIDTH: "${PES17_W:-1920}"
+      SELKIES_MANUAL_HEIGHT: "${PES17_H:-1080}"
       DRINODE: /dev/dri/renderD128
       DRI_NODE: /dev/dri/renderD128
       SELKIES_MASTER_TOKEN: ${SELKIES_MASTER_TOKEN:?thiếu bench.env}
