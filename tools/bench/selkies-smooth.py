@@ -127,7 +127,7 @@ def _pes_gate(app, viewers, chunk, frame_id):
                     _pes_idr(app, st, now)
                 st["drops"] += 1
                 continue
-        sent[frame_id] = now
+        sent[frame_id & 0xFFFF] = now   # trang chơi báo nhận số 16-bit (getUint16); số khung máy chủ vượt 65535 sau ~18 phút → phải so cùng kiểu (26/11: kẹt 8 hình/giây từ phút 18)
         if len(sent) > 900:
             sent.popitem(last=False)
         st["bytes"] += len(chunk); st["frames"] += 1; st["keys"] += key
