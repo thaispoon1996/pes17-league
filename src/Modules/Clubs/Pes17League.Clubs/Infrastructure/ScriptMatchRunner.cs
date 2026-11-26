@@ -136,7 +136,9 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
                     case "goal":
                         goals.Add(new RunGoal(e.GetProperty("side").GetString() == "home" ? MatchSide.Home : MatchSide.Away,
                             e.GetProperty("half").GetInt32() + 1, e.GetProperty("minute").GetInt32(), e.GetProperty("wall").GetDouble(),
-                            e.TryGetProperty("slot", out var slot) && slot.ValueKind == JsonValueKind.Number ? slot.GetInt32() : null));
+                            e.TryGetProperty("slot", out var slot) && slot.ValueKind == JsonValueKind.Number ? slot.GetInt32() : null,
+                            e.TryGetProperty("shirt", out var shirt) && shirt.ValueKind == JsonValueKind.Number ? shirt.GetInt32() : null,
+                            e.TryGetProperty("name", out var nm) && nm.ValueKind == JsonValueKind.String ? nm.GetString() : null));
                         break;
                     case "recording":
                         recording = e.GetProperty("path").GetString();

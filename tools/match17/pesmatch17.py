@@ -322,6 +322,7 @@ def ai_deployed() -> bool:
     return cur == (game_settings().get("aiMode") or "goc")
 
 
+GOAL_DIAG = OUT / "goal-diag"   # ảnh chẩn đoán dải người ghi bàn của trận gần nhất
 CAM_APPLIED = OUT / "camera-applied.json"   # camera đã đặt + PID game lúc đặt; game mở lại (PID khác, mọi đường: deploy/compe/heal) → đọc lại
 CAM_RANGE = 50   # PES2017.exe đã vá giới hạn thanh 10→50 (tools/bench/pes17-camera-patch.py, PO 25/11)
 CAM_TITLE = (175, 108, 560, 152)
@@ -684,6 +685,29 @@ class Match:
         # Lần cuối HUD còn hiện tỷ số cũ: bóng vào lưới là game cắt sang ăn mừng + chiếu lại (HUD ẩn ~75 s), HUD hiện tỷ số mới
         # khi giao bóng lại → mốc bàn = lần cuối thấy tỷ số cũ + nửa nhịp đọc (đo 23/11 trên bản ghi: bàn ~287 s, thấy tỷ số mới 379 s).
         self.old_seen: float | None = None
+        # Người ghi bàn (PO 26/11): dải tên game hiện lúc ăn mừng/chiếu lại (HUD ẩn) và trên màn Highlights cuối trận.
+        self.banners: list[dict] = []   # {shirt, name, minute}
+        self._ban_t, self._diag = 0.0, 0
+        GOAL_DIAG.mkdir(exist_ok=True)
+        for f in GOAL_DIAG.glob("*.png"):
+            f.unlink()
+
+    def read_banner(self, im, now: float, force: bool = False) -> None:
+        """HUD ẩn sau giao bóng (ăn mừng, chiếu lại) hoặc màn Highlights: thấy dải tối giữa-dưới thì OCR tên người ghi bàn.
+        Ảnh chẩn đoán (≤ 30/trận) lưu ở GOAL_DIAG để chỉnh vùng đọc nếu dải lúc đang đá khác màn Highlights."""
+        if not self.kick or (not force and now - self._ban_t < 1.5):
+            return
+        dark = ocr.banner_dark(im)
+        if self._diag < 30 and (dark or now - self._ban_t > 4):
+            self._diag += 1
+            im.save(GOAL_DIAG / f"{self._diag:02d}{'-dark' if dark else ''}.png")
+        self._ban_t = now
+        if not dark:
+            return
+        b = ocr.goal_banner(im)
+        if b and not any(x["shirt"] == b["shirt"] and x["minute"] == b["minute"] for x in self.banners):
+            self.banners.append(b)
+            log(f"dải ghi bàn: số {b['shirt']} {b['name']} phút {b['minute']}")
 
     def wall(self) -> float:
         base = self.t0 or self.kick
@@ -734,9 +758,17 @@ class Match:
         """Bàn HUD bắt được, cắt/bù cho khớp tỷ số cuối (bàn bù: phút 90)."""
         out = []
         for side, n in (("home", hg), ("away", ag)):
-            seen = [g for g in self.goals if g["side"] == side][:n]
-            out += seen + [{"side": side, "half": 1, "minute": 90, "wall": self.wall()}] * (n - len(seen))
-        return sorted(out, key=lambda g: (g["half"], g["minute"], g["wall"]))
+            seen = [dict(g) for g in self.goals if g["side"] == side][:n]
+            out += seen + [{"side": side, "half": 1, "minute": 90, "wall": self.wall()} for _ in range(n - len(seen))]
+        out.sort(key=lambda g: (g["half"], g["minute"], g["wall"]))
+        free = list(self.banners)
+        for g in out:   # ghép dải tên theo phút (lệch ≤ 2'; bàn bù giờ ghi phút 90 ↔ dải 90+)
+            near = [b for b in free if abs(min(b["minute"], 90) - g["minute"]) <= 2]
+            if near:
+                b = min(near, key=lambda b: abs(min(b["minute"], 90) - g["minute"]))
+                free.remove(b)
+                g["shirt"], g["name"] = b["shirt"], b["name"]
+        return out
 
     def run(self) -> tuple[int, int]:
         last_play = progress = time.monotonic()   # progress: lần cuối đồng hồ game nhích (hoặc đang nghỉ giữa hiệp)
@@ -764,6 +796,11 @@ class Match:
                 continue
             now = time.monotonic()
             h = ocr.hud(im)
+            if not h:
+                try:
+                    self.read_banner(im, now)
+                except Exception as e:   # người ghi bàn là phụ
+                    log(f"đọc dải ghi bàn lỗi: {e}")
             if self.presence and now - progress > AFK_STALL:
                 raise NavError(afk_reason(self.presence))
             if not h and self.board and (misses := misses + 1) >= 2:
@@ -811,6 +848,10 @@ class Match:
                     if not getattr(self, "_hl", False):
                         self._hl = True
                         log("bỏ qua Highlights sau trận")
+                    try:
+                        self.read_banner(im, now, force=True)
+                    except Exception as e:
+                        log(f"đọc dải ghi bàn lỗi: {e}")
                     nav.pad("A w:1")
                     last_press = last_play = now
                     time.sleep(1)

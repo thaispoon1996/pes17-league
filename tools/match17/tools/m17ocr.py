@@ -83,6 +83,25 @@ def highlights(im: Image.Image) -> bool:
         any("Next" in t and s > 0.6 for t, s, _ in det(im, HL_NEXT))
 
 
+BANNER = (200, 540, 1080, 640)       # dải tên người ghi bàn: "[logo] 2 K.Rodriguez … 89min." (ảnh Highlights 26/11)
+BANNER_BAR = (330, 568, 980, 596)    # giữa dải: nền tối → mới tốn OCR (~1,3 s)
+
+
+def banner_dark(im: Image.Image) -> bool:
+    a = np.asarray(im.convert("RGB").crop(BANNER_BAR), dtype=np.int16)
+    return float((a.mean(axis=2) < 60).mean()) > 0.6
+
+
+def goal_banner(im: Image.Image) -> dict | None:
+    """Dải người ghi bàn → {"shirt", "name", "minute"}; không đủ số áo + tên + phút thì None."""
+    toks = [t.strip() for t, s, _ in det(im, BANNER) if s > 0.6]
+    mins = [int(m.group(1)) for t in toks if (m := re.fullmatch(r"(\d{1,3})\s*min\.?", t))]
+    for t in toks:
+        if (m := re.fullmatch(r"(\d{1,2})\s*([^\d\s].{1,30})", t)) and "min" not in t and mins:
+            return {"shirt": int(m.group(1)), "name": m.group(2).strip(), "minute": mins[0]}
+    return None
+
+
 def stats_goals(im: Image.Image) -> tuple[int, int] | None:
     toks = [t for t, s, _ in det(im, STATS_GOALS) if s > 0.3]
     nums = [int(t) for t in toks if re.fullmatch(r"\d{1,2}", t)]

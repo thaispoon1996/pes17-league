@@ -31,7 +31,8 @@ public sealed class SquadSync
 
 /// <param name="Half">1 = hiệp 1, 2 = hiệp 2, 3/4 = hiệp phụ 1/2 (phút 91–120).</param>
 /// <param name="Slot">Ô cầu thủ ghi bàn (cùng thứ tự ô với RunRating); null = không xác định.</param>
-public sealed record RunGoal(MatchSide Side, int Half, int Minute, double WallSeconds, int? Slot = null);
+/// <param name="Shirt">Số áo + tên trên dải người ghi bàn của game (PO 26/11); ghép theo đội hình CLB ghi bàn, tên phải khớp (phản lưới → không ghép).</param>
+public sealed record RunGoal(MatchSide Side, int Half, int Minute, double WallSeconds, int? Slot = null, int? Shirt = null, string? Name = null);
 
 /// <summary>Điểm 1 cầu thủ (C18): theo ID cầu thủ PES (bộ nhớ) hoặc số áo (chụp màn).</summary>
 public sealed record RunRating(MatchSide Side, int Slot, int? PesPlayerId, int? Shirt, decimal? Rating);
@@ -200,10 +201,12 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             {
                 var f = (await db.Fixtures.FindAsync([fixtureId], ct))!;
                 var ratings = await RatingsAsync(db, f, outcome.Ratings ?? [], ct);
+                var byShirt = outcome.Goals.Any(g => g.Shirt is not null) ? await ShirtsAsync(db, f, ct) : [];
                 var goals = outcome.Goals.Select(g =>
                 {
                     var club = g.Side == MatchSide.Home ? f.HomeClubId : f.AwayClubId;   // người ghi: ô → cầu thủ qua bảng điểm
                     var scorer = g.Slot is { } s ? ratings.FirstOrDefault(r => r.ClubId == club && r.Slot == s)?.PlayerId : null;
+                    scorer ??= g.Shirt is { } sh ? byShirt.FirstOrDefault(m => m.ClubId == club && m.Shirt == sh && ScorerName.Matches(g.Name, m.Name))?.PlayerId : null;
                     return new GoalInput(club, g.Half, g.Minute, g.WallSeconds, scorer);
                 }).ToList();
                 // Penalty đọc sai (vd hoà loạt penalty) coi như không đọc được: vẫn ghi tỷ số 120', chờ admin nhập (PO 06/11), không đá lại.
@@ -367,6 +370,14 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         catch (Exception e) when (e is not OperationCanceledException) { return false; }
     }
 
+    private sealed record ShirtRow(Guid ClubId, int Shirt, Guid PlayerId, string Name);
+
+    private static Task<List<ShirtRow>> ShirtsAsync(ClubsDbContext db, Fixture f, CancellationToken ct) =>
+        (from m in db.SquadMemberships
+         join p in db.Players on m.PlayerId equals p.Id
+         where (m.ClubId == f.HomeClubId || m.ClubId == f.AwayClubId) && m.LeftAt == null
+         select new ShirtRow(m.ClubId, m.ShirtNumber, m.PlayerId, p.Name)).ToListAsync(ct);
+
     /// <summary>ID PES → cầu thủ theo patch của mùa; số áo (chụp màn) → cầu thủ đang ở CLB. Không ghép được thì bỏ dòng đó.</summary>
     private static async Task<List<RatingInput>> RatingsAsync(ClubsDbContext db, Fixture f, IReadOnlyList<RunRating> rows, CancellationToken ct)
     {
@@ -400,5 +411,23 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
         var ids = clubs.Distinct().ToList();
         return (await db.TeamAssignments.Where(a => ids.Contains(a.ClubId) && a.To == null && a.ControllerType == ControllerType.Human)
             .Select(a => a.ClubId).ToListAsync(ct)).ToHashSet();
+    }
+}
+
+/// <summary>Tên trên dải ghi bàn ("K.Rodriguez", OCR không dấu) khớp tên cầu thủ ("Kevin Rodríguez"): họ (phần sau dấu chấm/cách cuối) có trong tên.</summary>
+public static class ScorerName
+{
+    public static bool Matches(string? banner, string name)
+    {
+        if (string.IsNullOrWhiteSpace(banner)) return true;   // chỉ có số áo: tin số áo
+        var last = Norm(banner.Split('.', ' ', StringSplitOptions.RemoveEmptyEntries)[^1]);
+        return last.Length >= 3 && Norm(name).Contains(last[..Math.Min(last.Length, 6)]);
+    }
+
+    private static string Norm(string s)
+    {
+        var d = s.Normalize(System.Text.NormalizationForm.FormD);
+        return new string(d.Where(c => char.IsLetter(c) && System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .Select(char.ToLowerInvariant).ToArray()).Replace("đ", "d");
     }
 }
