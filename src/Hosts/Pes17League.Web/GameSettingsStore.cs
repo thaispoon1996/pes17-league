@@ -17,6 +17,7 @@ public sealed class GameSettingsStore(string path)
     public static readonly (string Key, string Label, string Note)[] AiModes =
     [
         ("goc", "Gốc", "Tham số AI nguyên bản của game"), ("plus", "AI+", "Pressing, bọc lót, chạy chỗ, dứt điểm quyết liệt hơn"),
+        ("thuc-te", "Thực tế", "Nhịp chắc như ngoài đời: phòng ngự có tổ chức, chọn cú sút kỹ, bóng lăn chậm hơn, mệt về cuối trận"),
     ];
 
     public const string CamTypeDefault = "fan";

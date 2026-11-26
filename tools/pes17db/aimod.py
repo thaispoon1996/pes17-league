@@ -43,6 +43,16 @@ PRESETS: dict[str, dict[str, dict[str, float]]] = {
         },
     },
 }
+# Thực tế (PO 26/11 "giống bóng đá ngoài đời"): phòng ngự tổ chức như AI+, nhịp chậm và chắc hơn — ít chạm một khi đang thoáng,
+# chọn cú sút kỹ hơn, bóng lăn chậm/nảy thấp hơn trên cỏ, cầu thủ mệt rõ về cuối trận. Không đổi chỉ số cầu thủ.
+PRESETS["thuc-te"] = {
+    **{k: v for k, v in PRESETS["plus"].items() if "/defence/" in k},
+    A + "team/offence/spaceRun.json": {"chanceScore": 90, "chanceScore_good": 80},   # chạy chỗ có chọn lọc (gốc 100/90)
+    A + "player/offence/ballplayerShoot.json": {"shootDecidePoint": 0.75},          # 0.7: bớt sút vội từ xa/góc hẹp
+    A + "player/offence/ballplayerPass.json": {"directEnemyDist": 10.0},             # 8: thoáng thì khống chế rồi mới chuyền
+    A + "player/stamina.json": {"metabolism": 12, "dashTired": 6},                   # 10/5: mệt rõ hơn về cuối trận
+    "common/match/ball/ball.json": {"boundRate": 0.66, "frictionRollRateMax": 0.988, "frictionRollRateMin": 0.986},  # 0.70/0.990/0.988
+}
 MODES = ("goc", *PRESETS)
 
 

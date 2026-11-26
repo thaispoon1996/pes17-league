@@ -486,20 +486,22 @@
   sync(); wake();
 })();
 
-// Cỏ xanh đậm cho dịu mắt (PO 24/11, giữ lại 25/11). Chỉ tô lại khung hình đã giải mã, không đụng game và không đụng bộ nhận sân.
-// Cỏ = xanh át đỏ/xanh dương. Vạch = điểm sáng ít lệch màu, xử lý trước để không bị kéo thành cỏ.
+// Lớp hiển thị khung hình (PO 24/11 cỏ dịu mắt; PO 26/11: hình nhoè + ố vàng).
+// 26/11: bản cũ nhân màu lệch (.62,.76,.58: bớt xanh dương nhiều nhất) → cả sân ngả vàng; lại vẽ đúng 1280×720 rồi để trình duyệt
+// phóng lên màn 1080p → nhoè. Nay: vẽ theo cỡ màn thật (tối đa 2560 px ngang), làm nét kiểu "unsharp mask" nhẹ theo điểm ảnh gốc,
+// cỏ gốc của game ngả vàng (đo 89,124,47) → bớt đỏ, giữ xanh dương: ra xanh lá như sân truyền hình (~57,107,47); vạch vôi/áo trắng giữ nguyên. Không đụng game, không đụng bộ nhận sân.
 (() => {
   const vs = 'attribute vec2 p;varying vec2 v;void main(){v=p*.5+.5;gl_Position=vec4(p,0.,1.);}';
-  // PO 25/11 (lần 3): xét "có phải cỏ" theo TRUNG BÌNH VÙNG ~40 px (9 mẫu), không theo từng điểm ảnh. Khối nén H.264 lệch màu nhẹ
-  // (16 px) không đổi được trung bình vùng → không còn mảng vàng/chữ nhật. Chỉ nhân sáng/màu (không kéo về một màu cố định).
-  // Điểm trắng (vạch vôi, áo trắng, chữ) giữ nguyên độ sáng.
   const fs = `precision mediump float;varying vec2 v;uniform sampler2D t;uniform vec2 px;
 float grass(vec3 a){return smoothstep(0.,.07,a.g-max(a.r,a.b)*1.05)*smoothstep(.07,.15,a.g);}
-void main(){vec3 c=texture2D(t,v).rgb;vec2 d=px*20.;vec3 m=vec3(0.);
+void main(){vec3 c=texture2D(t,v).rgb;
+vec3 n=texture2D(t,v+vec2(px.x,0.)).rgb+texture2D(t,v-vec2(px.x,0.)).rgb+texture2D(t,v+vec2(0.,px.y)).rgb+texture2D(t,v-vec2(0.,px.y)).rgb;
+c=clamp(c+(c-n*.25)*.6,0.,1.);
+vec2 d=px*20.;vec3 m=vec3(0.);
 for(int i=-1;i<=1;i++)for(int j=-1;j<=1;j++)m+=texture2D(t,v+vec2(float(i),float(j))*d).rgb;
 float g=grass(m/9.);float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b));
 float w=smoothstep(.45,.6,mn)*(1.-smoothstep(.12,.24,mx-mn));
-c*=mix(vec3(1.),vec3(.62,.76,.58),g*(1.-w));c=mix(c,vec3(1.),.35*w*g);
+c*=mix(vec3(1.),vec3(.64,.86,1.),g*(1.-w));
 gl_FragColor=vec4(c,1.);}`;
   const out = document.createElement('canvas');
   out.id = 'pes-pitch';
@@ -539,11 +541,14 @@ gl_FragColor=vec4(c,1.);}`;
     out.style.width = src.offsetWidth + 'px';
     out.style.height = src.offsetHeight + 'px';
     out.style.display = 'block';
-    if (tw !== src.width || th !== src.height) {
-      tw = out.width = src.width; th = out.height = src.height;
+    // vẽ theo cỡ hiển thị thật (phóng 720p trong shader, có làm nét) thay vì để trình duyệt phóng ảnh 720p
+    const k = Math.min(window.devicePixelRatio || 1, 2560 / Math.max(1, src.offsetWidth));
+    const ow = Math.max(src.width, Math.round(src.offsetWidth * k)), oh = Math.max(src.height, Math.round(src.offsetHeight * k));
+    if (tw !== ow || th !== oh) {
+      tw = out.width = ow; th = out.height = oh;
       gl.viewport(0, 0, tw, th);
-      gl.uniform2f(pxLoc, 1 / tw, 1 / th);
     }
+    gl.uniform2f(pxLoc, 1 / src.width, 1 / src.height);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, src);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };
