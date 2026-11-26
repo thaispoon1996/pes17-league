@@ -371,7 +371,22 @@ def ensure_camera(want: tuple | None) -> None:
         return
     try:
         with nav.session():
-            nav.pad("Start w:2.5")
+            # Chờ tư thế giao bóng (thấy đồng hồ trận); còn phim mở màn thì bấm Start bỏ qua (không bấm lúc màn tải Tips).
+            paused = False
+            for _ in range(60):
+                im = nav.shot("m17_cam")
+                if "ause" in ocr.rec(im, ocr.MENU_TITLE)[0]:
+                    paused = True   # Start bỏ phim rơi đúng lúc vào tư thế → Pause Menu đã mở sẵn
+                    break
+                if ocr.hud(im):
+                    break
+                if "Tips" not in ocr.rec(im, (520, 185, 760, 230))[0]:
+                    nav.pad("Start w:0.3")
+                time.sleep(1)
+            else:
+                raise NavError("không thấy tư thế giao bóng")
+            if not paused:
+                nav.pad("Start w:2.5")
             if "ause" not in ocr.rec(nav.shot("m17_cam"), ocr.MENU_TITLE)[0]:
                 raise NavError("không mở được Pause Menu")
             nav.pad("Right w:0.6 Right w:0.6 A w:2.5")
@@ -1506,13 +1521,24 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             except NavError as e:
                 log(f"chọn áo lỗi: {e}")
             nav.pad("A w:2")   # Kickoff
-        if SKIP_INTRO:
-            try:
-                skip_intro()
-            except Exception as e:   # bỏ qua không được thì xem phim như cũ
-                log(f"bỏ qua phim mở màn lỗi: {e}")
-        if human:
-            ensure_camera(camera_want(gs))
+        # PO 26/11 "không đặt được camera": người chơi tự bấm Kickoff rồi giao bóng luôn, máy mở Pause Menu giữa lúc họ đang bấm
+        # → lạc menu. Khoá nút người chơi từ lúc bấm Kickoff tới khi đặt xong camera (~30–60 s, đứng ở tư thế giao bóng).
+        lock = bool(human and camera_want(gs))
+        if lock:
+            mute_players(True)
+        try:
+            if SKIP_INTRO:
+                try:
+                    skip_intro()
+                except Exception as e:   # bỏ qua không được thì xem phim như cũ
+                    log(f"bỏ qua phim mở màn lỗi: {e}")
+            if human:
+                if lock:
+                    mute_players(True)   # làm mới file khoá (Selkies bỏ qua file cũ quá 180 s)
+                ensure_camera(camera_want(gs))
+        finally:
+            if lock:
+                mute_players(False)
         pres = Presence() if both else None
         try:
             if both:
