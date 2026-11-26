@@ -19,7 +19,11 @@ public enum MatchSide { Home, Away }
 /// <param name="CompetitionId">Giải của trận (PO 23/11): bộ chạy cài gói đồ hoạ menu của giải (trang /admin/do-hoa) trước khi vào trận.</param>
 public sealed record MatchRunRequest(Guid FixtureId, string ContainerName, byte[] OptionFile, int HomePesClubIndex, int AwayPesClubIndex, MatchSide? HumanSide, Task? Go = null,
     bool ExtraTime = false, Func<CancellationToken, Task<byte[]>>? Refresh = null, bool BothHuman = false, SquadSync? Sync = null,
-    string? CompetitionLogo = null, bool Hot = false, Guid? CompetitionId = null, string? CompetitionName = null, string? Conditions = null);
+    string? CompetitionLogo = null, bool Hot = false, Guid? CompetitionId = null, string? CompetitionName = null, string? Conditions = null,
+    IReadOnlyList<RunCoach>? Coaches = null);
+
+/// <summary>HLV career của đội người chơi (PO 26/11, mẫu A): ảnh mặt tách nền + tên → thẻ góc dưới màn hình chơi.</summary>
+public sealed record RunCoach(MatchSide Side, string Name, string Club, byte[] Face);
 
 /// <summary>Báo "đội hình vừa đổi" trong lúc game dựng sẵn chờ Sẵn sàng (gộp nhiều lần báo thành 1).</summary>
 public sealed class SquadSync
@@ -352,7 +356,21 @@ public sealed class MatchOrchestrator(Func<ClubsDbContext> dbFactory, IOptionFil
             : null;
         return new MatchRunRequest(fixtureId, container, await store.ReadAsync(build.StoragePath!, ct), index[f.HomeClubId], index[f.AwayClubId], humanSide,
             ExtraTime: f.Stage == FixtureStage.Final, CompetitionLogo: comp?.LogoPath, Hot: await HotAsync(db, fixtureId, ct), CompetitionId: comp?.Id, CompetitionName: comp?.Name,
-            Conditions: await ConditionsAsync(f.HomeClubId, ct));
+            Conditions: await ConditionsAsync(f.HomeClubId, ct), Coaches: await CoachesAsync(db, f, ct));
+    }
+
+    /// <summary>HLV career (có ảnh mặt) của 2 CLB trong trận; CLB máy không có HLV career → bỏ.</summary>
+    private static async Task<List<RunCoach>> CoachesAsync(ClubsDbContext db, Fixture f, CancellationToken ct)
+    {
+        var by = await CoachHooks.ByClubAsync(db, ct);
+        var list = new List<RunCoach>();
+        foreach (var (side, club) in new[] { (MatchSide.Home, f.HomeClubId), (MatchSide.Away, f.AwayClubId) })
+            if (by.GetValueOrDefault(club) is { Face: { Length: > 0 } face } c)
+            {
+                var clubName = await db.Clubs.Where(x => x.Id == club).Select(x => x.Name).SingleAsync(ct);
+                list.Add(new RunCoach(side, c.Nickname is { Length: > 0 } n ? n : c.Name, clubName, face));
+            }
+        return list;
     }
 
     /// <summary>Sân/thời tiết là phụ: lỗi (mạng, dịch vụ thời tiết) → trận vẫn đá với menu như cũ.</summary>

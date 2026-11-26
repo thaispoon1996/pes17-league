@@ -51,6 +51,17 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
         if (liveDir is not null) psi.Environment["PESMATCH_LIVE"] = Path.Combine(Path.GetFullPath(liveDir), $"{r.FixtureId:N}.m3u8");
         if (logoDir is not null && r.CompetitionLogo is { Length: > 0 } logo && Path.Combine(Path.GetFullPath(logoDir), Path.GetFileName(logo)) is var lf && File.Exists(lf))
             psi.Environment["PESMATCH_LOGO"] = lf;
+        if (r.Coaches is { Count: > 0 } coaches)   // thẻ HLV góc dưới màn hình chơi (PO 26/11): ảnh ghi cạnh file trận, xoá khi xong
+        {
+            var list = new List<object>();
+            foreach (var c in coaches)
+            {
+                var face = Path.Combine(workDir, $"{r.FixtureId:N}.coach-{c.Side.ToString().ToLowerInvariant()}.png");
+                await File.WriteAllBytesAsync(face, c.Face, ct);
+                list.Add(new { side = c.Side == MatchSide.Home ? "home" : "away", name = c.Name, club = c.Club, face });
+            }
+            psi.Environment["PESMATCH_COACHES"] = JsonSerializer.Serialize(list);
+        }
         if (lockFile is not null) psi.Environment["PESMATCH_LOCK"] = Path.GetFullPath(lockFile);
         if (r.Conditions is { Length: > 0 } cond) psi.Environment["PESMATCH_CONDITIONS"] = cond;   // sân + giờ/mùa/thời tiết (pesmatch17 match_conditions)
         if (r.Hot) psi.Environment["PESMATCH_HOT"] = "1";   // trận cầu đinh: record-mode = hot chỉ ghi trận này (tools/match17/tools/rec17.py)
@@ -173,6 +184,8 @@ public sealed class ScriptMatchRunner(string scriptPath, string workDir, Action<
             if (!p.HasExited) p.Kill(entireProcessTree: true);
             DropLock(pid);
             File.Delete(of);
+            foreach (var f in Directory.EnumerateFiles(workDir, $"{r.FixtureId:N}.coach-*.png"))
+                try { File.Delete(f); } catch (IOException) { }
             foreach (var f in Directory.EnumerateFiles(workDir, $"{r.FixtureId:N}.*.of"))
                 try { File.Delete(f); } catch (IOException) { }
         }

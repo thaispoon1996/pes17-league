@@ -1,5 +1,5 @@
-// Logo giải góc phải trên khung game ở trang chơi Selkies (PO duyệt 22/11, kiểu A: logo trơn, không nền). Từ 23/11 trận có bảng tỉ số riêng
-// (khối dưới) thì logo nằm trong bảng, bộ chạy không đặt logo góc này.
+// Logo giải góc phải trên khung game ở trang chơi Selkies (PO duyệt 22/11, kiểu A: logo trơn, không nền). Từ 26/11 logo + thẻ HLV đi qua
+// extras.json (khối "Logo giải góc phải trên + thẻ HLV" bên dưới); khối này giữ cho file overlay.json kiểu cũ.
 // Bộ chạy trận (tools/match17/pesmatch17.py overlay()) ghi /bench/overlay/overlay.json = {"logo": "logo-<sha>.png"} lúc giao bóng, {} khi hết trận;
 // trang đọc ở pes/overlay.json (Dockerfile: pes → /bench/overlay). Logo nằm cạnh canvas (cùng khối cha) để vẫn thấy khi toàn màn hình,
 // không bắt chuột/chạm. Vị trí theo khung hình thật (1280×720): cách trên 5,3%, cách phải 1,25%, cao 10%.
@@ -111,6 +111,56 @@
   document.addEventListener('fullscreenchange', place);
   setInterval(place, 1000);   // selkies đổi cỡ canvas không báo sự kiện
   setInterval(poll, 5000);
+  poll();
+})();
+
+// Logo giải góc phải trên + thẻ HLV góc dưới (PO 26/11, mẫu A): bộ chạy trận (tools/match17/tools/extras17.py) ghi pes/x-*.png +
+// extras.json {"v", "items": [{"src", "box": [x, y, w, h] theo màn hình thật 1280×720}]} lúc giao bóng, items rỗng khi hết trận.
+// Ảnh dựng sẵn (chữ + ảnh mặt) → trang chỉ đặt đúng chỗ theo khung hình thật, không bắt chuột/chạm, vẫn thấy khi toàn màn hình.
+(() => {
+  let v = -1, list = [];
+  const imgs = new Map();
+
+  const place = () => {
+    const c = document.getElementById('videoCanvas');
+    const ok = c && c.parentElement && c.offsetWidth >= 50 && c.offsetHeight >= 50;
+    const bw = c?.width || 1280, bh = c?.height || 720;
+    const k = ok ? Math.min(c.offsetWidth / bw, c.offsetHeight / bh) : 0, w = bw * k, h = bh * k;
+    const x = ok ? c.offsetLeft + (c.offsetWidth - w) / 2 : 0, y = ok ? c.offsetTop + (c.offsetHeight - h) / 2 : 0, s = w / 1280;
+    for (const [src, img] of imgs) {
+      const it = list.find(i => i.src === src);
+      if (!ok || !it || !img.naturalWidth) { img.style.display = 'none'; continue; }
+      if (img.parentElement !== c.parentElement) c.parentElement.appendChild(img);
+      const b = it.box;
+      Object.assign(img.style, { left: `${x + b[0] * s}px`, top: `${y + b[1] * s}px`, width: `${b[2] * s}px`, height: `${b[3] * s}px`, display: 'block' });
+    }
+  };
+
+  const poll = async () => {
+    try {
+      const r = await fetch(`pes/extras.json?t=${Date.now()}`, { cache: 'no-store' });
+      const j = r.ok ? await r.json() : {};
+      if (Number.isFinite(j.v) && j.v !== v && Array.isArray(j.items)) {
+        v = j.v;
+        list = j.items.filter(i => typeof i.src === 'string' && /^x-[\w-]+\.png$/.test(i.src) && Array.isArray(i.box) && i.box.length === 4);
+        for (const [src, img] of imgs) if (!list.some(i => i.src === src)) { img.remove(); imgs.delete(src); }
+        for (const it of list) if (!imgs.has(it.src)) {
+          const img = new Image();
+          img.alt = ''; img.decoding = 'async'; img.setAttribute('aria-hidden', 'true');
+          Object.assign(img.style, { position: 'absolute', zIndex: '2', pointerEvents: 'none', userSelect: 'none', display: 'none' });
+          img.onload = place;
+          img.src = `pes/${it.src}`;
+          imgs.set(it.src, img);
+        }
+      }
+    } catch { /* chưa có file / mạng chập chờn: giữ như cũ */ }
+    place();
+  };
+
+  window.addEventListener('resize', place);
+  document.addEventListener('fullscreenchange', place);
+  setInterval(place, 1000);   // selkies đổi cỡ canvas không báo sự kiện
+  setInterval(poll, 3000);
   poll();
 })();
 

@@ -41,6 +41,7 @@ import loop            # noqa: E402
 import m17ocr as ocr   # noqa: E402
 import rec17           # noqa: E402
 import board17         # noqa: E402
+import extras17        # noqa: E402
 import gameplan17      # noqa: E402
 from PIL import Image, ImageChops, ImageStat   # noqa: E402
 
@@ -55,6 +56,11 @@ WARM = os.environ.get("PESMATCH_WARM") == "1"
 GAME_PLAN = os.environ.get("PESMATCH_PLAN") == "1"
 BENCH = os.environ.get("PES17_BENCH", "pes17-bench")
 REC = os.environ.get("PESMATCH_REC")     # web luôn truyền; chỉ ghi khi record-mode cho phép (rec17.wanted)
+# Thẻ HLV career góc dưới (PO 26/11, mẫu A): [{"side", "name", "club", "face": đường dẫn PNG}] từ web (ScriptMatchRunner)
+try:
+    COACHES = json.loads(os.environ.get("PESMATCH_COACHES") or "[]")
+except ValueError:
+    COACHES = []
 LOGO = os.environ.get("PESMATCH_LOGO")   # logo giải của trận (web, PO 22/11) → góc phải trên màn hình chơi, từ lúc giao bóng tới hết trận
 GRAPHICS = os.environ.get("PESMATCH_GRAPHICS")         # $DATA/graphics của web (PO 23/11): gói menu theo giải compe/{giải}.cpk (trang /admin/do-hoa)
 FIXTURE = os.environ.get("PESMATCH_FIXTURE")   # mã trận (Guid N): áo đấu web chọn ở store/match-kits/{trận}.json (PO 23/11, uniform())
@@ -829,8 +835,7 @@ class Match:
                 if self.kick is None:
                     self.kick = now
                     emit(event="kickoff")
-                    if LOGO and not self.board:
-                        overlay(LOGO)
+                    extras(True)   # logo giải góc phải trên + thẻ HLV góc dưới trái
                 self.on_hud(h)
                 misses = 0
                 if self.board:
@@ -1389,13 +1394,22 @@ def overlay(logo: str | None) -> None:
         log(f"logo giải lỗi: {e}")
 
 
+def extras(on: bool) -> None:
+    """Logo giải góc phải trên + thẻ HLV góc dưới trên trang chơi (tools/extras17.py); hết trận → xoá. Lỗi chỉ ghi log."""
+    try:
+        its, files = extras17.items(board17.window_y(BENCH), LOGO, COACHES, log) if on and (LOGO or COACHES) else ([], {})
+        extras17.publish(BENCH, OVERLAY, its, files)
+    except Exception as e:
+        log(f"logo/thẻ HLV lỗi: {e}")
+
+
 def make_board(home: int, away: int) -> "board17.Board | None":
     """Bảng tỉ số riêng của trận (mã 3 chữ từ Team.raw, logo giải PESMATCH_LOGO). Lỗi → None: trận vẫn đá, trang chơi thấy bảng gốc của game."""
     if os.environ.get("PESMATCH_BOARD") == "0":
         return None
     try:
         cs = board17.codes(DATA / "pesdb" / "Team.raw", [home, away])
-        return board17.Board(BENCH, OVERLAY, OUT / "board", cs.get(home, ""), cs.get(away, ""), LOGO, log)
+        return board17.Board(BENCH, OVERLAY, OUT / "board", cs.get(home, ""), cs.get(away, ""), None, log)   # logo giải ra góc phải (extras, PO 26/11)
     except Exception as e:
         log(f"bảng tỉ số lỗi: {e}")
         return None
@@ -1481,6 +1495,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
     try:
         emit(event="stage", stage="boot")
         overlay(None)   # bỏ logo sót của trận trước (bộ chạy bị dừng ngang)
+        extras(False)
         rec17.stop(f"pesrec-{container}")   # bản ghi sót của lần chạy bị dừng ngang → đóng file gọn
         if WAIT_GO or WARM:
             threading.Thread(target=read_cmds, daemon=True).start()
@@ -1597,8 +1612,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
                 pres.close()
             if board:
                 board.close()
-            elif LOGO:
-                overlay(None)
+            extras(False)
         try:
             emit(event="ratings", **ocr.rankings(nav.shot("m17_ft")))
         except Exception as e:   # điểm cầu thủ là phụ: lỗi thì bỏ
