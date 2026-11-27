@@ -118,7 +118,7 @@ def header(im: Image.Image, side: str) -> tuple[str | None, str | None, float]:
         k, s = nav.best(m, nav.templates(kind))
         if s > out[2]:
             out = (kind, k, s)
-    return out if out[2] >= 0.85 else (None, None, out[2])
+    return out if out[2] >= nav.MATCH_OK else (None, None, out[2])
 
 
 def is_ask(im: Image.Image) -> bool:

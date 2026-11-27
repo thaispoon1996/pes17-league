@@ -173,7 +173,12 @@ def _team_order() -> list[str]:
 ORDER = {"leagues": LEAGUE_ORDER, "teams": _team_order()}
 
 
-def seek(side: str, kind: str, target: str, max_steps: int = 60, step_wait: float = 0.7, ok: float = 0.85) -> dict:
+# Ngưỡng khớp mẫu thẻ tên (mẫu chụp ở 720p). Màn 1080p co về 720p (PO 26/11): đúng mẫu còn 0,81–0,86 (720p ~0,85),
+# mẫu sai gần nhất ≤ 0,45 (Ligue 1/2 ~0,82 → vẫn bắt buộc là mẫu khớp nhất) → 0,75.
+MATCH_OK = 0.75
+
+
+def seek(side: str, kind: str, target: str, max_steps: int = 60, step_wait: float = 0.7, ok: float = MATCH_OK) -> dict:
     tpls = templates(kind)
     if target not in tpls:
         return {"ok": False, "why": f"thiếu mẫu {kind}/{target}"}
