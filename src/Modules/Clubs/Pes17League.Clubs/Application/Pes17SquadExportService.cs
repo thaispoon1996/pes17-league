@@ -32,6 +32,7 @@ public sealed record Pes17Squads(Dictionary<string, List<int[]>> Squads, Diction
 /// Thông số chiến thuật PES17 (<see cref="Pes17Plan"/>) cho CLB đã chọn — mục chưa chọn giữ của game.
 /// Đội trưởng + người đá phạt cho MỌI CLB (quy tắc PO duyệt 05/11, áp cho PES17 21/11): người CLB chọn nếu đang đá chính,
 /// không thì tự chọn (<see cref="TeamJobPicker"/>) theo chỉ số mùa đang đá.
+/// PO 27/11: cầu thủ chấn thương không vào game (<see cref="Pes17InjuryFilter"/>).
 /// CLB đã lưu trữ (Inactive) không xuất: dòng gốc của nó giữ nguyên trong game (như OF PES6).
 /// </summary>
 public sealed class Pes17SquadExportService(ClubsDbContext db, TimeProvider clock)
@@ -50,11 +51,23 @@ public sealed class Pes17SquadExportService(ClubsDbContext db, TimeProvider cloc
                           join m in db.SquadMemberships on cm.ClubId equals m.ClubId
                           where m.LeftAt == null
                           join pm in db.PlayerPesMappings on new { m.PlayerId, PatchVersionId = patchVersionId } equals new { pm.PlayerId, pm.PatchVersionId }
-                          select new { cm.PesClubIndex, cm.ClubId, m.PlayerId, pm.PesPlayerId, m.ShirtNumber, m.SlotOrder }).ToListAsync(ct);
+                          join p in db.Players on m.PlayerId equals p.Id
+                          select new { cm.PesClubIndex, cm.ClubId, m.PlayerId, pm.PesPlayerId, m.ShirtNumber, m.SlotOrder, p.Position }).ToListAsync(ct);
         var clubs = await mappings.Select(c => new { c.PesClubIndex, c.ClubId }).ToListAsync(ct);
         var byClub = rows.ToLookup(r => r.PesClubIndex);
+
+        // PO 27/11: cầu thủ chấn thương không vào game (Pes17InjuryFilter) — người dự bị cùng vị trí vào thay ô đá chính
+        var memberIds = rows.Select(r => r.PlayerId).ToList();
+        var injured = (await db.PlayerConditions.Where(c => memberIds.Contains(c.PlayerId) && c.InjuredRounds > 0)
+            .Select(c => c.PlayerId).ToListAsync(ct)).ToHashSet();
+        var byId = rows.ToDictionary(r => (r.ClubId, r.PlayerId));
+        var order = clubs.ToDictionary(c => c.PesClubIndex, c =>
+        {
+            var sq = byClub[c.PesClubIndex].OrderBy(r => r.SlotOrder).Select(r => new Pes17InjuryFilter.Entry(r.PlayerId, r.Position)).ToList();
+            return Pes17InjuryFilter.Apply(sq, injured.Contains).Squad.Select(e => byId[(c.ClubId, e.PlayerId)]).ToList();
+        });
         var squads = clubs.Select(c => c.PesClubIndex).Order().ToDictionary(c => c.ToString(),
-            c => byClub[c].OrderBy(r => r.SlotOrder).Select(r => new[] { r.PesPlayerId, r.ShirtNumber }).ToList());
+            c => order[c].Select(r => new[] { r.PesPlayerId, r.ShirtNumber }).ToList());
 
         var ids = clubs.Select(c => c.ClubId).ToList();
         var tactics = await db.Tactics.Where(t => ids.Contains(t.ClubId)).ToDictionaryAsync(t => t.ClubId, ct);
@@ -77,7 +90,10 @@ public sealed class Pes17SquadExportService(ClubsDbContext db, TimeProvider cloc
             var pesId = rows.ToDictionary(r => (r.ClubId, r.PlayerId), r => r.PesPlayerId);
             foreach (var c in clubs.OrderBy(c => c.PesClubIndex))
             {
-                if (!starters.TryGetValue(c.ClubId, out var xi) || xi.Count == 0) continue;
+                if (!starters.TryGetValue(c.ClubId, out var xi0)) continue;
+                var inGame = order[c.PesClubIndex].Take(11).Select(r => r.PlayerId).ToHashSet();
+                var xi = xi0.Where(s => inGame.Contains(s.PlayerId)).ToList();   // bỏ người chấn thương đã bị thay
+                if (xi.Count == 0) continue;
                 var t = tactics.GetValueOrDefault(c.ClubId);
                 var js = JobKeys.Select(k => (k.Key, P: TeamJobPicker.Resolve(k.Job, TacticsService.GetJob(t, k.Job), xi)))
                     .Where(x => x.P is not null && pesId.ContainsKey((c.ClubId, x.P.PlayerId)))
