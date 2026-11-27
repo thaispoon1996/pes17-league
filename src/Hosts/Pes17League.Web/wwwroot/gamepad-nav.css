@@ -1,0 +1,40 @@
+/* Điều khiển menu bằng tay cầm (PO 27/11, gamepad-nav.js) — con trỏ xanh kiểu Master League + dải gợi ý nút.
+   Chỉ hiện khi html.gp-on (vừa bấm tay cầm). Màu theo giao diện xanh "Pro Pitch Broadcast". */
+#gp-ring { position: fixed; left: 0; top: 0; z-index: 2147483000; pointer-events: none; opacity: 0;
+  border: 2px solid #00ff87; box-shadow: 0 0 0 1px rgba(0,255,135,.35), 0 0 18px rgba(0,255,135,.45), inset 0 0 12px rgba(0,255,135,.18);
+  transition: transform .12s cubic-bezier(.2,.9,.3,1.15), width .12s, height .12s, opacity .15s; }
+#gp-ring::after { content: ""; position: absolute; inset: -2px; border-radius: inherit; border: 2px solid #00ff87; animation: gp-pulse 1.1s ease-out infinite; }
+html.gp-on #gp-ring.on { opacity: 1; }
+@keyframes gp-pulse { from { opacity: .7; transform: scale(1); } to { opacity: 0; transform: scale(1.06); } }
+
+/* Ô đang chọn: sáng nhẹ (khung vẽ ở #gp-ring nên không bị cắt bởi overflow) */
+html.gp-on .gp-cur { outline: none !important; filter: brightness(1.12); }
+html.gp-on, html.gp-on * { cursor: none; }
+html.gp-on :focus-visible { outline: none; }
+
+#gp-hint { position: fixed; left: 50%; bottom: calc(var(--gp-bottom, 14px) + env(safe-area-inset-bottom)); z-index: 2147483001; pointer-events: none;
+  display: flex; gap: 14px; align-items: center; padding: 7px 14px; border-radius: 12px; translate: -50% 12px; opacity: 0;
+  background: rgba(15,19,29,.92); border: 1px solid #2c303b; box-shadow: 0 8px 24px rgba(0,0,0,.45); backdrop-filter: blur(8px);
+  color: #dee1f7; font: 800 13px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+  transition: opacity .2s, translate .2s; }
+html.gp-on #gp-hint { opacity: 1; translate: -50% 0; }
+#gp-hint span { display: inline-flex; align-items: center; gap: 6px; color: #9ba7b5; }
+#gp-hint .gp-k { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: #262a35; border: 1px solid #2c303b; color: #00ff87; font: inherit; font-size: 12px; }
+#gp-hint span:first-child .gp-k { background: #00ff87; color: #0f131d; border-color: #00ff87; }
+#gp-hint .gp-k.ps { font-family: 'Be Vietnam Pro', sans-serif; font-weight: 700; }
+
+@media (max-width: 900px) {
+  #gp-hint { gap: 10px; padding: 6px 10px; font-size: 12px; }
+  #gp-hint .gp-x { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #gp-ring, #gp-hint { transition: opacity .15s; }
+  #gp-ring::after { animation: none; display: none; }
+}
+
+/* Điện thoại: chừa chỗ cho dải gợi ý (cuối trang + bảng mục con nâng lên khỏi dải) */
+@media (max-width: 900px) {
+  html.gp-on .cx-page { padding-bottom: 44px; }
+  html.gp-on .cx-msheet { bottom: calc(14px + env(safe-area-inset-bottom) + 80px + 36px); }
+}
