@@ -336,7 +336,15 @@ CAM_TYPE = (760, 160, 990, 186)
 CAM_ROWS = [(1025, 189, 1080, 213), (1025, 218, 1080, 242), (1025, 247, 1080, 271)]   # Zoom, Height, Angle
 
 
-SYSTEM_CAM = ("Fan View",)   # camera lưu trong System Data của game (đặt + Save System Data 25/11) — game mở lại là có sẵn
+SYSTEM_CAM_FILE = OUT / "system-camera.json"   # camera đang lưu trong System Data của game — game mở lại là có sẵn, khỏi đặt trong trận
+
+
+def system_cam() -> tuple:
+    """Camera trong System Data (đọc kiểm 27/11 trên game vừa mở: Custom Zoom 0 / Height 20 / Angle 25). Thiếu file → Fan View (25/11)."""
+    try:
+        return tuple(json.loads(SYSTEM_CAM_FILE.read_text()))
+    except (OSError, ValueError, TypeError):
+        return ("Fan View",)
 CAM_TYPES = {"fan": "Fan View"}   # loại camera cố định web chọn được (camType) → tên trong game; "custom" = Custom + 3 thanh
 
 
@@ -360,22 +368,31 @@ def _cam_num(t: str) -> int | None:
     return int(t) if t.isdigit() else None
 
 
-def ensure_camera(want: tuple | None) -> None:
-    """Tư thế giao bóng (sau skip_intro): đặt camera Custom = want qua Pause Menu → Camera Settings (~10–20 s), chỉ khi khác lần
-    đã đặt trong game đang chạy. Thử 25/11: lúc giao bóng Pause Menu mở ở GAME PLAN, Right x2 = Camera Settings; bảng mở ở Camera Type.
-    Lỗi chỉ ghi log, không chặn trận."""
+def camera_needed(want: tuple | None) -> bool:
+    """Có phải mở Pause Menu đặt camera không: khác lần đã đặt trong game đang chạy, và (game vừa mở) khác camera System Data.
+    PO 27/11: đặt camera = khoá nút người chơi ~30 s đầu trận → chỉ làm khi web đổi camera khác System Data."""
     if want is None:
-        return
+        return False
     game = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017[.]exe"], capture_output=True, text=True).stdout.split()[:1]
     try:
         last = json.loads(CAM_APPLIED.read_text())
     except (OSError, ValueError):
         last = {}
     if last == {"cam": list(want), "game": game}:
-        return
-    if tuple(want) == SYSTEM_CAM and last.get("game") != game:   # game vừa mở: camera = System Data, đã đúng → khỏi mở bảng
+        return False
+    if tuple(want) == system_cam() and last.get("game") != game:   # game vừa mở: camera = System Data, đã đúng → khỏi mở bảng
         CAM_APPLIED.write_text(json.dumps({"cam": list(want), "game": game}))
+        return False
+    return True
+
+
+def ensure_camera(want: tuple | None) -> None:
+    """Tư thế giao bóng (sau skip_intro): đặt camera Custom = want qua Pause Menu → Camera Settings (~10–20 s), chỉ khi khác lần
+    đã đặt trong game đang chạy. Thử 25/11: lúc giao bóng Pause Menu mở ở GAME PLAN, Right x2 = Camera Settings; bảng mở ở Camera Type.
+    Lỗi chỉ ghi log, không chặn trận."""
+    if not camera_needed(want):
         return
+    game = subprocess.run(["docker", "exec", BENCH, "pgrep", "-f", "PES2017[.]exe"], capture_output=True, text=True).stdout.split()[:1]
     try:
         with nav.session():
             # Chờ tư thế giao bóng (thấy đồng hồ trận); còn phim mở màn thì bấm Start bỏ qua (không bấm lúc màn tải Tips).
@@ -694,6 +711,8 @@ class Match:
         # Người ghi bàn (PO 26/11): dải tên game hiện lúc ăn mừng/chiếu lại (HUD ẩn) và trên màn Highlights cuối trận.
         self.banners: list[dict] = []   # {shirt, name, minute}
         self._ban_t, self._diag = 0.0, 0
+        self._end_t, self._end_diag = 0.0, 0
+        self._diag_plain, self._plain_t = 0, 0.0
         GOAL_DIAG.mkdir(exist_ok=True)
         for f in GOAL_DIAG.glob("*.png"):
             f.unlink()
@@ -704,9 +723,13 @@ class Match:
         if not self.kick or (not force and now - self._ban_t < 1.5):
             return
         dark = ocr.banner_dark(im)
-        if self._diag < 30 and (dark or now - self._ban_t > 4):
-            self._diag += 1
-            im.save(GOAL_DIAG / f"{self._diag:02d}{'-dark' if dark else ''}.png")
+        # PO 27/11: 30 ảnh cũ hết ngay 4 phút đầu (chụp cả khung không có dải) → dải tối tối đa 40, khung thường 1 ảnh/20 s tối đa 10
+        if dark and self._diag < 40 or not dark and self._diag_plain < 10 and now - self._plain_t > 20:
+            if dark:
+                self._diag += 1
+            else:
+                self._diag_plain, self._plain_t = self._diag_plain + 1, now
+            im.save(GOAL_DIAG / (f"{self._diag:02d}-dark.png" if dark else f"plain-{self._diag_plain:02d}.png"))
         self._ban_t = now
         if not dark:
             return
@@ -722,6 +745,10 @@ class Match:
     def on_hud(self, h: dict) -> None:
         if h["minute"] is not None:
             self.minute = h["minute"]
+            if h["minute"] >= 46 and self.half == 0:
+                # PO 27/11: người chơi bấm qua màn nghỉ nhanh → máy không thấy menu nghỉ, tưởng vẫn hiệp 1 → bàn hiệp 2 kẹp phút 45
+                self.half = 1
+                log(f"hiệp 2 (đồng hồ {h['minute']}')")
         cur = (h["home"], h["away"])
         if cur == self.hud:
             self.pending, self.seen = None, 0
@@ -774,6 +801,14 @@ class Match:
                 b = min(near, key=lambda b: abs(min(b["minute"], 90) - g["minute"]))
                 free.remove(b)
                 g["shirt"], g["name"] = b["shirt"], b["name"]
+        # PO 27/11 (thiếu người ghi bàn): phút HUD lệch nhiều (bàn hiệp 2 bị kẹp 45', đọc HUD trễ) → số bàn chưa tên = số dải còn lại
+        # thì ghép theo thứ tự thời gian (dải Highlights chiếu đúng thứ tự bàn) và lấy phút trên dải (chính xác hơn HUD).
+        rest = [g for g in out if "name" not in g]
+        if rest and len(rest) == len(free):
+            for g, b in zip(rest, sorted(free, key=lambda b: b["minute"])):
+                g["shirt"], g["name"] = b["shirt"], b["name"]
+                if (b["minute"] > 45) == (g["half"] == 1):   # phút dải cùng hiệp với HUD mới tin (OCR có thể đọc 51 thành 21)
+                    g["minute"] = min(b["minute"], 90)
         return out
 
     def run(self) -> tuple[int, int]:
@@ -786,6 +821,7 @@ class Match:
             if self.human and not cut:
                 cut = True
                 cut_players()
+                end_flag(True)   # trang chơi tự về trang kết quả trận (PO 27/11)
 
         def unmute() -> None:
             nonlocal muted
@@ -820,7 +856,7 @@ class Match:
                     paused = False
                 if h or paused or (muted and now - muted > 60):
                     unmute()
-                elif not muted and gone >= 2:   # 2 lần chụp liền (~1 giây) không thấy đồng hồ: không phải đọc sót 1 khung
+                elif not muted and gone >= 6:   # PO 27/11: 6 lần chụp liền (~3 giây) không thấy đồng hồ — 1080p hay đọc sót HUD vài khung
                     if (pm := ocr.menu(im)) and not any(k in pm["title"] for k in ("Up", "ull", "Hal", "Time")):
                         paused = True
                     else:
@@ -846,8 +882,24 @@ class Match:
                                     else HUMAN_PREMATCH_TIMEOUT if not self.kick or self.halftime else NO_PITCH_TIMEOUT):
                 raise NavError("no_progress: quá lâu không thấy HUD trận")
             elif now - last_press > 3:
-                m = ocr.menu(im)
-                if not m and self.kick and (last_min or 0) >= 89 and ocr.highlights(im):
+                end_phase = self.kick and (last_min or 0) >= 89
+                if end_phase and self._end_diag < 40 and now - self._end_t > 3:   # ảnh chẩn đoán cuối trận (PO 27/11)
+                    self._end_diag, self._end_t = self._end_diag + 1, now
+                    try:
+                        im.save(GOAL_DIAG / f"end-{self._end_diag:02d}.png")
+                    except OSError:
+                        pass
+                hl = end_phase and ocr.highlights(im)   # trước menu: 1080p có thể đọc nhầm màn Highlights thành menu
+                m = None if hl else ocr.menu(im)
+                if (not m and not hl and end_phase and not paused and now - last_play > 8
+                        and not ocr.stats_screen(im) and not ocr.rematch(im)):   # hộp Rematch: A = đá lại → không bấm
+                    # PO 27/11: không nhận ra Highlights (log không có "bỏ qua Highlights") → người chơi bị khoá ~4 phút.
+                    # Sau phút 89 mà đồng hồ mất > 8 giây, không phải menu/bảng số: coi như chiếu lại/Highlights → A tua qua.
+                    if not getattr(self, "_hl_fb", False):
+                        self._hl_fb = True
+                        log("cuối trận: mất đồng hồ > 8 giây, bấm A tua qua (chiếu lại/Highlights)")
+                    hl = True
+                if hl:
                     # PO 26/11: sau còi game tự chiếu Highlights ~1-2 phút, người chơi đang bị khoá nút → bộ chạy bấm A (Next)
                     # qua từng cảnh để tới bảng Time Up ngay, trả người chơi về web sớm.
                     if not getattr(self, "_hl", False):
@@ -1395,6 +1447,18 @@ def overlay(logo: str | None) -> None:
         log(f"logo giải lỗi: {e}")
 
 
+def end_flag(ended: bool) -> None:
+    """PO 27/11: hết trận → trang chơi (tools/bench/pes-overlay.js đọc pes/end.json) báo "Hết trận" rồi tự về trang kết quả
+    trên web (link #…&back=). Đầu mỗi lần chạy ghi ended=false: trang mở sau đó chỉ chuyển khi thấy mốc v mới. Lỗi chỉ ghi log."""
+    doc = json.dumps({"v": int(time.time() * 1000), "ended": ended}).encode()
+    try:
+        subprocess.run(["docker", "exec", "-i", BENCH, "sh", "-c",
+                        f"mkdir -p {OVERLAY} && cd {OVERLAY} && cat > end.json.tmp && mv end.json.tmp end.json"],
+                       input=doc, capture_output=True, timeout=10, check=True)
+    except (OSError, subprocess.SubprocessError) as e:
+        log(f"cờ hết trận lỗi: {e}")
+
+
 def extras(on: bool) -> None:
     """Logo giải góc phải trên + thẻ HLV góc dưới trên trang chơi (tools/extras17.py); hết trận → xoá. Lỗi chỉ ghi log."""
     try:
@@ -1499,6 +1563,8 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
         emit(event="stage", stage="boot")
         overlay(None)   # bỏ logo sót của trận trước (bộ chạy bị dừng ngang)
         extras(False)
+        if human:
+            end_flag(False)
         rec17.stop(f"pesrec-{container}")   # bản ghi sót của lần chạy bị dừng ngang → đóng file gọn
         if WAIT_GO or WARM:
             threading.Thread(target=read_cmds, daemon=True).start()
@@ -1582,7 +1648,7 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             nav.pad("A w:2")   # Kickoff
         # PO 26/11 "không đặt được camera": người chơi tự bấm Kickoff rồi giao bóng luôn, máy mở Pause Menu giữa lúc họ đang bấm
         # → lạc menu. Khoá nút người chơi từ lúc bấm Kickoff tới khi đặt xong camera (~30–60 s, đứng ở tư thế giao bóng).
-        lock = bool(human and camera_want(gs))
+        lock = bool(human and camera_needed(camera_want(gs)))   # PO 27/11: camera = System Data → không khoá, không mở Pause Menu
         if lock:
             mute_players(True)
         try:
@@ -1622,6 +1688,9 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             log(f"đọc điểm cầu thủ lỗi: {e}")
         for g in m.final_goals(hg, ag):
             emit(event="goal", slot=None, **g)
+        mute_players(False)   # web dừng bộ chạy ngay sau "end" → khối finally có thể không kịp chạy (khoá nút sót từ 12:07 27/11)
+        if human:
+            end_flag(True)
         emit(event="end", home=hg, away=ag)
         try:
             back_to_team_select()
@@ -1629,14 +1698,22 @@ def run(container: str, squads: str, home: int, away: int, human: str | None) ->
             log(f"về màn chọn đội lỗi: {e}")
         return 0
     except NavError as e:
+        mute_players(False)
+        if human:
+            end_flag(True)
         emit(event="error", reason=str(e))
         return 1
     except Exception as e:
+        mute_players(False)
+        if human:
+            end_flag(True)
         emit(event="error", reason=f"{type(e).__name__}: {e}")
         return 1
     finally:
         rec17.stop(recording)   # lỗi trước khi vào trận (đã bắt đầu ghi)
         mute_players(False)     # không để sót khoá nút cho trận sau (Selkies cũng tự bỏ khoá cũ quá 3 phút)
+        if human:
+            end_flag(True)      # lỗi / AFK / xong: trang chơi về trang kết quả (web hiện tỷ số hoặc "chưa ghi được")
         LOCK.unlink(missing_ok=True)
 
 

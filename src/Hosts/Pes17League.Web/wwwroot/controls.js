@@ -34,7 +34,9 @@
   const streamUrl = url => {
     const [base, hash = ''] = url.split('#');
     const p = hash.match(/^player\d/);
-    return base + '#' + (p ? p[0] + '&' : '') + 'ctl=' + encodeURIComponent(JSON.stringify(load()));
+    // back= (PO 27/11): hết trận trang chơi PES17 (pes-overlay.js) tự quay về trang đã mở stream (/vao-tran → kết quả trận)
+    return base + '#' + (p ? p[0] + '&' : '') + 'ctl=' + encodeURIComponent(JSON.stringify(load()))
+      + '&back=' + encodeURIComponent(location.href.split('#')[0]);
   };
 
   const keyName = code => !code ? '—' : code.startsWith('Key') ? code.slice(3) : code.startsWith('Digit') ? code.slice(5)

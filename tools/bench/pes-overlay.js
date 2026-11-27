@@ -604,3 +604,43 @@ gl_FragColor=vec4(c,1.);}`;
   };
   requestAnimationFrame(frame);
 })();
+
+// Hết trận (PO 27/11): bộ chạy trận ghi pes/end.json {"v": mốc ms, "ended": true|false} — false lúc bắt đầu chạy, true khi còi
+// hết trận (đã thu tay cầm). Trang chỉ chuyển khi thấy mốc v MỚI (khác lúc mở trang) mà ended = true → báo "Hết trận" rồi
+// sau 3 giây về trang đã mở stream (#…&back=, /vao-tran trên web: tỷ số, bàn thắng, điểm cầu thủ). Không có back → chỉ báo.
+(() => {
+  let back = null;
+  try {
+    const raw = new URLSearchParams(location.hash.replace(/^#/, '')).get('back');
+    const u = raw ? new URL(raw) : null;
+    if (u && /^https?:$/.test(u.protocol)) back = u.href;
+  } catch { /* link lạ */ }
+  let v0, done = false;
+  const show = () => {
+    const el = document.createElement('div');
+    el.id = 'pes-end';
+    el.setAttribute('role', 'status');
+    el.innerHTML = '<b>HẾT TRẬN</b><span>' + (back ? 'Đang về trang kết quả…' : 'Quay lại web để xem kết quả') + '</span>';
+    Object.assign(el.style, { position: 'fixed', inset: '0', zIndex: '9', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', gap: '8px', background: 'rgba(15,19,29,.86)', color: '#dee1f7', textAlign: 'center',
+      font: '500 16px/1.4 "Be Vietnam Pro",system-ui,sans-serif' });
+    el.firstChild.style.cssText = 'font:800 56px/1 "Barlow Condensed","Arial Narrow",system-ui,sans-serif;color:#00ff87;letter-spacing:.02em';
+    document.body.appendChild(el);
+  };
+  const poll = async () => {
+    if (done) return;
+    try {
+      const r = await fetch(`pes/end.json?t=${Date.now()}`, { cache: 'no-store' });
+      const j = r.ok ? await r.json() : {};
+      if (!Number.isFinite(j.v)) return;
+      if (v0 === undefined) { v0 = j.v; return; }   // trạng thái lúc mở trang (có thể là "hết" của trận trước)
+      if (j.v !== v0 && j.ended === true) {
+        done = true;
+        show();
+        if (back) setTimeout(() => location.replace(back), 3000);
+      }
+    } catch { /* chưa có file / mạng chập chờn */ }
+  };
+  setInterval(poll, 2000);
+  poll();
+})();
