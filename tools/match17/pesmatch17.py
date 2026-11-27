@@ -340,7 +340,7 @@ SYSTEM_CAM_FILE = OUT / "system-camera.json"   # camera đang lưu trong System 
 
 
 def system_cam() -> tuple:
-    """Camera trong System Data (đọc kiểm 27/11 trên game vừa mở: Custom Zoom 0 / Height 20 / Angle 25). Thiếu file → Fan View (25/11)."""
+    """Camera trong System Data (27/11 chiều: Custom 0/0/0 theo ảnh mẫu PO, đã Save System Data; trước đó 0/20/25). Thiếu file → Fan View (25/11)."""
     try:
         return tuple(json.loads(SYSTEM_CAM_FILE.read_text()))
     except (OSError, ValueError, TypeError):
@@ -419,7 +419,7 @@ def ensure_camera(want: tuple | None) -> None:
                 raise NavError("không vào được Camera Settings")
             name = _norm(want[0])[:3]   # OCR đọc chữ trên nền sân hay sai đuôi ("Fan  iw"); 3 chữ đầu đủ phân biệt
             for _ in range(12):   # 10 loại camera, vòng tròn
-                if name in _norm(ocr.rec(nav.shot("m17_cam"), CAM_TYPE)[0]):
+                if _norm(ocr.rec(nav.shot("m17_cam"), CAM_TYPE)[0]).startswith(name):   # "Dynamic Wide Custom" ≠ Custom
                     break
                 nav.pad("Right w:0.8")
             else:
@@ -430,7 +430,10 @@ def ensure_camera(want: tuple | None) -> None:
                 nav.pad("Down w:0.5")
                 for _ in range(2):   # đọc → bấm bù → đọc lại (phím có thể rơi)
                     cur = _cam_num(ocr.rec(nav.shot("m17_cam"), row)[0])
-                    if cur is None or cur == v:
+                    if cur is None:   # OCR không đọc được (số "0" một chữ hay trả rỗng) → về 0 rồi bấm lên v
+                        nav.pad(" ".join(["Left w:0.1"] * (CAM_RANGE + 2) + ["Right w:0.12"] * v) + " w:0.5")
+                        break
+                    if cur == v:
                         break
                     key = "Left" if cur > v else "Right"
                     nav.pad(" ".join([f"{key} w:0.12"] * abs(cur - v)) + " w:0.5")
