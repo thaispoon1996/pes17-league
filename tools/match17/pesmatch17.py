@@ -821,7 +821,7 @@ class Match:
                 if h or paused or (muted and now - muted > 60):
                     unmute()
                 elif not muted and gone >= 2:   # 2 lần chụp liền (~1 giây) không thấy đồng hồ: không phải đọc sót 1 khung
-                    if (pm := ocr.menu(im)) and not any(k in pm["title"] for k in ("Up", "ull", "Hal")):
+                    if (pm := ocr.menu(im)) and not any(k in pm["title"] for k in ("Up", "ull", "Hal", "Time")):
                         paused = True
                     else:
                         muted = now
@@ -873,7 +873,8 @@ class Match:
                     # chỉ tin tiêu đề: menu tạm dừng (người chơi bấm Start) cũng có tỷ số + đồng hồ
                     t = m["title"]
                     full = "Up" in t or "ull" in t
-                    if not full and "Hal" not in t:
+                    # 1080p (27/11): OCR đọc "Half Time" thành "Ha Time" → nhận cả "Time"; menu tạm dừng là "Pause Menu"
+                    if not full and "Hal" not in t and "Time" not in t:
                         paused = True   # menu tạm dừng (Start): người chơi đang chỉnh → không khoá nút
                         unmute()
                         time.sleep(0.5 if (last_min or 0) >= 88 else 2.5)
